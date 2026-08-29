@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "composite": true,
+    "skipLibCheck": true,
+    "module": "ESNext",
+    "lib": ["ES2020"],
+    "resolveJsonModule": true
+  },
+  "include": ["vite.config.ts"]
+}
