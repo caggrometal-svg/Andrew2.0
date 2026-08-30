@@ -23,6 +23,7 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
+    setupFiles: ['./src/test/setup.ts'],
     reporters: process.env.GITHUB_ACTIONS === 'true' ? ['default', 'github-actions'] : ['default'],
   },
 });
