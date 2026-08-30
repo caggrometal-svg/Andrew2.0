@@ -20,7 +20,7 @@ describe('LearningLoop', () => {
     const loop = new LearningLoop(memory);
     const result = loop.learnFromActivity({
       id: 'a1', timestamp: new Date().toISOString(), action: 'analyze',
-      capability: 'analysis', result: 'success', details: { lesson: 'Prefer corroborated sources.' },
+      capability: 'analysis.run', result: 'success', details: { lesson: 'Prefer corroborated sources.' },
     });
     expect(result?.kind).toBe('lesson');
     expect(memory.recall('corroborated sources')).toHaveLength(1);
@@ -31,7 +31,7 @@ describe('LearningLoop', () => {
     const loop = new LearningLoop(memory);
     const lesson = loop.learnFromActivity({
       id: 'a2', timestamp: new Date().toISOString(), action: 'analyze',
-      capability: 'analysis', result: 'success', details: { lesson: 'Check multiple signals.' },
+      capability: 'analysis.run', result: 'success', details: { lesson: 'Check multiple signals.' },
     })!;
     loop.applyFeedback(lesson.id, 'confirmation', 'Confirmed by user.');
     expect(memory.history()).toHaveLength(1);
