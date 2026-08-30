@@ -1,67 +1,95 @@
-# Andrew 2.0
+# Andrew 2.0 / IAC33
 
 **Free AI - Independent Personal Assistant with Modular Architecture**
 
-Andrew 2.0 is the foundation for IAC33: a modular personal AI and analysis platform with explicit permissions, persistent state, auditable activity, extensible analysis, and configurable autonomy.
+Andrew 2.0 is the foundation for IAC33: a modular personal AI and analysis platform with explicit permissions, persistent state, auditable activity, extensible analysis, configurable autonomy, memory/learning, and research tooling.
 
 ## Current IAC33 status
 
-**Active branch:** `iac33-dev`
+**Integration branch:** `iac33-integration-next`
 
-**Current implementation state:** ETAPA 1 foundation is now implemented, with initial ETAPA 3 authorization and ETAPA 4 project-state primitives added.
+**Current state:** IAC33 has a working multi-module foundation and is in integration/stabilization. Core contracts, authorization, persistent project state, memory/learning, activity auditing, planning, analysis, network/source policy, dashboard/UI, content generation, and runtime integration tests are present in the branch.
 
-The repository also contains IAC33 analysis, dashboard, network-policy, persistent-record, content-generation, source-registry, and module-registry work from the previous development cycle.
+The repository also contains a dated backup branch `backup-iac33-2026-08-30`. It must be treated as a recovery point and not overwritten during stabilization work.
 
-### Verified repository structure
+## Verified architecture
 
-The active development branch contains modules for core, storage, permissions, state, memory, activity, planner, analysis, projects, assistant, UI, application/dashboard, and network policy. The `core` directory now contains the shared type contracts used by the newer modules.
+`src/` contains the following areas:
+
+- `core/` — shared contracts
+- `storage/` — persistence abstractions and stores
+- `permissions/` — capability authorization
+- `state/` — project state and persistence
+- `memory/` — memory storage, retrieval, and learning loop
+- `activity/` — auditable activity records
+- `planner/` — action planning and sequencing
+- `analysis/` — IAC33 analysis, evidence, hypotheses, calibration, probabilistic scoring, and regional seismic forecasting
+- `projects/` — project management
+- `assistant/` — orchestration/runtime logic
+- `ui/` and `app/` — user interface and application integration
+- `network/` — source registry and network/satellite policy boundaries
+- `integration/` — IAC33 runtime integration tests
 
 ## Development stages
 
-### ETAPA 0: Setup
-- Project initialization
-- TypeScript configuration
-- Vite build setup
-- Directory structure
-- Status: foundation created; runtime verification still needs to be executed in a Node environment.
+### ETAPA 0 — Setup
+**Status: complete at repository level; runtime verification remains to be executed in an actual Node environment.**
 
-### ETAPA 1: Core Types
-- Shared autonomy, permission, capability, project-state, activity, planning and analysis contracts
-- Extensibility interface for analysis engines
-- Status: implemented
+### ETAPA 1 — Core Types
+**Status: implemented.** Shared autonomy, permissions, capabilities, state, activity, planning, and analysis contracts are present.
 
-### ETAPA 2: Storage Layer
-- Persistent storage abstraction
-- LocalStorage implementation
-- Status: existing IAC33 persistent-record work present; abstraction consolidation remains
+### ETAPA 2 — Storage
+**Status: partially integrated.** Persistent stores exist; consolidation behind a single storage abstraction remains work in progress.
 
-### ETAPA 3: Permission System
-- Explicit capability authorization
-- Denials always override autonomy
-- No capability is granted without an explicit permission
-- Status: authorization primitive implemented
+### ETAPA 3 — Permissions
+**Status: implemented foundation.** Authorization is explicit and autonomy does not bypass denied permissions.
 
-### ETAPA 4: State Management
-- Project state structure
-- State creation and immutable updates
-- Status: foundation implemented
+### ETAPA 4 — State
+**Status: implemented foundation.** Project state and persistent project storage are present.
 
-### ETAPA 5–12
-Memory, activity, planner, analysis integration, projects/assistant orchestration, UI integration, end-to-end testing, and documentation remain active development targets. Existing IAC33 modules are preserved and will be integrated incrementally.
+### ETAPA 5 — Memory & Learning
+**Status: implemented foundation.** Memory storage/retrieval and a learning loop are present; broader validation and production-quality evaluation remain.
 
-## IAC33 analysis foundation
+### ETAPA 6 — Activity Audit
+**Status: implemented foundation.** Activity records and audit-related modules are present.
 
-The active branch already contains probabilistic analysis, evidence tracking, hypothesis analysis, forecast calibration, regional seismic forecasting, research principles, and IAC33 domain definitions. Probabilistic outputs are explicitly treated as uncertain scenarios rather than deterministic predictions.
+### ETAPA 7 — Planner
+**Status: active integration.** Planning modules exist; end-to-end execution validation remains.
+
+### ETAPA 8 — Analysis
+**Status: active integration.** IAC33 analysis and probabilistic scoring exist. The probabilistic engine is a lightweight weighted scenario-scoring layer; it is not a validated Bayesian model and does not constitute deterministic prediction.
+
+### ETAPA 9 — Projects & Assistant Core
+**Status: active integration.** Runtime/orchestration modules exist and require continued integration testing.
+
+### ETAPA 10 — UI
+**Status: active integration.** Dashboard and UI work is present.
+
+### ETAPA 11 — Integration & Testing
+**Status: in progress.** Runtime integration tests exist. CI verification must still be established or confirmed for the stabilization branch.
+
+### ETAPA 12 — Documentation & Polish
+**Status: in progress.** This README has been synchronized with the current integration state; deeper API documentation remains pending.
+
+## Analysis and forecasting
+
+IAC33 can represent signals, weight them, generate multiple scenarios, expose confidence levels, and retain uncertainty warnings. Forecast calibration uses Brier score and mean absolute error. These mechanisms measure and organize uncertainty; they do not prove that earthquake, weather, social, economic, or conflict outcomes can be predicted reliably.
+
+For earthquake analysis in particular, IAC33 must be evaluated against historical datasets and out-of-sample baselines before any operational predictive claim is made.
+
+## Memory and learning
+
+Memory is treated as persistent application state. The learning loop can record learning events and update memory confidence from feedback. Learning must remain auditable and should not silently grant permissions or external capabilities.
 
 ## Autonomy and permissions
 
-Autonomy never bypasses denied permissions. A capability must have an explicit `allow` grant before execution. `restricted`, `assisted`, and `autonomous` describe execution behavior; they are not permission bypasses.
+Autonomy never bypasses denied permissions. A capability requires an explicit `allow` grant before execution. `restricted`, `assisted`, and `autonomous` describe execution behavior; they are not permission bypasses.
 
 ## Network capabilities
 
-The repository contains policy modules for public web access, source registration, and satellite-control policy. These modules define software policy boundaries; they do not themselves grant unrestricted Internet, satellite, or external-system access.
+The repository contains software policy for public web access, source registration, and satellite-control boundaries. These modules do not themselves provide unrestricted Internet, Deep Web, satellite, or external-system access. Actual access requires an implemented connector, credentials where applicable, network availability, and explicit authorization.
 
-## Development commands
+## Verification commands
 
 ```bash
 npm install
@@ -69,6 +97,8 @@ npm run typecheck
 npm run build
 npm run dev
 ```
+
+`build` runs TypeScript checking followed by the Vite production build.
 
 ## Configuration
 
