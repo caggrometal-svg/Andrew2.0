@@ -21,8 +21,9 @@ export interface AssessmentOutput {
 function applyLearningContext(signals: Signal[], memories: LearningMemory[]): Signal[] {
   if (!memories.length) return signals;
   const recent = memories.slice(0, 20);
-  const meanError = recent.reduce((sum, item) => sum + Math.abs(item.predicted - (item.observed ? 1 : 0)), 0) / recent.length;
-  const reliability = Math.max(0.5, 1 - meanError * 0.5);
+  const totalQuality = recent.reduce((sum, item) => sum + Math.max(0, 1 - item.brierScore), 0);
+  const meanQuality = totalQuality / recent.length;
+  const reliability = 0.5 + meanQuality * 0.5;
   return signals.map((signal) => ({ ...signal, weight: (signal.weight ?? 1) * reliability }));
 }
 
