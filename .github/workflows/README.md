@@ -1,0 +1,1 @@
+IAC33 CI runs typecheck, Vitest tests, and production build on pushes and pull requests.
