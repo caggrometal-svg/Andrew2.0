@@ -1,3 +1,4 @@
+import { describe, expect, it } from 'vitest';
 import { calibrateForecasts } from './forecast-calibration';
 
 describe('IAC33 learning calibration', () => {
