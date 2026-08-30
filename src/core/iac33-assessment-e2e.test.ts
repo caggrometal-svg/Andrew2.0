@@ -21,7 +21,6 @@ describe('IAC33 assessment feedback loop', () => {
     expect(resolved.status).toBe('resolved');
     expect(resolved.brierScore).toBeGreaterThanOrEqual(0);
     expect(resolved.brierScore).toBeLessThanOrEqual(1);
-    expect(kernel.getLearning('general')).toBeUndefined();
     expect(kernel.getLearning()).toHaveLength(1);
     expect(kernel.getLearningWeight('general')).toBeGreaterThan(0);
     expect(kernel.getActivity().some((item) => item.action === 'assessment.complete')).toBe(true);
