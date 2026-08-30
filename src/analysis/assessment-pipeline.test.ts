@@ -1,3 +1,4 @@
+import { describe, expect, it } from 'vitest';
 import { runAssessment } from './assessment-pipeline';
 
 describe('IAC33 assessment pipeline', () => {
