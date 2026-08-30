@@ -28,5 +28,5 @@ export default defineConfig({
     },
   },
   server: { port: 5173, open: false },
-  build: { outDir: 'dist', sourcemap: false, minify: 'terser' },
+  build: { outDir: 'dist', sourcemap: false, minify: 'esbuild' },
 });
