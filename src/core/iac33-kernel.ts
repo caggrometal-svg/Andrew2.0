@@ -1,3 +1,5 @@
+import { assessEvidence, type Evidence } from '../analysis/critical';
+import { runAssessment, type AssessmentOutput } from '../analysis/assessment-pipeline';
 import { forecast, type ForecastDomain, type ForecastResult, type Signal } from '../analysis/probabilistic';
 import {
   clearLearningMemory,
@@ -107,12 +109,7 @@ export class Iac33Kernel {
     return readJson<PermissionGrant[]>(permissionKey(this.project.projectId), []);
   }
 
-  recordActivity(
-    action: string,
-    capability: Capability | undefined,
-    result: ActivityRecord['result'],
-    details?: Record<string, unknown>,
-  ): ActivityRecord {
+  recordActivity(action: string, capability: Capability | undefined, result: ActivityRecord['result'], details?: Record<string, unknown>): ActivityRecord {
     const record: ActivityRecord = {
       id: id('activity'),
       timestamp: new Date().toISOString(),
@@ -127,9 +124,7 @@ export class Iac33Kernel {
   }
 
   getActivity(): ActivityRecord[] {
-    return readJson<ActivityRecord[]>(ACTIVITY_KEY, []).filter((item) =>
-      item.details?.projectId === this.project.projectId,
-    );
+    return readJson<ActivityRecord[]>(ACTIVITY_KEY, []).filter((item) => item.details?.projectId === this.project.projectId);
   }
 
   createPrediction(input: {
@@ -141,34 +136,53 @@ export class Iac33Kernel {
   }): PredictionRecord {
     const memories = getLearningMemory(this.project.projectId, input.domain);
     const learningWeight = getLearningWeight(this.project.projectId, input.domain);
-    const adjustedSignals = input.signals.map((signal) => ({
-      ...signal,
-      weight: (signal.weight ?? 1) * learningWeight,
-    }));
+    const adjustedSignals = input.signals.map((signal) => ({ ...signal, weight: (signal.weight ?? 1) * learningWeight }));
     const result = forecast(input.domain, adjustedSignals, input.horizon ?? '7 days');
     const primary = result.scenarios[0]?.probability ?? 0.5;
     const uncertainty = result.confidence === 'high' ? 0.2 : result.confidence === 'medium' ? 0.45 : 0.7;
     const record: PredictionRecord = {
-      id: id('prediction'),
-      projectId: this.project.projectId,
-      domain: input.domain,
-      horizon: input.horizon ?? result.horizon,
-      hypothesis: input.hypothesis,
-      probability: primary,
-      uncertainty,
-      evidence: input.evidence ?? [],
-      createdAt: new Date().toISOString(),
-      status: 'pending',
+      id: id('prediction'), projectId: this.project.projectId, domain: input.domain,
+      horizon: input.horizon ?? result.horizon, hypothesis: input.hypothesis, probability: primary,
+      uncertainty, evidence: input.evidence ?? [], createdAt: new Date().toISOString(), status: 'pending',
     };
     const predictions = readJson<PredictionRecord[]>(PREDICTION_KEY, []);
     writeJson(PREDICTION_KEY, [record, ...predictions].slice(0, MAX_RECORDS));
-    this.recordActivity('prediction.create', 'analysis.run', 'success', {
-      predictionId: record.id,
-      domain: record.domain,
-      memoryCount: memories.length,
-      learningWeight,
-    });
+    this.recordActivity('prediction.create', 'analysis.run', 'success', { predictionId: record.id, domain: record.domain, memoryCount: memories.length, learningWeight });
     return record;
+  }
+
+  assessAndCreatePrediction(input: {
+    domain: ForecastDomain;
+    horizon?: string;
+    hypothesis: string;
+    signals: Signal[];
+    evidence: Evidence[];
+    evidenceRefs?: EvidenceRef[];
+  }): { assessment: AssessmentOutput; prediction: PredictionRecord } {
+    const assessment = runAssessment({
+      projectId: this.project.projectId,
+      domain: input.domain,
+      signals: input.signals,
+      evidence: input.evidence,
+      horizon: input.horizon,
+    });
+    const prediction = this.createPrediction({
+      domain: input.domain,
+      horizon: input.horizon ?? assessment.forecast.horizon,
+      hypothesis: input.hypothesis,
+      signals: assessment.forecast.signals,
+      evidence: input.evidenceRefs ?? input.evidence.map((item, index) => ({
+        id: `assessment-${Date.now()}-${index}`,
+        kind: item.reliability >= 0.75 ? 'fact' : 'hypothesis',
+        source: item.source,
+      })),
+    });
+    this.recordActivity('assessment.complete', 'analysis.run', 'success', {
+      predictionId: prediction.id,
+      confidence: assessment.overallConfidence,
+      contradictions: assessment.critical.contradictions.length,
+    });
+    return { assessment, prediction };
   }
 
   getPredictions(): PredictionRecord[] {
@@ -182,40 +196,19 @@ export class Iac33Kernel {
     const current = predictions[index];
     if (current.status === 'resolved') return current;
     const brierScore = Math.pow(current.probability - (observed ? 1 : 0), 2);
-    const resolved: PredictionRecord = {
-      ...current,
-      observed,
-      brierScore,
-      status: 'resolved',
-      resolvedAt: new Date().toISOString(),
-    };
+    const resolved: PredictionRecord = { ...current, observed, brierScore, status: 'resolved', resolvedAt: new Date().toISOString() };
     predictions[index] = resolved;
     writeJson(PREDICTION_KEY, predictions);
     saveLearningMemory({
-      id: id('memory'),
-      projectId: this.project.projectId,
-      domain: current.domain,
-      lesson,
-      predicted: current.probability,
-      observed,
-      brierScore,
-      createdAt: resolved.resolvedAt ?? new Date().toISOString(),
+      id: id('memory'), projectId: this.project.projectId, domain: current.domain, lesson,
+      predicted: current.probability, observed, brierScore, createdAt: resolved.resolvedAt ?? new Date().toISOString(),
     });
-    this.recordActivity('prediction.resolve', 'memory.write', 'success', {
-      predictionId,
-      observed,
-      brierScore,
-    });
+    this.recordActivity('prediction.resolve', 'memory.write', 'success', { predictionId, observed, brierScore });
     return resolved;
   }
 
-  getLearning(): LearningMemory[] {
-    return getLearningMemory(this.project.projectId);
-  }
-
-  getLearningWeight(domain?: string): number {
-    return getLearningWeight(this.project.projectId, domain);
-  }
+  getLearning(): LearningMemory[] { return getLearningMemory(this.project.projectId); }
+  getLearningWeight(domain?: string): number { return getLearningWeight(this.project.projectId, domain); }
 
   updateMemory(memoryId: string, patch: Partial<Pick<LearningMemory, 'lesson' | 'predicted' | 'observed'>>): LearningMemory {
     const memory = this.getLearning().find((item) => item.id === memoryId);
@@ -224,28 +217,16 @@ export class Iac33Kernel {
   }
 
   deleteMemory(memoryId: string): void {
-    const memory = this.getLearning().find((item) => item.id === memoryId);
-    if (!memory) return;
-    deleteLearningMemory(memoryId);
+    if (this.getLearning().some((item) => item.id === memoryId)) deleteLearningMemory(memoryId);
   }
 
-  clearProjectLearning(): void {
-    for (const memory of this.getLearning()) deleteLearningMemory(memory.id);
-  }
-
-  clearAllLearning(): void {
-    clearLearningMemory();
-  }
+  clearProjectLearning(): void { for (const memory of this.getLearning()) deleteLearningMemory(memory.id); }
+  clearAllLearning(): void { clearLearningMemory(); }
 
   snapshot(): Iac33KernelSnapshot {
-    return {
-      project: this.project,
-      permissions: this.getPermissions(),
-      activity: this.getActivity(),
-      predictions: this.getPredictions(),
-      learning: this.getLearning(),
-    };
+    return { project: this.project, permissions: this.getPermissions(), activity: this.getActivity(), predictions: this.getPredictions(), learning: this.getLearning() };
   }
 }
 
+export { assessEvidence };
 export type { ForecastResult };
