@@ -5,6 +5,8 @@ import { PersistentActivityStore } from '../storage/activity-store';
 import { LocalStorageProvider } from '../storage/storage-provider';
 import { ProjectManager } from '../projects/project-manager';
 import { PersistentProjectStore } from '../state/persistent-project-store';
+import { MemoryStore } from '../memory/memory-store';
+import { MemoryService } from '../memory/memory-service';
 
 export class IAC33Runtime {
   readonly storage = new LocalStorageProvider();
@@ -12,6 +14,7 @@ export class IAC33Runtime {
   readonly activity = new ActivityLog();
   readonly activityStore = new PersistentActivityStore(this.storage);
   readonly projectStore = new PersistentProjectStore(this.storage);
+  readonly memory = new MemoryService(new MemoryStore(this.storage));
 
   restore(): void {
     const storedActivity = this.activityStore.load();
