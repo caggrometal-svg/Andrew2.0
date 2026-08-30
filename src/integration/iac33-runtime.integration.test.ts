@@ -7,9 +7,10 @@ describe('IAC33Runtime integration', () => {
     const project = runtime.projects.create('test-project', 'Test Project');
     const context = runtime.context(project.projectId, []);
     const allowed = runtime.authorizeAction(context, {
-      action: 'network.request',
-      capability: 'network',
-      params: {},
+      id: 'network-read-denied',
+      action: 'network.read',
+      capability: 'network.read',
+      requiresConfirmation: false,
     });
 
     expect(allowed).toBe(false);
