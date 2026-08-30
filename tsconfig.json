@@ -27,6 +27,7 @@
       "@state/*": ["src/state/*"],
       "@assistant/*": ["src/assistant/*"],
       "@ui/*": ["src/ui/*"],
+      "@network/*": ["src/network/*"],
       "@lib/*": ["src/lib/*"]
     },
     "types": ["vite/client"]
