@@ -46,6 +46,10 @@ const PREDICTION_KEY = 'iac33-predictions-v1';
 const ACTIVITY_KEY = 'iac33-activity-v1';
 const MAX_RECORDS = 500;
 
+function stateKey(projectId: string): string {
+  return `iac33-project-state-v1:${projectId}`;
+}
+
 function permissionKey(projectId: string): string {
   return `iac33-permissions-v1:${projectId}`;
 }
@@ -76,7 +80,7 @@ export class Iac33Kernel {
   private project: ProjectState;
 
   constructor(projectId: string) {
-    this.project = createProjectState(projectId);
+    this.project = readJson<ProjectState>(stateKey(projectId), createProjectState(projectId));
   }
 
   getProject(): ProjectState {
@@ -85,7 +89,8 @@ export class Iac33Kernel {
 
   setProjectState(patch: Partial<Omit<ProjectState, 'projectId'>>): ProjectState {
     this.project = updateProjectState(this.project, patch);
-    this.recordActivity('state.update', 'state.write', 'success', { projectId: this.project.projectId, ...patch });
+    writeJson(stateKey(this.project.projectId), this.project);
+    this.recordActivity('state.update', 'state.write', 'success', patch);
     return this.project;
   }
 
@@ -94,11 +99,7 @@ export class Iac33Kernel {
     const key = permissionKey(this.project.projectId);
     const all = readJson<PermissionGrant[]>(key, []).filter((item) => item.capability !== capability);
     writeJson(key, [...all, grant]);
-    this.recordActivity('permission.update', 'state.write', 'success', {
-      projectId: this.project.projectId,
-      capability,
-      decision,
-    });
+    this.recordActivity('permission.update', 'state.write', 'success', { capability, decision });
     return grant;
   }
 
