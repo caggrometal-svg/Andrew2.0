@@ -6,8 +6,9 @@ export class LearningLoop {
   constructor(private readonly memory: MemoryService) {}
 
   learnFromActivity(activity: ActivityRecord): MemoryItem | undefined {
-    if (activity.result === 'denied' || !activity.details?.lesson) return undefined;
+    if (activity.result === 'denied' || !activity.details?.lesson || !activity.capability) return undefined;
 
+    const now = new Date().toISOString();
     const memory: MemoryItem = {
       id: crypto.randomUUID(),
       kind: 'lesson',
@@ -15,8 +16,8 @@ export class LearningLoop {
       source: 'system',
       importance: 0.5,
       confidence: 0.5,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: now,
+      updatedAt: now,
       tags: ['learned', activity.capability],
       accessCount: 0,
     };
