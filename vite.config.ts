@@ -23,16 +23,10 @@ export default defineConfig({
       '@state': path.resolve(__dirname, './src/state'),
       '@assistant': path.resolve(__dirname, './src/assistant'),
       '@ui': path.resolve(__dirname, './src/ui'),
+      '@network': path.resolve(__dirname, './src/network'),
       '@lib': path.resolve(__dirname, './src/lib'),
     },
   },
-  server: {
-    port: 5173,
-    open: false,
-  },
-  build: {
-    outDir: 'dist',
-    sourcemap: false,
-    minify: 'terser',
-  },
+  server: { port: 5173, open: false },
+  build: { outDir: 'dist', sourcemap: false, minify: 'terser' },
 });
