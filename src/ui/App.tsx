@@ -27,9 +27,19 @@ export default function App() {
 
   async function updateNetwork() {
     setStatus('Consultando datos públicos…');
-    try { const data = await getRecentEarthquakes(); setQuakeCount(data.features.length); setStatus('Red pública actualizada'); }
-    catch { setStatus('No se pudo consultar la red pública'); }
+    try { const data = await getRecentEarthquakes(); setQuakeCount(data.features.length); setStatus('Red mundial pública actualizada'); }
+    catch { setStatus('No fue posible consultar la fuente'); }
   }
 
-  return <main>{/* IAC33 dashboard UI */}</main>;
+  return <main style={{ maxWidth: 1050, margin: '0 auto', padding: 24, fontFamily: 'system-ui, sans-serif', background: '#0b0f14', color: '#e8edf2', minHeight: '100vh' }}>
+    <h1>Andrew 2.0</h1><p>Pensador · visionario · análisis crítico · autonomía configurable</p>
+    <section style={{ display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))' }}>
+      <article><h2>Red mundial pública</h2><p>Acceso web público: <b>ACTIVO</b></p><p>Datos satelitales públicos: <b>ACTIVOS</b></p><button onClick={updateNetwork}>Actualizar datos sísmicos</button>{quakeCount !== null && <p>Eventos recibidos: {quakeCount}</p>}<small>Andrew no controla satélites ni accede a redes privadas o restringidas.</small></article>
+      <article><h2>Pronóstico</h2><button onClick={() => setDomain('earthquake')}>Riesgo sísmico</button>{' '}<button onClick={() => setDomain('social')}>Eventos sociales</button><p>Horizonte: {result.horizon} · Confianza: {result.confidence}</p><ol>{result.scenarios.map(s => <li key={s.label}>{s.label}: <strong>{Math.round(s.probability * 100)}%</strong></li>)}</ol><small>{result.warning}</small></article>
+      <article><h2>Autonomía</h2><p>Nivel conceptual: <b>ASSISTED</b></p><ul>{defaultCapabilities.map(c => <li key={c.id}>{c.name}</li>)}</ul></article>
+      <article><h2>Pensamiento crítico</h2><p>Confianza global: <strong>{critical.overallConfidence}</strong></p><p>Hechos: {critical.facts.length} · Contradicciones: {critical.contradictions.length} · Hipótesis: {critical.hypotheses.length}</p></article>
+    </section>
+    <section style={{ marginTop: 20 }}><h2>Expediente C33</h2><input value={topic} onChange={e => setTopic(e.target.value)} style={{ width: '100%', padding: 10, boxSizing: 'border-box' }} /><button style={{ marginTop: 8 }} onClick={() => setBrief(createC33Brief(topic))}>Crear expediente</button><h3>{brief.title}</h3><p><b>Hook:</b> {brief.hook}</p><p><b>Tesis:</b> {brief.thesis}</p><p><b>Contrapuntos:</b> {brief.counterpoints.join(' · ')}</p><p><b>Guion:</b> {brief.script}</p></section>
+    <footer>{status}</footer>
+  </main>;
 }
