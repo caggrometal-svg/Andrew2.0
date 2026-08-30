@@ -44,8 +44,11 @@ export interface Iac33KernelSnapshot {
 
 const PREDICTION_KEY = 'iac33-predictions-v1';
 const ACTIVITY_KEY = 'iac33-activity-v1';
-const PERMISSION_KEY = 'iac33-permissions-v1';
 const MAX_RECORDS = 500;
+
+function permissionKey(projectId: string): string {
+  return `iac33-permissions-v1:${projectId}`;
+}
 
 function readJson<T>(key: string, fallback: T): T {
   if (typeof localStorage === 'undefined') return fallback;
@@ -82,20 +85,25 @@ export class Iac33Kernel {
 
   setProjectState(patch: Partial<Omit<ProjectState, 'projectId'>>): ProjectState {
     this.project = updateProjectState(this.project, patch);
-    this.recordActivity('state.update', 'state.write', 'success', patch);
+    this.recordActivity('state.update', 'state.write', 'success', { projectId: this.project.projectId, ...patch });
     return this.project;
   }
 
   setPermission(capability: Capability, decision: PermissionGrant['decision'], source = 'iac33'): PermissionGrant {
     const grant: PermissionGrant = { capability, decision, grantedAt: new Date().toISOString(), source };
-    const all = readJson<PermissionGrant[]>(PERMISSION_KEY, []).filter((item) => item.capability !== capability);
-    writeJson(PERMISSION_KEY, [...all, grant]);
-    this.recordActivity('permission.update', 'state.write', 'success', { capability, decision });
+    const key = permissionKey(this.project.projectId);
+    const all = readJson<PermissionGrant[]>(key, []).filter((item) => item.capability !== capability);
+    writeJson(key, [...all, grant]);
+    this.recordActivity('permission.update', 'state.write', 'success', {
+      projectId: this.project.projectId,
+      capability,
+      decision,
+    });
     return grant;
   }
 
   getPermissions(): PermissionGrant[] {
-    return readJson<PermissionGrant[]>(PERMISSION_KEY, []);
+    return readJson<PermissionGrant[]>(permissionKey(this.project.projectId), []);
   }
 
   recordActivity(
@@ -104,7 +112,14 @@ export class Iac33Kernel {
     result: ActivityRecord['result'],
     details?: Record<string, unknown>,
   ): ActivityRecord {
-    const record: ActivityRecord = { id: id('activity'), timestamp: new Date().toISOString(), action, capability, result, details };
+    const record: ActivityRecord = {
+      id: id('activity'),
+      timestamp: new Date().toISOString(),
+      action,
+      capability,
+      result,
+      details: { projectId: this.project.projectId, ...details },
+    };
     const items = readJson<ActivityRecord[]>(ACTIVITY_KEY, []);
     writeJson(ACTIVITY_KEY, [record, ...items].slice(0, MAX_RECORDS));
     return record;
@@ -131,6 +146,7 @@ export class Iac33Kernel {
     }));
     const result = forecast(input.domain, adjustedSignals, input.horizon ?? '7 days');
     const primary = result.scenarios[0]?.probability ?? 0.5;
+    const uncertainty = result.confidence === 'high' ? 0.2 : result.confidence === 'medium' ? 0.45 : 0.7;
     const record: PredictionRecord = {
       id: id('prediction'),
       projectId: this.project.projectId,
@@ -138,7 +154,7 @@ export class Iac33Kernel {
       horizon: input.horizon ?? result.horizon,
       hypothesis: input.hypothesis,
       probability: primary,
-      uncertainty: 1 - Math.min(1, Math.max(0, result.confidence === 'high' ? 0.2 : result.confidence === 'medium' ? 0.45 : 0.7)),
+      uncertainty,
       evidence: input.evidence ?? [],
       createdAt: new Date().toISOString(),
       status: 'pending',
@@ -146,7 +162,6 @@ export class Iac33Kernel {
     const predictions = readJson<PredictionRecord[]>(PREDICTION_KEY, []);
     writeJson(PREDICTION_KEY, [record, ...predictions].slice(0, MAX_RECORDS));
     this.recordActivity('prediction.create', 'analysis.run', 'success', {
-      projectId: this.project.projectId,
       predictionId: record.id,
       domain: record.domain,
       memoryCount: memories.length,
@@ -166,7 +181,13 @@ export class Iac33Kernel {
     const current = predictions[index];
     if (current.status === 'resolved') return current;
     const brierScore = Math.pow(current.probability - (observed ? 1 : 0), 2);
-    const resolved: PredictionRecord = { ...current, observed, brierScore, status: 'resolved', resolvedAt: new Date().toISOString() };
+    const resolved: PredictionRecord = {
+      ...current,
+      observed,
+      brierScore,
+      status: 'resolved',
+      resolvedAt: new Date().toISOString(),
+    };
     predictions[index] = resolved;
     writeJson(PREDICTION_KEY, predictions);
     saveLearningMemory({
@@ -180,7 +201,6 @@ export class Iac33Kernel {
       createdAt: resolved.resolvedAt ?? new Date().toISOString(),
     });
     this.recordActivity('prediction.resolve', 'memory.write', 'success', {
-      projectId: this.project.projectId,
       predictionId,
       observed,
       brierScore,
@@ -197,15 +217,19 @@ export class Iac33Kernel {
   }
 
   updateMemory(memoryId: string, patch: Partial<Pick<LearningMemory, 'lesson' | 'predicted' | 'observed'>>): LearningMemory {
+    const memory = this.getLearning().find((item) => item.id === memoryId);
+    if (!memory) throw new Error(`Learning memory not found: ${memoryId}`);
     return updateLearningMemory(memoryId, patch);
   }
 
   deleteMemory(memoryId: string): void {
+    const memory = this.getLearning().find((item) => item.id === memoryId);
+    if (!memory) return;
     deleteLearningMemory(memoryId);
   }
 
   clearProjectLearning(): void {
-    for (const memory of getLearningMemory(this.project.projectId)) deleteLearningMemory(memory.id);
+    for (const memory of this.getLearning()) deleteLearningMemory(memory.id);
   }
 
   clearAllLearning(): void {
