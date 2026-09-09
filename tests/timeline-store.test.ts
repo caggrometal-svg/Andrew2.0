@@ -22,7 +22,11 @@ describe("timeline-store", () => {
   afterEach(() => useTimelineStore.getState().clear());
 
   it("expone la tienda Zustand como hook React consumible", () => {
-    const { result } = renderHook(() => useTimelineStore((state) => ({ duration: state.duration, clips: state.clips })));
+    const { result } = renderHook(() => {
+      const duration = useTimelineStore((state) => state.duration);
+      const clips = useTimelineStore((state) => state.clips);
+      return { duration, clips };
+    });
     expect(result.current.duration).toBe(0);
     expect(result.current.clips).toEqual([]);
 
@@ -87,7 +91,7 @@ describe("timeline-store", () => {
     const clipId = useTimelineStore.getState().addClip(mediaClip(trackId));
     useTimelineStore.getState().removeClip(clipId);
     expect(useTimelineStore.getState().clips).toHaveLength(0);
-    expect(useTimelineStore.getState().selectedClipId).toBeUndefined();
+    expect(useTimelineStore.getState().selectedClipId).toBeNull();
     expect(useTimelineStore.getState().duration).toBe(5);
   });
 
@@ -99,8 +103,8 @@ describe("timeline-store", () => {
     expect(useTimelineStore.getState().selectedClipId).toBe(firstId);
     useTimelineStore.getState().selectClip(secondId);
     expect(useTimelineStore.getState().selectedClipId).toBe(secondId);
-    useTimelineStore.getState().selectClip(undefined);
-    expect(useTimelineStore.getState().selectedClipId).toBeUndefined();
+    useTimelineStore.getState().selectClip(null);
+    expect(useTimelineStore.getState().selectedClipId).toBeNull();
   });
 
   it("resetea completamente el proyecto con clear", () => {
@@ -123,8 +127,8 @@ describe("timeline-store", () => {
     expect(state.playing).toBe(false);
     expect(state.loop).toBe(false);
     expect(state.zoom).toBe(1);
-    expect(state.selectedClipId).toBeUndefined();
-    expect(state.selectedTrackId).toBeUndefined();
+    expect(state.selectedClipId).toBeNull();
+    expect(state.selectedTrackId).toBeNull();
     expect(state.assetsMap).toEqual({});
   });
 });
