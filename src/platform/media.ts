@@ -145,10 +145,9 @@ export const mediaPlatform: MediaPlatform = {
 
       if (!result.webPath && !result.path) return null;
 
-      const uri = result.path ?? result.webPath ?? "";
       return {
         id: makeId(),
-        uri,
+        uri: result.path ?? result.webPath ?? "",
         name: `image-${Date.now()}.${result.format || "jpg"}`,
         mimeType: `image/${result.format || "jpeg"}`,
         kind: "image",
@@ -161,7 +160,7 @@ export const mediaPlatform: MediaPlatform = {
   async readFile(uri: string): Promise<ArrayBuffer> {
     if (!uri) throw new Error("Media URI is required");
 
-    if (!isNative()) {
+    if (!isNative() || /^https?:\/\//i.test(uri)) {
       const response = await fetch(uri);
       if (!response.ok) throw new Error(`Unable to read media: ${response.status}`);
       return response.arrayBuffer();
@@ -171,15 +170,14 @@ export const mediaPlatform: MediaPlatform = {
     const result = await Filesystem.readFile({ path });
 
     if (typeof result.data !== "string") {
-      return result.data.buffer.slice(
-        result.data.byteOffset,
-        result.data.byteOffset + result.data.byteLength,
-      ) as ArrayBuffer;
+      throw new Error("Native Filesystem returned an unsupported media payload");
     }
 
     const binary = atob(result.data);
     const bytes = new Uint8Array(binary.length);
-    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
     return bytes.buffer;
   },
 };
