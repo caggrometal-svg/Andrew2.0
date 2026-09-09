@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest",
     "test:run": "vitest run",
-    "build:android": "npm run build && npx cap sync android"
+    "build:android": "npm run build && npx cap sync android",
+    "build:apk": "bash scripts/build-apk.sh"
   },
   "dependencies": {
     "@capacitor/camera": "^8.0.0",
