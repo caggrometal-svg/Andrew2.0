@@ -170,7 +170,7 @@ describe("timeline-store", () => {
     expect(useTimelineStore.getState().currentTime).toBe(20);
   });
 
-  it("seek() sanitiza NaN e Infinity y evita tiempos negativos", () => {
+  it("seek() sanitiza valores no finitos a 0 y evita tiempos negativos", () => {
     const store = useTimelineStore.getState();
     store.setDuration(20);
 
@@ -181,7 +181,7 @@ describe("timeline-store", () => {
     expect(useTimelineStore.getState().currentTime).toBe(0);
 
     store.seek(Number.POSITIVE_INFINITY);
-    expect(useTimelineStore.getState().currentTime).toBe(20);
+    expect(useTimelineStore.getState().currentTime).toBe(0);
 
     store.seek(Number.NEGATIVE_INFINITY);
     expect(useTimelineStore.getState().currentTime).toBe(0);
