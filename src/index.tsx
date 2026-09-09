@@ -1,14 +1,11 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import App from '@ui/App';
+import EditorApp from '@editor/EditorApp';
+import '@editor/editor.css';
 
 const rootElement = document.getElementById('root');
-if (!rootElement) {
-  throw new Error('Root element not found');
-}
+if (!rootElement) throw new Error('Root element not found');
 
 ReactDOM.createRoot(rootElement).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
+  <React.StrictMode><EditorApp /></React.StrictMode>
 );
