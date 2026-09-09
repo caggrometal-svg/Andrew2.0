@@ -1,8 +1,8 @@
 import type { TimelineClip, TimelineTrack } from "../types/andrew-core";
 
-export interface PreviewClip extends TimelineClip {
+export type PreviewClip = TimelineClip & {
   trackOrder: number;
-}
+};
 
 export function getActivePreviewClips(
   clips: readonly TimelineClip[],
