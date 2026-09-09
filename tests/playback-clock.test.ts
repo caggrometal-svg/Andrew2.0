@@ -6,7 +6,7 @@ describe("PlaybackClock", () => {
   let clock: PlaybackClock;
 
   beforeEach(() => {
-    vi.useFakeTimers();
+    vi.useFakeTimers({ toFake: ["performance", "requestAnimationFrame", "cancelAnimationFrame"] });
     vi.setSystemTime(0);
     useTimelineStore.getState().clear();
     clock = new PlaybackClock();
