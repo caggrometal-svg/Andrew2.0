@@ -1,8 +1,20 @@
 services:
   - type: web
+    name: andrew2-api
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm run server
+    autoDeploy: true
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-5-mini
+
+  - type: web
     name: andrew2
     runtime: static
-    buildCommand: npm install && npm run build
+    buildCommand: npm install && VITE_AI_API_URL=https://andrew2-api.onrender.com npm run build
     staticPublishPath: ./dist
     autoDeploy: true
     routes:
