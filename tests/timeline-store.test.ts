@@ -124,11 +124,69 @@ describe("timeline-store", () => {
     expect(state.duration).toBe(0);
     expect(state.currentTime).toBe(0);
     expect(state.fps).toBe(30);
+    expect(state.isPlaying).toBe(false);
     expect(state.playing).toBe(false);
     expect(state.loop).toBe(false);
     expect(state.zoom).toBe(1);
     expect(state.selectedClipId).toBeNull();
     expect(state.selectedTrackId).toBeNull();
     expect(state.assetsMap).toEqual({});
+  });
+
+  it("inicializa el playback con estado determinista", () => {
+    const state = useTimelineStore.getState();
+    expect(state.isPlaying).toBe(false);
+    expect(state.currentTime).toBe(0);
+    expect(state.fps).toBe(30);
+  });
+
+  it("play() y pause() controlan isPlaying sin alterar currentTime", () => {
+    const store = useTimelineStore.getState();
+    store.setDuration(20);
+    store.seek(7.25);
+
+    store.play();
+    expect(useTimelineStore.getState().isPlaying).toBe(true);
+    expect(useTimelineStore.getState().playing).toBe(true);
+    expect(useTimelineStore.getState().currentTime).toBe(7.25);
+
+    store.pause();
+    expect(useTimelineStore.getState().isPlaying).toBe(false);
+    expect(useTimelineStore.getState().playing).toBe(false);
+    expect(useTimelineStore.getState().currentTime).toBe(7.25);
+  });
+
+  it("seek() actualiza el tiempo dentro de los límites del timeline", () => {
+    const store = useTimelineStore.getState();
+    store.setDuration(20);
+
+    store.seek(7.5);
+    expect(useTimelineStore.getState().currentTime).toBe(7.5);
+
+    store.seek(0);
+    expect(useTimelineStore.getState().currentTime).toBe(0);
+
+    store.seek(20);
+    expect(useTimelineStore.getState().currentTime).toBe(20);
+  });
+
+  it("seek() sanitiza NaN e Infinity y evita tiempos negativos", () => {
+    const store = useTimelineStore.getState();
+    store.setDuration(20);
+
+    store.seek(8);
+    expect(useTimelineStore.getState().currentTime).toBe(8);
+
+    store.seek(Number.NaN);
+    expect(useTimelineStore.getState().currentTime).toBe(0);
+
+    store.seek(Number.POSITIVE_INFINITY);
+    expect(useTimelineStore.getState().currentTime).toBe(20);
+
+    store.seek(Number.NEGATIVE_INFINITY);
+    expect(useTimelineStore.getState().currentTime).toBe(0);
+
+    store.seek(-5);
+    expect(useTimelineStore.getState().currentTime).toBe(0);
   });
 });
