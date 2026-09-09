@@ -1,7 +1,7 @@
 {
   "name": "andrew2.0",
-  "version": "0.0.1",
-  "description": "Free AI - Independent Personal Assistant with Modular Architecture",
+  "version": "0.0.2",
+  "description": "Andrew 2.0 - Independent Personal Assistant",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,20 +11,24 @@
     "test": "vitest",
     "test:run": "vitest run",
     "build:android": "npm run build && npx cap sync android",
-    "build:apk": "bash scripts/build-apk.sh"
+    "build:apk": "bash scripts/build-apk.sh",
+    "server": "node server/server.js"
   },
   "dependencies": {
+    "@capacitor/android": "^8.0.0",
     "@capacitor/camera": "^8.0.0",
     "@capacitor/core": "^8.0.0",
     "@capacitor/filesystem": "^8.0.0",
+    "@capacitor/preferences": "^8.0.0",
     "@capawesome/capacitor-file-picker": "^8.0.0",
+    "fastify": "^5.5.0",
     "mp4-muxer": "^5.2.2",
+    "openai": "^5.19.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "zustand": "^5.0.15"
   },
   "devDependencies": {
-    "@capacitor/android": "^8.0.0",
     "@capacitor/cli": "^8.0.0",
     "@testing-library/jest-dom": "^6.8.0",
     "@testing-library/react": "^16.3.0",
