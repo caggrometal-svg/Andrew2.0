@@ -20,13 +20,10 @@ export default function EditorApp() {
       for (const asset of project.assets) {
         const blob = await getMediaFile(asset.id);
         if (blob) hydrated.push({ ...asset, url: URL.createObjectURL(blob) });
-        else if (asset.url.startsWith('blob:')) hydrated.push(asset);
       }
-      if (!cancelled && hydrated.length !== project.assets.length) {
-        setProject(p => ({ ...p, assets: hydrated, updatedAt: new Date().toISOString() }));
-      } else if (!cancelled) {
-        setReady(true);
-      }
+      if (cancelled) return;
+      setProject(p => ({ ...p, assets: hydrated, updatedAt: new Date().toISOString() }));
+      setReady(true);
     }
     hydrate().catch(() => setReady(true));
     return () => { cancelled = true; };
@@ -35,10 +32,6 @@ export default function EditorApp() {
   useEffect(() => {
     if (ready) saveEditorProject(project);
   }, [project, ready]);
-
-  useEffect(() => () => {
-    project.assets.forEach(asset => asset.url.startsWith('blob:') && URL.revokeObjectURL(asset.url));
-  }, [project.assets]);
 
   const selected = useMemo(() => project.clips.find(c => c.id === project.selectedClipId), [project]);
   const selectedAsset = selected ? project.assets.find(a => a.id === selected.assetId) : undefined;
