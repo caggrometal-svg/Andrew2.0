@@ -46,6 +46,7 @@ describe("media-timeline-binding", () => {
 
   it("registers the asset and creates a timeline clip without changing playback state", () => {
     const store = useTimelineStore.getState();
+    store.setDuration(12);
     store.setCurrentTime(2);
     store.setPlaying(true);
 
