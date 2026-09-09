@@ -1,18 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const picker = {
-  checkPermissions: vi.fn(),
-  requestPermissions: vi.fn(),
-  pickVideos: vi.fn(),
-};
-
-const camera = {
-  getPhoto: vi.fn(),
-};
-
-const filesystem = {
-  readFile: vi.fn(),
-};
+const { picker, camera, filesystem } = vi.hoisted(() => ({
+  picker: {
+    checkPermissions: vi.fn(),
+    requestPermissions: vi.fn(),
+    pickVideos: vi.fn(),
+  },
+  camera: {
+    getPhoto: vi.fn(),
+  },
+  filesystem: {
+    readFile: vi.fn(),
+  },
+}));
 
 vi.mock("@capacitor/core", () => ({
   Capacitor: {
