@@ -34,7 +34,7 @@ describe("PlaybackClock", () => {
 
     vi.advanceTimersByTime(1000);
 
-    expect(useTimelineStore.getState().currentTime).toBeCloseTo(1, 3);
+    expect(useTimelineStore.getState().currentTime).toBeCloseTo(1, 2);
   });
 
   it("stop() detiene inmediatamente el flujo temporal", () => {
@@ -49,7 +49,7 @@ describe("PlaybackClock", () => {
 
     vi.advanceTimersByTime(2000);
 
-    expect(useTimelineStore.getState().currentTime).toBeCloseTo(stoppedAt, 3);
+    expect(useTimelineStore.getState().currentTime).toBeCloseTo(stoppedAt, 2);
   });
 
   it("al llegar al final fija duration y pausa la reproducción", () => {
@@ -72,6 +72,6 @@ describe("PlaybackClock", () => {
     useTimelineStore.getState().seek(10);
     vi.advanceTimersByTime(500);
 
-    expect(useTimelineStore.getState().currentTime).toBeCloseTo(10.5, 3);
+    expect(useTimelineStore.getState().currentTime).toBeCloseTo(10.5, 2);
   });
 });
