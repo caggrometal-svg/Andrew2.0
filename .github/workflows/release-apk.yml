@@ -4,10 +4,9 @@ on:
   push:
     branches:
       - andrew-editor-v1
-  workflow_dispatch:
-  push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: write
