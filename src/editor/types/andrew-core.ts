@@ -10,12 +10,12 @@ export interface Adjustments { opacity: number; brightness: number; contrast: nu
 export interface FontConfig { family: string; size: number; weight: number | string; style: "normal" | "italic"; color: string; align: "left" | "center" | "right"; lineHeight: number }
 
 export interface MediaClip { id: UUID; type: "media"; assetId: UUID; trackId: UUID; startTime: Seconds; duration: Seconds; trimStart: Seconds; trimEnd: Seconds; transform: Transform2D; adjustments: Adjustments; zIndex: number }
-export interface TextClip { id: UUID; type: "text"; trackId: UUID; textContent: string; fontConfig: FontConfig; startTime: Seconds; duration: Seconds; transform: Transform2D; adjustments: Adjustments; zIndex: number }
+export interface TextClip { id: UUID; type: "text"; trackId: UUID; textContent: string; fontConfig: FontConfig; startTime: Seconds; duration: Seconds; trimStart?: never; trimEnd?: never; transform: Transform2D; adjustments: Adjustments; zIndex: number }
 export type TimelineClip = MediaClip | TextClip;
 export type TimelineClipPatch = Partial<MediaClip> | Partial<TextClip>;
 
 export interface TimelineTrack { id: UUID; name: string; order: number; muted: boolean; locked: boolean; visible: boolean }
-export interface TimelineState { tracks: TimelineTrack[]; clips: TimelineClip[]; selectedClipId: UUID | null; selectedTrackId: UUID | null; currentTime: Seconds; duration: Seconds; fps: number; playing: boolean; loop: boolean; zoom: number }
+export interface TimelineState { tracks: TimelineTrack[]; clips: TimelineClip[]; selectedClipId: UUID | null; selectedTrackId: UUID | null; currentTime: Seconds; duration: Seconds; fps: number; isPlaying: boolean; playing: boolean; loop: boolean; zoom: number }
 export type SerializableTimelineState = TimelineState;
 
 export interface AssetMetadata { id: UUID; name: string; type: AssetType; mimeType: string; size: number; width?: number; height?: number; duration?: Seconds; url?: string }
@@ -37,6 +37,8 @@ export interface TimelineStoreActions {
   removeClip(id: UUID): void;
   updateClip(id: UUID, patch: TimelineClipPatch): void;
   moveClip(id: UUID, startTime: Seconds, trackId?: UUID): void;
+  play(): void;
+  pause(): void;
   seek(time: Seconds): void;
   setCurrentTime(time: Seconds): void;
   setDuration(duration: Seconds): void;
