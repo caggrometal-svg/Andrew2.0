@@ -2,7 +2,7 @@ name: IAC33 CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, andrew-editor-v1]
   pull_request:
     branches: [main]
   workflow_dispatch:
