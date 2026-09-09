@@ -3,15 +3,14 @@ import type { ExportDimensions, ExportProgress, TimelineClip, VideoExportCallbac
 import { useTimelineStore } from "../timeline/timeline-store";
 import WebGLRenderer from "../renderer/WebGLRenderer";
 
-type Mp4Muxer = Muxer<ArrayBufferTarget>;
 interface VideoFrameLike { close(): void }
 interface VideoFrameConstructor { new(source: CanvasImageSource, init: { timestamp: number; duration?: number }): VideoFrameLike }
 interface EncoderChunkLike { type: "key" | "delta"; timestamp: number; duration?: number; byteLength: number; copyTo(destination: ArrayBufferView): void }
-type EncoderMetadata = Parameters<Mp4Muxer["addVideoChunk"]>[1];
 interface EncoderConfig { codec: string; width: number; height: number; bitrate: number; framerate: number; hardwareAcceleration?: "prefer-hardware" | "prefer-software" }
 interface VideoEncoderLike { configure(config: EncoderConfig): void; encode(frame: VideoFrameLike, options?: { keyFrame?: boolean }): void; flush(): Promise<void>; close(): void }
-interface VideoEncoderConstructor { new(init: { output: (chunk: EncoderChunkLike, metadata: EncoderMetadata) => void; error: (error: DOMException) => void }): VideoEncoderLike; isConfigSupported?: (config: EncoderConfig) => Promise<unknown> }
+interface VideoEncoderConstructor { new(init: { output: (chunk: EncoderChunkLike, metadata: Parameters<ReturnType<typeof makeMuxer>["addVideoChunk"]>[1]) => void; error: (error: DOMException) => void }): VideoEncoderLike; isConfigSupported?: (config: EncoderConfig) => Promise<unknown> }
 
+const makeMuxer = (target: ArrayBufferTarget, width: number, height: number, fps: number) => new Muxer({ target, fastStart: "in-memory", video: { codec: "avc", width, height, frameRate: fps } });
 const dimensions = (options: VideoExportOptions): ExportDimensions => ({ width: Math.max(2, Math.floor((options.width ?? 1920) / 2) * 2), height: Math.max(2, Math.floor((options.height ?? 1080) / 2) * 2) });
 const progress = (frame: number, total: number, time: number, duration: number): ExportProgress => ({ currentFrame: frame, totalFrames: total, percentage: total <= 1 ? 100 : Math.min(100, frame / (total - 1) * 100), currentTime: time, duration });
 const abortError = (): DOMException => new DOMException("Exportación cancelada.", "AbortError");
@@ -28,12 +27,12 @@ export class VideoExporter {
     if (this.exporting) throw new Error("Ya existe una exportación en curso."); if (typeof document === "undefined") throw new Error("La exportación requiere un entorno de navegador.");
     this.exporting = true; this.cancelled = false;
     const state = useTimelineStore.getState(); const fps = Math.max(1, Math.min(240, Math.round(options.fps ?? state.fps))); const duration = Math.max(0, state.duration); const totalFrames = Math.max(1, Math.ceil(duration * fps)); const size = dimensions(options); const filename = options.filename ?? "andrew-export.mp4";
-    let renderer: WebGLRenderer | undefined; let encoder: VideoEncoderLike | undefined; let muxer: Mp4Muxer | undefined;
+    let renderer: WebGLRenderer | undefined; let encoder: VideoEncoderLike | undefined; let muxer: ReturnType<typeof makeMuxer> | undefined;
     try {
       callbacks.onStatusChange?.("preparing"); const canvas = document.createElement("canvas"); canvas.width = size.width; canvas.height = size.height; renderer = new WebGLRenderer(canvas); renderer.resize(size.width, size.height);
-      const target = new ArrayBufferTarget(); muxer = new Muxer({ target, fastStart: "in-memory", video: { codec: "avc", width: size.width, height: size.height, frameRate: fps } });
+      const target = new ArrayBufferTarget(); muxer = makeMuxer(target, size.width, size.height, fps);
       const Encoder = getEncoder(); const Frame = getFrameConstructor(); let encoderError: Error | undefined;
-      encoder = new Encoder({ output: (chunk, metadata) => { if (muxer) muxer.addVideoChunk(chunk as Parameters<Mp4Muxer["addVideoChunk"]>[0], metadata); }, error: (error) => { encoderError = error instanceof Error ? error : new Error(String(error)); } });
+      encoder = new Encoder({ output: (chunk, metadata) => { if (muxer) muxer.addVideoChunk(chunk as Parameters<ReturnType<typeof makeMuxer>["addVideoChunk"]>[0], metadata); }, error: (error) => { encoderError = error instanceof Error ? error : new Error(String(error)); } });
       const config: EncoderConfig = { codec: "avc1.42001E", width: size.width, height: size.height, bitrate: Math.max(100_000, options.bitrate ?? 8_000_000), framerate: fps, hardwareAcceleration: "prefer-hardware" }; if (Encoder.isConfigSupported) await Encoder.isConfigSupported(config); encoder.configure(config);
       callbacks.onStatusChange?.("rendering"); const clips: readonly TimelineClip[] = state.clips.map((clip) => ({ ...clip, transform: { ...clip.transform }, adjustments: { ...clip.adjustments } })); const frameDuration = Math.round(1_000_000 / fps);
       for (let frameIndex = 0; frameIndex < totalFrames; frameIndex += 1) {
