@@ -13,9 +13,9 @@ describe("WebVideoExporter", () => {
   it("reports an unsupported environment without mutating timeline state", async () => {
     const exporter = new WebVideoExporter(source());
     const previous = globalThis.MediaRecorder;
-    delete globalThis.MediaRecorder;
+    vi.stubGlobal("MediaRecorder", undefined);
     await expect(exporter.export()).rejects.toThrow();
-    globalThis.MediaRecorder = previous;
+    vi.stubGlobal("MediaRecorder", previous);
   });
 
   it("cancel() marks an active export as cancelled", () => {
