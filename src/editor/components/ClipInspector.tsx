@@ -1,0 +1,32 @@
+import { useMemo } from "react";
+import { useTimelineStore } from "../timeline/timeline-store";
+import type { TimelineClip } from "../types/andrew-core";
+
+const number = (value: string, fallback: number): number => { const n=Number(value); return Number.isFinite(n) ? n : fallback; };
+
+export default function ClipInspector(): JSX.Element {
+  const state=useTimelineStore();
+  const clip=useMemo(() => state.clips.find(c=>c.id===state.selectedClipId), [state.clips,state.selectedClipId]);
+  if (!clip) return <aside style={panel}><h2 style={heading}>Inspector</h2><p style={muted}>Selecciona un clip.</p></aside>;
+  const update=(patch: Partial<TimelineClip>): void => state.updateClip(clip.id,patch);
+  const transform=clip.transform;
+  const filters=clip.effects.filters;
+  return <aside style={panel}>
+    <h2 style={heading}>Inspector</h2>
+    <label style={label}>Nombre<input style={input} value={clip.name} onChange={e=>update({name:e.target.value})}/></label>
+    <section style={section}><strong>Tiempo</strong><div style={grid}><label>Inicio<input style={input} type="number" min="0" step="0.01" value={clip.start} onChange={e=>update({start:Math.max(0,number(e.target.value,clip.start))})}/></label><label>Duración<input style={input} type="number" min="0.01" step="0.01" value={clip.duration} onChange={e=>update({duration:Math.max(0.01,number(e.target.value,clip.duration))})}/></label></div><label style={label}>Fuente<input style={input} type="number" min="0" step="0.01" value={clip.sourceStart} onChange={e=>update({sourceStart:Math.max(0,number(e.target.value,clip.sourceStart))})}/></label><label style={label}>Velocidad<input style={input} type="number" min="0.01" step="0.05" value={clip.speed} onChange={e=>update({speed:Math.max(0.01,number(e.target.value,clip.speed))})}/></label></section>
+    <section style={section}><strong>Transformación</strong><div style={grid}><label>X<input style={input} type="number" step="1" value={transform.x} onChange={e=>update({transform:{...transform,x:number(e.target.value,transform.x)}})}/></label><label>Y<input style={input} type="number" step="1" value={transform.y} onChange={e=>update({transform:{...transform,y:number(e.target.value,transform.y)}})}/></label><label>Escala X<input style={input} type="number" step="0.01" min="0" value={transform.scaleX} onChange={e=>update({transform:{...transform,scaleX:Math.max(0,number(e.target.value,transform.scaleX))}})}/></label><label>Escala Y<input style={input} type="number" step="0.01" min="0" value={transform.scaleY} onChange={e=>update({transform:{...transform,scaleY:Math.max(0,number(e.target.value,transform.scaleY))}})}/></label></div><label style={label}>Rotación<input style={input} type="number" step="1" value={transform.rotation} onChange={e=>update({transform:{...transform,rotation:number(e.target.value,transform.rotation)}})}/></label></section>
+    <section style={section}><strong>Composición</strong><label style={label}>Opacidad<input type="range" min="0" max="1" step="0.01" value={clip.appearance.opacity} onChange={e=>update({appearance:{...clip.appearance,opacity:Number(e.target.value)}})}/></label><label style={label}>Volumen<input type="range" min="0" max="1" step="0.01" value={clip.volume} onChange={e=>update({volume:Number(e.target.value)})}/></label></section>
+    <section style={section}><strong>Filtros WebGL</strong>{(["brightness","contrast","saturation","grayscale","sepia","invert"] as const).map(key=><label style={label} key={key}>{key}<input style={input} type="number" step="0.01" value={filters[key]} onChange={e=>update({effects:{filters:{...filters,[key]:number(e.target.value,filters[key])}}})}/></label>)}<label style={label}>Hue<input style={input} type="number" step="1" value={filters.hue} onChange={e=>update({effects:{filters:{...filters,hue:number(e.target.value,filters.hue)}}})}/></label><label style={label}>Blur<input style={input} type="number" min="0" step="0.1" value={filters.blur} onChange={e=>update({effects:{filters:{...filters,blur:Math.max(0,number(e.target.value,filters.blur))}}})}/></label></section>
+    <button style={danger} onClick={()=>state.removeClip(clip.id)}>Eliminar clip</button>
+  </aside>;
+}
+
+const panel: React.CSSProperties={width:280,minWidth:240,padding:16,background:"#101116",color:"#eee",overflowY:"auto",boxSizing:"border-box"};
+const heading: React.CSSProperties={fontSize:16,margin:"0 0 16px"};
+const muted: React.CSSProperties={color:"#8b8d98",fontSize:13};
+const label: React.CSSProperties={display:"grid",gap:6,fontSize:12,color:"#aaa",marginTop:10};
+const input: React.CSSProperties={width:"100%",boxSizing:"border-box",background:"#191b22",border:"1px solid #30333d",borderRadius:6,color:"#eee",padding:"7px 8px"};
+const grid: React.CSSProperties={display:"grid",gridTemplateColumns:"1fr 1fr",gap:8};
+const section: React.CSSProperties={borderTop:"1px solid #292c35",paddingTop:12,marginTop:14};
+const danger: React.CSSProperties={width:"100%",marginTop:18,padding:9,border:0,borderRadius:6,background:"#8b2525",color:"#fff",cursor:"pointer"};
