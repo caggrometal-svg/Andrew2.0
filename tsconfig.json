@@ -28,7 +28,8 @@
       "@assistant/*": ["src/assistant/*"],
       "@ui/*": ["src/ui/*"],
       "@editor/*": ["src/editor/*"],
-      "@lib/*": ["src/lib/*"]
+      "@lib/*": ["src/lib/*"],
+      "@network/*": ["src/network/*"]
     },
     "types": ["vite/client"]
   },
