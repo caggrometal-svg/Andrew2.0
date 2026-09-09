@@ -10,15 +10,15 @@ const videoAsset = (overrides: Partial<ManagedAsset> = {}): ManagedAsset => ({
   mimeType: "video/mp4",
   size: 100,
   duration: 12,
-  source: new Blob(["video"] , { type: "video/mp4" }),
+  source: new Blob(["video"], { type: "video/mp4" }),
   ...overrides,
 });
 
 describe("media-timeline-binding", () => {
   beforeEach(() => useTimelineStore.getState().clear());
 
-  it("converts a File into a platform-neutral MediaAsset", () => {
-    const file = new File(["data"], "photo.jpg", { type: "image/jpeg" });
+  it("converts a File-shaped input into a platform-neutral MediaAsset", () => {
+    const file = { name: "photo.jpg", type: "image/jpeg", size: 4 } as File;
     expect(toMediaAsset(file)).toMatchObject({
       name: "photo.jpg",
       mimeType: "image/jpeg",
@@ -38,6 +38,7 @@ describe("media-timeline-binding", () => {
       duration: 12,
       trimStart: 0,
       trimEnd: 0,
+      zIndex: 2,
     });
     expect(clip.transform).toEqual({ x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0, anchorX: 0.5, anchorY: 0.5 });
     expect(clip.adjustments).toEqual({ opacity: 1, brightness: 1, contrast: 1, saturation: 1 });
