@@ -53,7 +53,7 @@ export class WebVideoExporter implements VideoExporter {
 
     const finished = new Promise<Blob>((resolve, reject) => {
       recorder.ondataavailable = (event) => event.data.size && chunks.push(event.data);
-      recorder.onerror = () => reject(recorder.error ?? new Error("MediaRecorder export failed"));
+      recorder.onerror = () => reject(new Error("MediaRecorder export failed"));
       recorder.onstop = () => resolve(new Blob(chunks, { type: mimeType }));
     });
 
@@ -80,7 +80,6 @@ export class WebVideoExporter implements VideoExporter {
         duration,
       } satisfies ExportProgress);
 
-      // Prevent monopolizing the UI thread on long exports.
       if ((frame & 3) === 3) await yieldToBrowser();
     }
 
