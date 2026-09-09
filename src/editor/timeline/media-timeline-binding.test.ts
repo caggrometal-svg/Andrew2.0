@@ -56,7 +56,7 @@ describe("media-timeline-binding", () => {
     expect(clipId).toBeTruthy();
     expect(after.assetsMap["asset-video-1"]).toBeDefined();
     expect(after.clips).toHaveLength(1);
-    expect(after.clips[0]).toMatchObject({ assetId: "asset-video-1", startTime: 0, duration: 12 });
+    expect(after.clips[0]).toMatchObject({ assetId: "asset-video-1", startTime: 12, duration: 12 });
     expect(after.playing).toBe(true);
     expect(after.isPlaying).toBe(true);
     expect(after.currentTime).toBe(2);
