@@ -1,22 +1,20 @@
-name: Release Android APK
+name: Android APK
 
 on:
   push:
+    branches:
+      - andrew-editor-v1
+  workflow_dispatch:
+  push:
     tags:
       - 'v*'
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Release tag to create when running manually'
-        required: false
-        default: ''
 
 permissions:
   contents: write
 
 jobs:
-  build-release-apk:
-    name: Build and publish APK
+  build-apk:
+    name: Build Android APK
     runs-on: ubuntu-latest
 
     steps:
@@ -38,7 +36,7 @@ jobs:
           java-version: '21'
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Verify protected timeline core
         shell: bash
@@ -59,7 +57,16 @@ jobs:
           test -s "$APK"
           echo "APK verified: $APK"
 
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Andrew2.0-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
