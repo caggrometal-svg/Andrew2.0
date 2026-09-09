@@ -30,12 +30,15 @@ describe("PlaybackPreviewSync", () => {
     vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => { const id=nextId++; callbacks.set(id,cb); return id; });
     vi.stubGlobal("cancelAnimationFrame", (id: number) => callbacks.delete(id));
     const renderer = new FakeRenderer(); const sync = new PlaybackPreviewSync(renderer);
+    useTimelineStore.getState().setDuration(10);
     useTimelineStore.getState().seek(0.25); useTimelineStore.getState().seek(0.5); useTimelineStore.getState().seek(0.75);
-    expect(renderer.time).toBe(0.75); expect(renderer.renders).toBe(0); expect(callbacks.size).toBe(1);
+    expect(useTimelineStore.getState().currentTime).toBe(0.75); expect(renderer.time).toBe(0.75); expect(renderer.renders).toBe(0); expect(callbacks.size).toBe(1);
 
     await new Promise<void>((resolve) => {
       queueMicrotask(() => {
-        [...callbacks.values()][0](16);
+        const callback = [...callbacks.values()][0];
+        expect(callback).toBeDefined();
+        callback(16);
         resolve();
       });
     });
