@@ -2,15 +2,15 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import WebGLRenderer from "../renderer/WebGLRenderer";
 import { assetManager } from "../managers/AssetManager";
 import { useTimelineStore } from "../timeline/timeline-store";
+import { bindMediaAssetToTimeline, importMediaAssetToTimeline, toMediaAsset } from "../timeline/media-timeline-binding";
 import TimelineUI from "./TimelineUI";
 import ClipInspector from "./ClipInspector";
 import { videoExporter } from "../export/VideoExporter";
-import type { MediaClip, TextClip } from "../types/andrew-core";
+import type { TextClip } from "../types/andrew-core";
 
 const dimensions = { "9:16": [360, 640], "16:9": [640, 360], "1:1": [520, 520] } as const;
 const transform = () => ({ x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0, anchorX: 0.5, anchorY: 0.5 });
 const adjustments = () => ({ opacity: 1, brightness: 1, contrast: 1, saturation: 1 });
-const mediaClip = (assetId: string, trackId: string, startTime: number, duration: number, zIndex: number): Omit<MediaClip, "id"> => ({ type: "media", assetId, trackId, startTime, duration: Math.max(0.1, duration), trimStart: 0, trimEnd: 0, transform: transform(), adjustments: adjustments(), zIndex });
 
 export default function EditorApp(): JSX.Element {
   const state = useTimelineStore();
@@ -47,10 +47,7 @@ export default function EditorApp(): JSX.Element {
   const addFiles = async (files: FileList | null): Promise<void> => {
     if (!files) return;
     for (const file of Array.from(files)) {
-      const { asset } = await assetManager.load(file); if (asset.type === "audio") continue;
-      const store = useTimelineStore.getState(); const track = store.tracks[0] ?? { id: store.addTrack(), name: "Pista 1", order: 0, muted: false, locked: false, visible: true }; const startTime = store.duration;
-      store.addClip(mediaClip(asset.id, track.id, startTime, asset.duration ?? 5, store.clips.length));
-      store.setCurrentTime(startTime);
+      await importMediaAssetToTimeline(toMediaAsset(file));
     }
   };
 
@@ -68,7 +65,7 @@ export default function EditorApp(): JSX.Element {
 
   return <main style={app}>
     <header style={header}><strong>ANDREW EDITOR</strong><input style={projectName} defaultValue="Nuevo proyecto"/><div style={spacer}/><button onClick={() => inputRef.current?.click()}>Importar</button><input ref={inputRef} hidden type="file" multiple accept="image/*,video/*,audio/*" onChange={(e) => void addFiles(e.target.files)}/><button onClick={addText}>Texto</button><button disabled={exporting} onClick={() => void exportVideo()}>{exporting ? `Exportando ${Math.round(progress)}%` : "Exportar"}</button></header>
-    <div style={body}><aside style={media}><h3>Medios</h3><button style={wide} onClick={() => inputRef.current?.click()}>+ Añadir medios</button>{Object.values(state.assetsMap).map((asset) => <button key={asset.id} style={assetButton} onClick={() => { const store = useTimelineStore.getState(); const track = store.tracks[0]; if (track && asset.type !== "audio") store.addClip(mediaClip(asset.id, track.id, store.duration, asset.duration ?? 5, store.clips.length)); }}><span>{asset.type.toUpperCase()}</span><small>{asset.name}</small></button>)}</aside>
+    <div style={body}><aside style={media}><h3>Medios</h3><button style={wide} onClick={() => inputRef.current?.click()}>+ Añadir medios</button>{Object.values(state.assetsMap).map((asset) => <button key={asset.id} style={assetButton} onClick={() => { bindMediaAssetToTimeline(asset); }}><span>{asset.type.toUpperCase()}</span><small>{asset.name}</small></button>)}</aside>
       <section style={workspace}><div style={preview}><canvas ref={canvasRef} width={dimensions[ratio][0]} height={dimensions[ratio][1]} style={{ maxWidth: "100%", maxHeight: "100%", aspectRatio: `${dimensions[ratio][0]}/${dimensions[ratio][1]}` }}/></div><div style={transport}><button onClick={() => state.togglePlay()}>{state.playing ? "Pausa" : "Reproducir"}</button><span>{state.currentTime.toFixed(2)} / {state.duration.toFixed(2)} s</span><select value={ratio} onChange={(e) => setRatio(e.target.value as keyof typeof dimensions)}><option value="9:16">9:16</option><option value="16:9">16:9</option><option value="1:1">1:1</option></select><label>FPS <input type="number" min="1" max="240" value={state.fps} onChange={(e) => state.setFPS(Number(e.target.value))}/></label></div><TimelineUI/></section>
       <ClipInspector />
     </div>
