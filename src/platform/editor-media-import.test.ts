@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ManagedAsset } from "../editor/types/andrew-core";
 import { useTimelineStore } from "../editor/timeline/timeline-store";
 
-const loadMock = vi.fn();
+const { loadMock } = vi.hoisted(() => ({ loadMock: vi.fn() }));
 
 vi.mock("../editor/managers/AssetManager", () => ({
   assetManager: {
