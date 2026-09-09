@@ -1,72 +1,146 @@
-import { describe, expect, it } from "vitest";
-import { createMockMediaPlatform } from "./__mocks__/media";
-import type { MediaPlatform } from "./media";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const createBytes = (value: string): ArrayBuffer =>
-  new TextEncoder().encode(value).buffer;
+const picker = {
+  checkPermissions: vi.fn(),
+  requestPermissions: vi.fn(),
+  pickVideos: vi.fn(),
+};
 
-describe("media platform contract", () => {
-  it("reports granted permissions in the default mock", async () => {
-    const platform = createMockMediaPlatform();
+const camera = {
+  getPhoto: vi.fn(),
+};
 
-    await expect(platform.requestVideoAccess()).resolves.toBe("granted");
-    await expect(platform.requestImageAccess()).resolves.toBe("granted");
+const filesystem = {
+  readFile: vi.fn(),
+};
+
+vi.mock("@capacitor/core", () => ({
+  Capacitor: {
+    isNativePlatform: () => true,
+  },
+}));
+
+vi.mock("@capacitor/camera", () => ({
+  Camera: camera,
+  CameraResultType: { Uri: "uri" },
+  CameraSource: { Photos: "photos" },
+}));
+
+vi.mock("@capacitor/filesystem", () => ({
+  Filesystem: filesystem,
+}));
+
+vi.mock("@capawesome/capacitor-file-picker", () => ({
+  FilePicker: picker,
+}));
+
+import { mediaPlatform } from "./media";
+
+describe("Capacitor media platform", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+
+    picker.checkPermissions.mockResolvedValue({
+      readExternalStorage: "granted",
+    });
+
+    picker.requestPermissions.mockResolvedValue({
+      readExternalStorage: "granted",
+    });
   });
 
-  it("selects a video with normalized metadata", async () => {
-    const platform = createMockMediaPlatform();
-    const asset = await platform.pickVideo();
+  it("checks and requests video access through the native file picker", async () => {
+    await expect(mediaPlatform.requestVideoAccess()).resolves.toBe("granted");
+    expect(picker.checkPermissions).toHaveBeenCalledOnce();
+    expect(picker.requestPermissions).not.toHaveBeenCalled();
+  });
+
+  it("selects and normalizes a native video", async () => {
+    picker.pickVideos.mockResolvedValue({
+      files: [{
+        name: "video.mp4",
+        mimeType: "video/mp4",
+        size: 2048,
+        path: "content://media/video/1",
+        duration: 17.5,
+        width: 1920,
+        height: 1080,
+      }],
+    });
+
+    const asset = await mediaPlatform.pickVideo();
 
     expect(asset).toMatchObject({
-      kind: "video",
+      name: "video.mp4",
       mimeType: "video/mp4",
-      name: "mock-video.mp4",
-      duration: 12,
+      kind: "video",
+      size: 2048,
+      uri: "content://media/video/1",
+      duration: 17.5,
       width: 1920,
       height: 1080,
     });
-    expect(asset?.uri).toBe("mock://mock-video.mp4");
+
+    expect(picker.pickVideos).toHaveBeenCalledWith({
+      limit: 1,
+      readData: false,
+    });
   });
 
-  it("selects an image with normalized metadata", async () => {
-    const platform = createMockMediaPlatform();
-    const asset = await platform.pickImage();
+  it("selects and normalizes a native image through Camera", async () => {
+    camera.getPhoto.mockResolvedValue({
+      path: "file:///photos/image.jpg",
+      webPath: "http://localhost/_capacitor_file_/photos/image.jpg",
+      format: "jpeg",
+    });
+
+    const asset = await mediaPlatform.pickImage();
 
     expect(asset).toMatchObject({
-      kind: "image",
       mimeType: "image/jpeg",
-      name: "mock-image.jpg",
-      width: 1920,
-      height: 1080,
+      kind: "image",
+      uri: "file:///photos/image.jpg",
+    });
+
+    expect(camera.getPhoto).toHaveBeenCalledWith({
+      source: "photos",
+      resultType: "uri",
+      allowEditing: false,
+      quality: 100,
     });
   });
 
-  it("reads the selected media as an ArrayBuffer", async () => {
-    const platform: MediaPlatform = createMockMediaPlatform({
-      readFile: async () => createBytes("hello-media"),
-    });
+  it("reads a native file through Filesystem and decodes base64", async () => {
+    const payload = btoa("native-media");
+    filesystem.readFile.mockResolvedValue({ data: payload });
 
-    const bytes = await platform.readFile("mock://media");
-    expect(new TextDecoder().decode(bytes)).toBe("hello-media");
+    const result = await mediaPlatform.readFile("file:///media/video.mp4");
+
+    expect(filesystem.readFile).toHaveBeenCalledWith({
+      path: "/media/video.mp4",
+    });
+    expect(new TextDecoder().decode(result)).toBe("native-media");
   });
 
-  it("supports permission denial without coupling tests to Android", async () => {
-    const platform = createMockMediaPlatform({
-      requestVideoAccess: async () => "denied",
-      pickVideo: async () => null,
-    });
+  it("returns null when the native picker is cancelled", async () => {
+    picker.pickVideos.mockResolvedValue({ files: [] });
+    camera.getPhoto.mockRejectedValue(new Error("cancelled"));
 
-    await expect(platform.requestVideoAccess()).resolves.toBe("denied");
-    await expect(platform.pickVideo()).resolves.toBeNull();
+    await expect(mediaPlatform.pickVideo()).resolves.toBeNull();
+    await expect(mediaPlatform.pickImage()).resolves.toBeNull();
   });
 
-  it("supports cancellation as a null result", async () => {
-    const platform = createMockMediaPlatform({
-      pickVideo: async () => null,
-      pickImage: async () => null,
+  it("returns denied when native media permission is denied", async () => {
+    picker.checkPermissions.mockResolvedValue({
+      readExternalStorage: "denied",
+    });
+    picker.requestPermissions.mockResolvedValue({
+      readExternalStorage: "denied",
     });
 
-    await expect(platform.pickVideo()).resolves.toBeNull();
-    await expect(platform.pickImage()).resolves.toBeNull();
+    await expect(mediaPlatform.requestVideoAccess()).resolves.toBe("denied");
+    expect(picker.requestPermissions).toHaveBeenCalledWith({
+      permissions: ["readExternalStorage"],
+    });
   });
 });
