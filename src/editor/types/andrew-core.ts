@@ -10,7 +10,7 @@ export interface Adjustments { opacity: number; brightness: number; contrast: nu
 export interface FontConfig { family: string; size: number; weight: number | string; style: "normal" | "italic"; color: string; align: "left" | "center" | "right"; lineHeight: number }
 
 export interface MediaClip { id: UUID; type: "media"; assetId: UUID; trackId: UUID; startTime: Seconds; duration: Seconds; trimStart: Seconds; trimEnd: Seconds; transform: Transform2D; adjustments: Adjustments; zIndex: number }
-export interface TextClip { id: UUID; type: "text"; trackId: UUID; textContent: string; fontConfig: FontConfig; startTime: Seconds; duration: Seconds; trimStart?: never; trimEnd?: never; transform: Transform2D; adjustments: Adjustments; zIndex: number }
+export interface TextClip { id: UUID; type: "text"; trackId: UUID; textContent: string; fontConfig: FontConfig; startTime: Seconds; duration: Seconds; transform: Transform2D; adjustments: Adjustments; zIndex: number }
 export type TimelineClip = MediaClip | TextClip;
 export type TimelineClipPatch = Partial<MediaClip> | Partial<TextClip>;
 
