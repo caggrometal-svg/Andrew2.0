@@ -13,10 +13,8 @@ describe("WebVideoExporter", () => {
   it("reports an unsupported environment without mutating timeline state", async () => {
     const exporter = new WebVideoExporter(source());
     const previous = globalThis.MediaRecorder;
-    // @ts-expect-error test environment intentionally removes browser API
     delete globalThis.MediaRecorder;
     await expect(exporter.export()).rejects.toThrow();
-    // @ts-expect-error restore test global
     globalThis.MediaRecorder = previous;
   });
 
