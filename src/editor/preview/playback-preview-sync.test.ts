@@ -26,13 +26,22 @@ describe("PlaybackPreviewSync", () => {
     expect(renderer.time).toBe(0); expect(renderer.playing).toBe(false); sync.destroy();
   });
 
-  it("coalesces multiple timeline updates into one animation frame", () => {
+  it("coalesces multiple timeline updates into one animation frame", async () => {
     vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => { const id=nextId++; callbacks.set(id,cb); return id; });
     vi.stubGlobal("cancelAnimationFrame", (id: number) => callbacks.delete(id));
     const renderer = new FakeRenderer(); const sync = new PlaybackPreviewSync(renderer);
     useTimelineStore.getState().seek(0.25); useTimelineStore.getState().seek(0.5); useTimelineStore.getState().seek(0.75);
     expect(renderer.time).toBe(0.75); expect(renderer.renders).toBe(0); expect(callbacks.size).toBe(1);
-    [...callbacks.values()][0](16); expect(renderer.renders).toBe(1); sync.destroy();
+
+    await new Promise<void>((resolve) => {
+      queueMicrotask(() => {
+        [...callbacks.values()][0](16);
+        resolve();
+      });
+    });
+
+    expect(renderer.time).toBe(0.75);
+    expect(renderer.renders).toBe(1); sync.destroy();
   });
 
   it("mirrors play/pause state without changing the store contract", () => {
