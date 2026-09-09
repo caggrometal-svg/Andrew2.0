@@ -194,3 +194,5 @@ Private - Andrew 2.0 Project
 **Current Stage**: ETAPA 0 (Setup in progress)
 **Foundation Ready**: Pending verification of npm install, typecheck, and build
 **Ready for ETAPA 1**: After successful verification
+
+<!-- Android APK CI trigger: 2026-09-09 -->
