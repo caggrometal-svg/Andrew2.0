@@ -15,7 +15,7 @@ export type TimelineClip = MediaClip | TextClip;
 export type TimelineClipPatch = Partial<MediaClip> | Partial<TextClip>;
 
 export interface TimelineTrack { id: UUID; name: string; order: number; muted: boolean; locked: boolean; visible: boolean }
-export interface TimelineState { tracks: TimelineTrack[]; clips: TimelineClip[]; selectedClipId?: UUID; selectedTrackId?: UUID; currentTime: Seconds; duration: Seconds; fps: number; playing: boolean; loop: boolean; zoom: number }
+export interface TimelineState { tracks: TimelineTrack[]; clips: TimelineClip[]; selectedClipId: UUID | null; selectedTrackId: UUID | null; currentTime: Seconds; duration: Seconds; fps: number; playing: boolean; loop: boolean; zoom: number }
 export type SerializableTimelineState = TimelineState;
 
 export interface AssetMetadata { id: UUID; name: string; type: AssetType; mimeType: string; size: number; width?: number; height?: number; duration?: Seconds; url?: string }
@@ -45,8 +45,8 @@ export interface TimelineStoreActions {
   setPlaying(playing: boolean): void;
   setLoop(loop: boolean): void;
   setZoom(zoom: number): void;
-  selectClip(id?: UUID): void;
-  selectTrack(id?: UUID): void;
+  selectClip(id?: UUID | null): void;
+  selectTrack(id?: UUID | null): void;
   clear(): void;
   load(state: SerializableTimelineState): void;
   setAsset(asset: ManagedAsset): void;
