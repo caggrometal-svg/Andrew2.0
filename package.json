@@ -10,8 +10,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "mp4-muxer": "^5.2.2",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
