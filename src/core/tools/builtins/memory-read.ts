@@ -14,7 +14,7 @@ const isMemoryReadArgs = (value: unknown): value is MemoryReadArgs => {
   const query = value.query;
   const limit = value.limit;
   if (query !== undefined && typeof query !== 'string') return false;
-  if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 100)) return false;
+  if (limit !== undefined && (typeof limit !== 'number' || !Number.isInteger(limit) || limit < 1 || limit > 100)) return false;
   return true;
 };
 
