@@ -1,0 +1,36 @@
+name: Phase 5 Agent Loop Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - iac33-phase5-agent-loop
+  pull_request:
+    branches:
+      - iac33-integration-next
+
+jobs:
+  phase5-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm install
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build
+        run: npm run build
+      - name: Phase 5 Agent Loop
+        run: npx vitest run tests/phase5-agent-loop.test.ts
+      - name: Phase 2 regression
+        run: npm run test:memory
+      - name: Phase 3 regression
+        run: npm run test:learning
+      - name: Phase 4 regression
+        run: npm run test:phase4
+      - name: Full regression
+        run: npm test
