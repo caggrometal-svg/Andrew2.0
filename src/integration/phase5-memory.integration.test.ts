@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { deleteMemory, getMemories, saveMemory, updateMemory } from '../core/memory';
 import { LocalStorageProvider } from '../storage/storage-provider';
 
-const granted = [{ capability: 'memory.write', decision: 'allow' as const }];
+const granted = [{
+  permission: 'memory.write' as const,
+  granted: true,
+  reason: 'Phase 5 integration test',
+}];
 
 describe('Phase 5 persistent memory gate', () => {
   it('persists a memory across independent reads through the same storage provider', () => {
