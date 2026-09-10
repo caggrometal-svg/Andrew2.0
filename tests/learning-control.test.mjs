@@ -1,12 +1,11 @@
 import { describe, expect, it, beforeEach, afterAll } from 'vitest';
-import { extractCandidates } from '../server/learning/learning-engine.mjs';
+import { extractCandidates, processLearningObservation } from '../server/learning/learning-engine.mjs';
 import {
   initializeLearningStore,
   recordObservation,
   listAcceptedPatterns,
   closeLearningStore,
 } from '../server/learning/learning-store.mjs';
-import { processLearningObservation } from '../server/learning/learning-engine.mjs';
 
 const dbAvailable = Boolean(process.env.DATABASE_URL?.trim());
 
@@ -38,7 +37,7 @@ describe.skipIf(!dbAvailable)('controlled learning persistence gate', () => {
     await pool.end();
   });
 
-  it('requires two distinct conversations before accepting a pattern', async () => {
+  it('requires two distinct conversations and survives a pool restart', async () => {
     await recordObservation({ userId, conversationId: conversationA, userText: 'Prefiero respuestas breves.', assistantText: 'Entendido.' });
     let result = await processLearningObservation({ userId, userText: 'Prefiero respuestas breves.' });
     expect(result[0].status).toBe('candidate');
@@ -47,9 +46,12 @@ describe.skipIf(!dbAvailable)('controlled learning persistence gate', () => {
     result = await processLearningObservation({ userId, userText: 'Prefiero respuestas breves.' });
     expect(result[0].status).toBe('accepted');
 
+    await closeLearningStore();
+    await initializeLearningStore();
     const accepted = await listAcceptedPatterns(userId);
     expect(accepted).toHaveLength(1);
     expect(accepted[0].statement).toBe('respuestas breves');
+    expect(Number(accepted[0].confidence)).toBeGreaterThanOrEqual(0.8);
   });
 
   afterAll(async () => {
