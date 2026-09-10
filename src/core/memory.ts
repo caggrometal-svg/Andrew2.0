@@ -20,11 +20,12 @@ export function saveMemory(text:string,tags:string[]=[],permissions?:PermissionS
 
 export function updateMemory(id:string,text:string,tags?:string[],permissions?:PermissionState[],storage:StorageProvider = defaultStorage):MemoryItem{
   requirePermission('memory.write',permissions);
-  const now=new Date().toISOString();
   const current=getMemories(storage);
   const existing=current.find((item)=>item.id===id);
   if(!existing)throw new Error(`Memory not found: ${id}`);
-  const updated:MemoryItem={...existing,text,tags:tags??existing.tags,updatedAt:now};
+  const createdAtMs=Date.parse(existing.createdAt);
+  const nowMs=Math.max(Date.now(),Number.isNaN(createdAtMs)?Date.now():createdAtMs+1);
+  const updated:MemoryItem={...existing,text,tags:tags??existing.tags,updatedAt:new Date(nowMs).toISOString()};
   storage.set(KEY,current.map((item)=>item.id===id?updated:item));
   return updated;
 }
