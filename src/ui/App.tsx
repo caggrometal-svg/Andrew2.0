@@ -5,6 +5,7 @@ import { defaultCapabilities } from '@assistant/autonomy';
 import { createC33Brief } from '@assistant/expedienteC33';
 import { getRecentEarthquakes } from '@network/publicWeb';
 import { sendAndrewMessage, uploadVideoInChunks, type AndrewAttachment } from '@network/andrewBackend';
+import VideoGenerationPanel from './VideoGenerationPanel';
 
 const demoSignals: Signal[] = [
   { name: 'Actividad reciente', value: 0.62, weight: 1.2 },
@@ -177,6 +178,13 @@ export default function App() {
         <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}><button style={{ ...styles.button, minWidth: 48, fontSize: 20 }} onClick={() => fileInputRef.current?.click()} disabled={chatBusy} title="Adjuntar imagen o video" aria-label="Adjuntar imagen o video">+</button><input ref={fileInputRef} type="file" accept="image/*,video/*" onChange={event => void handleFile(event)} hidden /><input value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void sendChat(); }} placeholder="Escribe una instrucción para Andrew…" disabled={chatBusy} style={{ flex: 1, minWidth: 0, padding: '12px 14px', color: '#edf3f8', background: '#0a1018', border: '1px solid #26394d', borderRadius: 12, outline: 'none', fontSize: 16 }} /><button onClick={() => void sendChat()} disabled={chatBusy || (!chatInput.trim() && !attachment)} style={{ ...styles.button, background: chatBusy ? '#15202b' : '#214c72', minWidth: 92 }}>{chatBusy ? 'Procesando' : 'Enviar'}</button></div>
         <div style={{ marginTop: 10, fontSize: 12, ...styles.muted }}>{status} · La clave de OpenAI permanece en el backend.</div>
       </section>
+
+      <VideoGenerationPanel
+        conversationId={conversationId}
+        referenceImageDataUrl={attachment?.type === 'image' ? attachment.dataUrl : undefined}
+        contextText={chatMessages.length ? `Crea un video basado en esta conversación de Andrew 2.0: ${chatMessages.slice(-4).map(item => `${item.role}: ${item.text}`).join(' ')}` : undefined}
+        onStatus={setStatus}
+      />
 
       <section style={{ display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))' }}><article style={{ ...styles.card, padding: 18 }}><h2>Red mundial pública</h2><p style={styles.muted}>Acceso web público: <b>ACTIVO</b></p><p style={styles.muted}>Datos sísmicos públicos: <b>ACTIVOS</b></p><button style={styles.button} onClick={() => void updateNetwork()}>Actualizar datos sísmicos</button>{quakeCount !== null && <p>Eventos recibidos: {quakeCount}</p>}</article><article style={{ ...styles.card, padding: 18 }}><h2>Pronóstico</h2><button style={styles.button} onClick={() => setDomain('earthquake')}>Riesgo sísmico</button>{' '}<button style={styles.button} onClick={() => setDomain('social')}>Eventos sociales</button><p>Horizonte: {result.horizon} · Confianza: {result.confidence}</p><ol>{result.scenarios.map(s => <li key={s.label}>{s.label}: <strong>{Math.round(s.probability * 100)}%</strong></li>)}</ol><small style={styles.muted}>{result.warning}</small></article><article style={{ ...styles.card, padding: 18 }}><h2>Autonomía</h2><p style={styles.muted}>Nivel: <b>ASSISTED</b></p><ul>{defaultCapabilities.map(c => <li key={c.id}>{c.name}</li>)}</ul></article><article style={{ ...styles.card, padding: 18 }}><h2>Pensamiento crítico</h2><p>Confianza global: <strong>{critical.overallConfidence}</strong></p><p style={styles.muted}>Hechos: {critical.facts.length} · Contradicciones: {critical.contradictions.length} · Hipótesis: {critical.hypotheses.length}</p></article></section>
 
