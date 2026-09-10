@@ -1,0 +1,53 @@
+name: Phase 3 Controlled Learning Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - iac33-learning-v1
+      - iac33-integration-next
+
+jobs:
+  phase3-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: andrew2_learning
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d andrew2_learning"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/andrew2_learning
+      DATABASE_SSL: disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm install
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build
+        run: npm run build
+      - name: Phase 2 persistent memory gate
+        run: npm run test:memory
+      - name: Phase 3 controlled learning gate
+        run: npm run test:learning
+      - name: Full regression
+        run: npm test
+      - name: PHASE 3 GREEN GATE
+        run: |
+          set -euo pipefail
+          echo 'PHASE_1_REGRESSION=GREEN'
+          echo 'PHASE_2_REGRESSION=GREEN'
+          echo 'PHASE_3_CONTROLLED_LEARNING=GREEN'
