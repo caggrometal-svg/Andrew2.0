@@ -15,6 +15,9 @@ jobs:
       ALLOWED_ORIGIN: https://proyecto-andrew-loca-ev02.bolt.host
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Health check
         shell: bash
         run: |
@@ -23,7 +26,9 @@ jobs:
           echo "$body" | jq .
           test "$(echo "$body" | jq -r '.ok')" = "true"
           test "$(echo "$body" | jq -r '.status')" = "healthy"
-          test "$(echo "$body" | jq -r '.checks.openai.configured')" = "true"
+          test "$(echo "$body" | jq -r '.checks.openaiApiKeyConfigured')" = "true"
+          test "$(echo "$body" | jq -r '.checks.server')" = "ok"
+          test "$(echo "$body" | jq -r '.checks.mediaRuntime')" = "ok"
 
       - name: Production chat smoke test
         shell: bash
@@ -75,11 +80,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -f package.json
           npm install
           npm run typecheck
           npm run build
           npm ls --depth=0
+          node --check server/server.mjs
+          node --check server/config.mjs
+          node --check server/openai.mjs
+          node --check server/routes/chat.mjs
+          node --check server/routes/telemetry.mjs
 
       - name: Dependency audit
         shell: bash
