@@ -1,5 +1,7 @@
 import { createResponse } from '../openai.mjs';
 
+const MAX_IMAGE_DATA_URL = 7_000_000;
+
 const cleanMemory = (value) => Array.isArray(value)
   ? value.filter((item) => typeof item === 'string').map((item) => item.slice(0, 2000)).slice(0, 20)
   : [];
@@ -8,18 +10,25 @@ const cleanAttachment = (value) => {
   if (!value || typeof value !== 'object') return undefined;
   if (value.type !== 'image' && value.type !== 'video') return undefined;
   if (typeof value.name !== 'string' || typeof value.mimeType !== 'string') return undefined;
-  if (value.type === 'image' && typeof value.dataUrl !== 'string') return undefined;
-  if (typeof value.dataUrl === 'string' && value.dataUrl.length > 8_000_000) throw new Error('La imagen adjunta supera el límite permitido.');
+  if (value.type === 'image' && (typeof value.dataUrl !== 'string' || value.dataUrl.length > MAX_IMAGE_DATA_URL)) {
+    throw new Error('La imagen adjunta supera el límite permitido.');
+  }
+  if (value.type === 'video' && (typeof value.uploadId !== 'string' || value.uploadId.length > 80)) {
+    throw new Error('El video no tiene una carga temporal válida.');
+  }
   return {
     type: value.type,
     name: value.name.slice(0, 200),
     mimeType: value.mimeType.slice(0, 100),
     ...(typeof value.dataUrl === 'string' ? { dataUrl: value.dataUrl } : {}),
+    ...(typeof value.uploadId === 'string' ? { uploadId: value.uploadId } : {}),
+    ...(Number.isInteger(value.size) ? { size: value.size } : {}),
   };
 };
 
 export async function registerChatRoutes(app) {
   app.post('/api/chat', {
+    bodyLimit: 8 * 1024 * 1024,
     schema: {
       body: {
         type: 'object',
@@ -36,7 +45,9 @@ export async function registerChatRoutes(app) {
               type: { type: 'string', enum: ['image', 'video'] },
               name: { type: 'string', maxLength: 200 },
               mimeType: { type: 'string', maxLength: 100 },
-              dataUrl: { type: 'string', maxLength: 8000000 },
+              dataUrl: { type: 'string', maxLength: 7000000 },
+              uploadId: { type: 'string', maxLength: 80 },
+              size: { type: 'integer', minimum: 1 },
             },
           },
         },
@@ -57,10 +68,7 @@ export async function registerChatRoutes(app) {
         reply: result.text,
         responseId: result.responseId,
         model: result.model,
-        learning: {
-          eligible: true,
-          source: attachment ? `assistant-response-${attachment.type}` : 'assistant-response',
-        },
+        learning: { eligible: true, source: attachment ? `assistant-response-${attachment.type}` : 'assistant-response' },
       });
     } catch (error) {
       request.log.error(error);
