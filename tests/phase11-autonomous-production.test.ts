@@ -1,0 +1,32 @@
+import { describe, expect, it } from 'vitest';
+import { assertCapability, canUseCapability } from '../server/runtime/capability-gate';
+import { closeAgentStateStore, loadAgentState, saveAgentState } from '../server/runtime/agent-state-store.mjs';
+
+describe('Phase 11 autonomous production runtime', () => {
+  it('denies capabilities that are not explicitly allowed', () => {
+    expect(canUseCapability('system.status', [], false)).toBe(false);
+    expect(canUseCapability('system.status', ['system.status'], false)).toBe(true);
+  });
+
+  it('requires explicit authorization for critical execution', () => {
+    expect(() => assertCapability({ capability: 'agent.execute', authorized: true })).toThrow('CAPABILITY_CRITICAL_AUTH_REQUIRED');
+    expect(() => assertCapability({ capability: 'agent.execute', authorized: true, critical: true })).not.toThrow();
+    expect(() => assertCapability({ capability: 'system.status', authorized: false })).toThrow('CAPABILITY_DENIED');
+  });
+
+  it('keeps runtime capabilities finite and explicit', () => {
+    const allowed = ['memory.read', 'memory.write', 'system.status', 'system.diagnostics', 'media.inspect', 'media.process', 'agent.plan', 'agent.execute', 'agent.verify'] as const;
+    expect(allowed).toHaveLength(9);
+    expect(canUseCapability('agent.execute', allowed, false)).toBe(false);
+    expect(canUseCapability('agent.execute', allowed, true)).toBe(true);
+  });
+
+  it('persists and recovers interrupted agent state through PostgreSQL', async () => {
+    const runId = `phase11-${Date.now()}`;
+    const state = { runId, userId: 'phase11-user', conversationId: 'phase11-session', requestId: runId, input: 'resume', messages: [], phase: 'executing', iteration: 2, maxIterations: 8 } as const;
+    await saveAgentState(state);
+    const recovered = await loadAgentState(runId);
+    expect(recovered).toMatchObject({ runId, phase: 'executing', iteration: 2 });
+    await closeAgentStateStore();
+  });
+});
