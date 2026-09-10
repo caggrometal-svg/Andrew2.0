@@ -5,6 +5,7 @@ import { accessSync, constants, statSync } from 'node:fs';
 import { config } from './config.mjs';
 import { ffmpegPath, ffprobePath } from './media/ffmpeg-runtime.mjs';
 import { registerChatRoutes } from './routes/chat.mjs';
+import { registerTelemetryRoutes } from './routes/telemetry.mjs';
 import { registerVideoRoutes } from './media/video.mjs';
 import { registerVideoGenerationRoutes } from './routes/video-generation.mjs';
 
@@ -36,6 +37,30 @@ await app.register(rateLimit, {
     error: 'RATE_LIMITED',
     message: `Demasiadas solicitudes. Intenta nuevamente en ${Math.ceil(context.ttl / 1000)} segundos.`,
   }),
+});
+
+const chatRateLimit = app.createRateLimit({ max: 20, timeWindow: '1 minute' });
+const telemetryRateLimit = app.createRateLimit({ max: 60, timeWindow: '1 minute' });
+
+app.addHook('onRequest', async (request, reply) => {
+  if (request.method !== 'POST') return;
+
+  const limiter = request.url === '/api/chat'
+    ? chatRateLimit
+    : request.url === '/api/telemetry'
+      ? telemetryRateLimit
+      : undefined;
+
+  if (!limiter) return;
+
+  const result = await limiter(request);
+  if (!result.isExceeded) return;
+
+  return reply.code(429).send({
+    ok: false,
+    error: 'RATE_LIMITED',
+    message: `Demasiadas solicitudes. Intenta nuevamente en ${Math.ceil(result.ttl / 1000)} segundos.`,
+  });
 });
 
 const inspectBinary = (binaryPath) => {
@@ -88,6 +113,7 @@ app.get('/health', async () => {
 });
 
 await registerChatRoutes(app);
+await registerTelemetryRoutes(app);
 await registerVideoRoutes(app);
 await registerVideoGenerationRoutes(app);
 
