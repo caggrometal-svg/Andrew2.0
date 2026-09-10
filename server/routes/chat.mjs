@@ -9,10 +9,11 @@ export async function registerChatRoutes(app) {
     schema: {
       body: {
         type: 'object',
-        required: ['message'],
+        required: ['message', 'conversationId'],
         additionalProperties: false,
         properties: {
           message: { type: 'string', minLength: 1, maxLength: 12000 },
+          conversationId: { type: 'string', minLength: 1, maxLength: 128 },
           memory: { type: 'array', maxItems: 20, items: { type: 'string', maxLength: 2000 } },
         },
       },
@@ -26,6 +27,7 @@ export async function registerChatRoutes(app) {
 
       return reply.send({
         ok: true,
+        conversationId: request.body.conversationId,
         reply: result.text,
         responseId: result.responseId,
         model: result.model,
