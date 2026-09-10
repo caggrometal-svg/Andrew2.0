@@ -1,4 +1,5 @@
 import { createResponse } from '../openai.mjs';
+import { getVideoFrames, getVideoUpload } from '../media/video.mjs';
 
 const MAX_IMAGE_DATA_URL = 7_000_000;
 
@@ -56,10 +57,23 @@ export async function registerChatRoutes(app) {
   }, async (request, reply) => {
     try {
       const attachment = cleanAttachment(request.body.attachment);
+      let multimodalAttachment = attachment;
+
+      if (attachment?.type === 'video') {
+        const upload = await getVideoUpload(attachment.uploadId);
+        if (!upload?.complete) throw new Error('El video todavía no está completo o expiró.');
+        const frames = await getVideoFrames(attachment.uploadId);
+        multimodalAttachment = {
+          ...attachment,
+          duration: upload.duration,
+          frames: frames.map(({ index, timestamp, dataUrl }) => ({ index, timestamp, dataUrl })),
+        };
+      }
+
       const result = await createResponse({
         message: request.body.message.trim(),
         memory: cleanMemory(request.body.memory),
-        attachment,
+        attachment: multimodalAttachment,
       });
 
       return reply.send({
