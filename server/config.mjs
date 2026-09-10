@@ -10,7 +10,7 @@ export const config = {
   openaiApiKey: required('OPENAI_API_KEY'),
   openaiModel: process.env.OPENAI_MODEL || 'gpt-5.6-luna',
   corsOrigins: (process.env.CORS_ORIGINS || '').split(',').map((v) => v.trim()).filter(Boolean),
-  maxBodyBytes: Number(process.env.MAX_BODY_BYTES || 65536),
+  maxBodyBytes: Number(process.env.MAX_BODY_BYTES || 8 * 1024 * 1024),
   rateLimitWindowMs: Number(process.env.RATE_LIMIT_WINDOW_MS || 60000),
-  rateLimitMax: Number(process.env.RATE_LIMIT_MAX || 30),
+  rateLimitMax: Number(process.env.RATE_LIMIT_MAX || 180),
 };
