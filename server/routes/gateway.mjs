@@ -94,11 +94,7 @@ export async function registerGatewayRoutes(app) {
       const userMessage = await appendSessionMessage(userId, sessionId, 'user', message);
       if (!userMessage) return reply.code(404).send({ ok: false, error: 'SESSION_NOT_FOUND' });
 
-      const result = await createResponse({
-        message,
-        memory: [],
-        history: [...(history || []), { role: 'user', content: message }],
-      });
+      const result = await createResponse({ message, memory: [], history: history || [] });
       const assistantMessage = await appendSessionMessage(userId, sessionId, 'assistant', result.text);
       await setSessionResponseId(userId, sessionId, result.responseId);
       return reply.send({ ok: true, sessionId, message: assistantMessage, responseId: result.responseId, model: result.model });
