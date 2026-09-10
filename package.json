@@ -18,6 +18,7 @@
     "test:phase7": "vitest run tests/phase7-hardening.test.mjs",
     "test:phase8": "vitest run tests/phase8-bridge.test.ts",
     "test:phase9": "vitest run tests/phase9-autonomous.test.ts",
+    "test:phase10": "vitest run tests/phase10-system-runtime.test.ts",
     "backend": "node server/server.mjs",
     "backend:dev": "node --watch server/server.mjs"
   },
