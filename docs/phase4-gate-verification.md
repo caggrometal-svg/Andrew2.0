@@ -10,3 +10,5 @@ Required runner evidence:
 4. Production build passes.
 
 The branch contains no production-code change beyond the Phase 4 gate infrastructure already committed to `main`.
+
+The existing CI workflow is configured as the Phase 4 Release Gate and is the authoritative runner for this verification.
