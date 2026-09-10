@@ -26,6 +26,7 @@ export interface OpenAIToolDeclaration {
   readonly strict: true;
 }
 
+export type ToolDefinitionMetadata = Pick<ToolDefinition<unknown, unknown>, 'name' | 'description'>;
 export type ToolSchemaProvider = (toolName: string) => JsonSchema | undefined;
 
 const SAFE_NAME = /^[A-Za-z0-9_.-]{1,64}$/;
@@ -55,11 +56,11 @@ const assertSafeSchema = (schema: JsonSchema): void => {
 export class LlmToolAdapter {
   constructor(private readonly schemaProvider: ToolSchemaProvider) {}
 
-  toOpenAITools(tools: ReadonlyArray<ToolDefinition<unknown>>): ReadonlyArray<OpenAIToolDeclaration> {
+  toOpenAITools(tools: ReadonlyArray<ToolDefinitionMetadata>): ReadonlyArray<OpenAIToolDeclaration> {
     return tools.map((tool) => this.toOpenAITool(tool));
   }
 
-  toOpenAITool(tool: ToolDefinition<unknown>): OpenAIToolDeclaration {
+  toOpenAITool(tool: ToolDefinitionMetadata): OpenAIToolDeclaration {
     if (!SAFE_NAME.test(tool.name)) throw new Error(`unsafe_tool_name:${tool.name}`);
     if (!SAFE_DESCRIPTION.test(tool.description) || tool.description.length > 4096) throw new Error(`unsafe_tool_description:${tool.name}`);
 
@@ -67,13 +68,7 @@ export class LlmToolAdapter {
     if (!parameters) throw new Error(`missing_tool_schema:${tool.name}`);
     assertSafeSchema(parameters);
 
-    return {
-      type: 'function',
-      name: tool.name,
-      description: tool.description,
-      parameters,
-      strict: true,
-    };
+    return { type: 'function', name: tool.name, description: tool.description, parameters, strict: true };
   }
 }
 
