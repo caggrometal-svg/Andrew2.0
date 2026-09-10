@@ -1,11 +1,20 @@
 import { createResponse } from '../openai.mjs';
 import { getVideoFrames, getVideoUpload } from '../media/video.mjs';
+import { processLearningObservation } from '../learning/learning-engine.mjs';
+import { recordObservation } from '../learning/learning-store.mjs';
 
 const MAX_IMAGE_DATA_URL = 7_000_000;
+const USER_ID = /^[A-Za-z0-9._:-]{1,128}$/;
 
 const cleanMemory = (value) => Array.isArray(value)
   ? value.filter((item) => typeof item === 'string').map((item) => item.slice(0, 2000)).slice(0, 20)
   : [];
+
+const resolveUserId = (request) => {
+  const header = request.headers['x-andrew-user-id'];
+  if (typeof header === 'string' && USER_ID.test(header)) return header;
+  return `conversation:${request.body.conversationId}`;
+};
 
 const cleanAttachment = (value) => {
   if (!value || typeof value !== 'object') return undefined;
@@ -26,6 +35,22 @@ const cleanAttachment = (value) => {
     ...(Number.isInteger(value.size) ? { size: value.size } : {}),
   };
 };
+
+async function learnFromExchange(request, userText, assistantText) {
+  try {
+    const userId = resolveUserId(request);
+    await recordObservation({
+      userId,
+      conversationId: request.body.conversationId,
+      userText,
+      assistantText,
+    });
+    return await processLearningObservation({ userId, userText });
+  } catch (error) {
+    request.log.error({ error }, 'controlled learning observation failed');
+    return [];
+  }
+}
 
 export async function registerChatRoutes(app) {
   app.post('/api/chat', {
@@ -70,11 +95,14 @@ export async function registerChatRoutes(app) {
         };
       }
 
+      const userText = request.body.message.trim();
       const result = await createResponse({
-        message: request.body.message.trim(),
+        message: userText,
         memory: cleanMemory(request.body.memory),
         attachment: multimodalAttachment,
       });
+
+      const learned = await learnFromExchange(request, userText, result.text);
 
       return reply.send({
         ok: true,
@@ -82,7 +110,11 @@ export async function registerChatRoutes(app) {
         reply: result.text,
         responseId: result.responseId,
         model: result.model,
-        learning: { eligible: true, source: attachment ? `assistant-response-${attachment.type}` : 'assistant-response' },
+        learning: {
+          eligible: true,
+          candidates: learned,
+          source: attachment ? `assistant-response-${attachment.type}` : 'assistant-response',
+        },
       });
     } catch (error) {
       request.log.error(error);
