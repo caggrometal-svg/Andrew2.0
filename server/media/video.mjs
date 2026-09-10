@@ -1,10 +1,8 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { ffmpeg } from './ffmpeg-runtime.mjs';
 
-const execFileAsync = promisify(execFile);
 const ROOT = path.join(process.env.TMPDIR || '/tmp', 'andrew2-media');
 const DEFAULT_CHUNK_BYTES = 2 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 250 * 1024 * 1024;
@@ -28,35 +26,37 @@ async function cleanupExpired() {
   }
 }
 
-async function ffprobeDuration(filePath) {
-  const { stdout } = await execFileAsync('ffprobe', [
-    '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', filePath,
-  ], { timeout: 15000, maxBuffer: 1024 * 1024 });
-  const duration = Number.parseFloat(stdout.trim());
-  if (!Number.isFinite(duration) || duration <= 0) throw new Error('Unable to determine video duration');
-  return duration;
+function probeDuration(filePath) {
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(filePath, (error, metadata) => {
+      if (error) return reject(error);
+      const duration = Number(metadata?.format?.duration);
+      if (!Number.isFinite(duration) || duration <= 0) return reject(new Error('Unable to determine video duration'));
+      resolve(duration);
+    });
+  });
 }
 
-async function extractFrame(filePath, timestamp, outputPath) {
-  await execFileAsync('ffmpeg', [
-    '-hide_banner', '-loglevel', 'error', '-ss', timestamp.toFixed(3), '-i', filePath,
-    '-frames:v', '1', '-vf', `scale=${FRAME_WIDTH}:-2`, '-q:v', '5', '-y', outputPath,
-  ], { timeout: 30000, maxBuffer: 2 * 1024 * 1024 });
-  const buffer = await fs.readFile(outputPath);
-  return `data:image/jpeg;base64,${buffer.toString('base64')}`;
+function renderFrame(filePath, timestamp, outputPath) {
+  return new Promise((resolve, reject) => {
+    ffmpeg(filePath)
+      .seekInput(timestamp)
+      .frames(1)
+      .videoFilters(`scale=${FRAME_WIDTH}:-2`)
+      .outputOptions(['-q:v 5'])
+      .output(outputPath)
+      .on('end', resolve)
+      .on('error', reject)
+      .run();
+  });
 }
 
-export async function extractVideoFrames(uploadId) {
-  const upload = uploads.get(uploadId);
-  if (!upload) throw new Error('UPLOAD_NOT_FOUND');
-  if (upload.received !== upload.size) throw new Error('VIDEO_UPLOAD_INCOMPLETE');
-  if (upload.frames?.length) return upload.frames;
-
-  const duration = await ffprobeDuration(upload.filePath);
+async function extractVideoFramesInternal(upload) {
+  const duration = await probeDuration(upload.filePath);
   const count = Math.min(MAX_FRAMES, Math.max(1, Math.ceil(duration / 10)));
   const timestamps = Array.from({ length: count }, (_, index) => {
     if (count === 1) return Math.max(0, duration * 0.5);
-    return Math.min(duration - 0.05, duration * (index / (count - 1)));
+    return Math.min(Math.max(0, duration - 0.05), duration * (index / (count - 1)));
   });
 
   const frameDir = path.join(upload.dir, 'frames');
@@ -65,8 +65,9 @@ export async function extractVideoFrames(uploadId) {
   for (let index = 0; index < timestamps.length; index += 1) {
     const framePath = path.join(frameDir, `frame-${String(index + 1).padStart(2, '0')}.jpg`);
     try {
-      const dataUrl = await extractFrame(upload.filePath, timestamps[index], framePath);
-      frames.push({ index: index + 1, timestamp: timestamps[index], dataUrl });
+      await renderFrame(upload.filePath, timestamps[index], framePath);
+      const buffer = await fs.readFile(framePath);
+      frames.push({ index: index + 1, timestamp: Number(timestamps[index].toFixed(3)), dataUrl: `data:image/jpeg;base64,${buffer.toString('base64')}` });
     } catch (error) {
       if (index === 0) throw error;
     }
@@ -74,14 +75,30 @@ export async function extractVideoFrames(uploadId) {
   if (!frames.length) throw new Error('VIDEO_FRAME_EXTRACTION_FAILED');
   upload.frames = frames;
   upload.duration = duration;
+  upload.analysisStatus = 'ready';
   upload.updatedAt = Date.now();
   return frames;
 }
 
-export async function getVideoFrames(uploadId) {
+export async function extractVideoFrames(uploadId) {
   const upload = uploads.get(uploadId);
   if (!upload) throw new Error('UPLOAD_NOT_FOUND');
   if (upload.received !== upload.size) throw new Error('VIDEO_UPLOAD_INCOMPLETE');
+  if (upload.frames?.length) return upload.frames;
+  if (upload.analysisPromise) return upload.analysisPromise;
+
+  upload.analysisStatus = 'processing';
+  upload.analysisPromise = extractVideoFramesInternal(upload)
+    .catch((error) => {
+      upload.analysisStatus = 'failed';
+      upload.analysisError = error instanceof Error ? error.message : 'VIDEO_FRAME_EXTRACTION_FAILED';
+      throw error;
+    })
+    .finally(() => { upload.analysisPromise = null; });
+  return upload.analysisPromise;
+}
+
+export async function getVideoFrames(uploadId) {
   return extractVideoFrames(uploadId);
 }
 
@@ -97,6 +114,8 @@ export async function getVideoUpload(uploadId) {
     name: upload.name,
     duration: upload.duration || null,
     frameCount: upload.frames?.length || 0,
+    analysisStatus: upload.analysisStatus || 'pending',
+    analysisError: upload.analysisError || null,
   };
 }
 
@@ -120,7 +139,18 @@ export async function registerVideoRoutes(app) {
     const id = crypto.randomUUID();
     const dir = path.join(ROOT, id);
     await fs.mkdir(dir, { recursive: true });
-    const upload = { id, dir, filePath: path.join(dir, safeName(request.body.name)), name: safeName(request.body.name), mimeType: request.body.mimeType, size: request.body.size, chunkSize: request.body.chunkSize || DEFAULT_CHUNK_BYTES, received: 0, updatedAt: Date.now() };
+    const upload = {
+      id,
+      dir,
+      filePath: path.join(dir, safeName(request.body.name)),
+      name: safeName(request.body.name),
+      mimeType: request.body.mimeType,
+      size: request.body.size,
+      chunkSize: request.body.chunkSize || DEFAULT_CHUNK_BYTES,
+      received: 0,
+      analysisStatus: 'pending',
+      updatedAt: Date.now(),
+    };
     uploads.set(id, upload);
     return reply.code(201).send({ ok: true, uploadId: id, chunkSize: upload.chunkSize, expiresInMs: TTL_MS });
   });
@@ -140,17 +170,11 @@ export async function registerVideoRoutes(app) {
     upload.received = end;
     upload.updatedAt = Date.now();
 
-    let analysisReady = false;
     if (upload.received === upload.size) {
-      try {
-        await extractVideoFrames(upload.id);
-        analysisReady = true;
-      } catch (error) {
-        app.log.warn({ err: error, uploadId: upload.id }, 'Video frame extraction unavailable');
-      }
+      void extractVideoFrames(upload.id).catch((error) => app.log.warn({ err: error, uploadId: upload.id }, 'Video frame extraction failed'));
     }
 
-    return reply.send({ ok: true, uploadId: upload.id, received: upload.received, complete: upload.received === upload.size, analysisReady, duration: upload.duration || null, frameCount: upload.frames?.length || 0, mimeType: upload.mimeType, name: upload.name });
+    return reply.send({ ok: true, uploadId: upload.id, received: upload.received, complete: upload.received === upload.size, analysisReady: upload.analysisStatus === 'ready', analysisStatus: upload.analysisStatus, duration: upload.duration || null, frameCount: upload.frames?.length || 0, mimeType: upload.mimeType, name: upload.name });
   });
 
   app.get('/api/media/video/:uploadId', async (request, reply) => {
