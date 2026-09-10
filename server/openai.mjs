@@ -2,6 +2,9 @@ import { config } from './config.mjs';
 
 const endpoint = 'https://api.openai.com/v1/responses';
 const MAX_VIDEO_FRAMES = 6;
+const OPENAI_TIMEOUT_MS = 60_000;
+const MAX_ATTEMPTS = 3;
+const RETRY_BASE_MS = 900;
 
 function extractText(data) {
   if (typeof data?.output_text === 'string') return data.output_text.trim();
@@ -12,6 +15,40 @@ function extractText(data) {
     }
   }
   return parts.join('\n').trim();
+}
+
+function retryableStatus(status) {
+  return status === 408 || status === 409 || status === 429 || status >= 500;
+}
+
+async function requestOpenAI(body) {
+  let lastError;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), OPENAI_TIMEOUT_MS);
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${config.openaiApiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok) return data;
+      const error = new Error(data?.error?.message || `OpenAI HTTP ${response.status}`);
+      error.status = response.status;
+      if (!retryableStatus(response.status) || attempt === MAX_ATTEMPTS) throw error;
+      lastError = error;
+    } catch (error) {
+      lastError = error;
+      if (attempt === MAX_ATTEMPTS) throw error;
+      if (error?.status && !retryableStatus(error.status)) throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
+    await new Promise((resolve) => setTimeout(resolve, RETRY_BASE_MS * (2 ** (attempt - 1))));
+  }
+  throw lastError || new Error('OpenAI request failed');
 }
 
 export async function createResponse({ message, memory, attachment }) {
@@ -35,24 +72,20 @@ export async function createResponse({ message, memory, attachment }) {
 
   const content = [{ type: 'input_text', text: textPrompt }];
   if (attachment?.type === 'image' && attachment.dataUrl) {
-    content.push({ type: 'input_image', image_url: attachment.dataUrl });
+    content.push({ type: 'input_image', image_url: attachment.dataUrl, detail: 'auto' });
   }
   if (hasVideoFrames) {
     for (const frame of attachment.frames.slice(0, MAX_VIDEO_FRAMES)) {
-      content.push({ type: 'input_text', text: `Fotograma ${frame.index} — tiempo aproximado ${frame.timestamp.toFixed(2)} s.` });
-      content.push({ type: 'input_image', image_url: frame.dataUrl });
+      content.push({ type: 'input_text', text: `Fotograma ${frame.index} — timestamp exacto ${Number(frame.timestamp).toFixed(3)} s.` });
+      content.push({ type: 'input_image', image_url: frame.dataUrl, detail: 'auto' });
     }
   }
 
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${config.openaiApiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: config.openaiModel, input: [{ role: 'user', content }], store: false }),
-    signal: AbortSignal.timeout(60000),
+  const data = await requestOpenAI({
+    model: config.openaiModel,
+    input: [{ role: 'user', content }],
+    store: false,
   });
-
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data?.error?.message || `OpenAI HTTP ${response.status}`);
 
   const text = extractText(data);
   if (!text) throw new Error('OpenAI returned an empty response');
