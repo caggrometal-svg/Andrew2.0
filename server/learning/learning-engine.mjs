@@ -41,6 +41,7 @@ export async function processLearningObservation({ userId, userText }) {
   for (const candidate of candidates) {
     const evidenceCount = await countDistinctEvidence(userId, candidate.patternKey, since);
     const confidence = confidenceFor(evidenceCount);
+    const accepted = evidenceCount >= MIN_EVIDENCE && confidence >= ACCEPT_THRESHOLD;
     const row = await upsertPattern({
       userId,
       patternKey: candidate.patternKey,
@@ -48,14 +49,15 @@ export async function processLearningObservation({ userId, userText }) {
       statement: candidate.statement,
       evidenceCount,
       confidence,
+      status: accepted ? 'accepted' : 'candidate',
     });
     learned.push({
       id: row.id,
       type: row.pattern_type,
       statement: row.statement,
       evidenceCount,
-      confidence,
-      status: evidenceCount >= MIN_EVIDENCE && confidence >= ACCEPT_THRESHOLD ? 'accepted' : 'candidate',
+      confidence: Number(row.confidence),
+      status: row.status,
     });
   }
   return learned;
