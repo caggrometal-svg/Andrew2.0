@@ -93,19 +93,21 @@ export async function countDistinctEvidence(userId, patternKey, since) {
   return result.rows[0]?.count || 0;
 }
 
-export async function upsertPattern({ userId, patternKey, patternType, statement, evidenceCount, confidence }) {
+export async function upsertPattern({ userId, patternKey, patternType, statement, evidenceCount, confidence, status = 'candidate' }) {
   await initializeLearningStore();
+  const safeStatus = status === 'accepted' ? 'accepted' : status === 'rejected' ? 'rejected' : 'candidate';
   const result = await getPool().query(
     `INSERT INTO andrew_learning_pattern
       (id,user_id,pattern_key,pattern_type,statement,evidence_count,confidence,status)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,'candidate')
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
      ON CONFLICT (user_id,pattern_key) DO UPDATE SET
        statement=EXCLUDED.statement,
        evidence_count=EXCLUDED.evidence_count,
        confidence=EXCLUDED.confidence,
+       status=CASE WHEN andrew_learning_pattern.status='rejected' THEN 'rejected' ELSE EXCLUDED.status END,
        last_seen_at=NOW()
      RETURNING *`,
-    [crypto.randomUUID(), userId, patternKey, patternType, statement, evidenceCount, confidence],
+    [crypto.randomUUID(), userId, patternKey, patternType, statement, evidenceCount, confidence, safeStatus],
   );
   return result.rows[0];
 }
