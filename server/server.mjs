@@ -9,8 +9,13 @@ const app = Fastify({ logger: true, bodyLimit: config.maxBodyBytes });
 app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer' }, (_request, body, done) => done(null, body));
 
 await app.register(cors, {
-  origin: config.corsOrigins.length ? config.corsOrigins : true,
+  origin: '*',
   methods: ['GET', 'POST', 'PUT', 'OPTIONS'],
+  allowedHeaders: ['Accept', 'Authorization', 'Content-Type', 'Origin', 'X-Requested-With', 'X-Chunk-Start', 'X-Chunk-End', 'X-Upload-Size'],
+  exposedHeaders: ['Content-Type', 'Content-Length', 'Cache-Control'],
+  credentials: false,
+  preflight: true,
+  optionsSuccessStatus: 204,
 });
 
 const buckets = new Map();
@@ -22,7 +27,7 @@ app.addHook('onRequest', async (request, reply) => {
   if (now - bucket.start >= config.rateLimitWindowMs) { bucket.start = now; bucket.count = 0; }
   bucket.count += 1;
   buckets.set(key, bucket);
-  if (bucket.count > config.rateLimitMax) return reply.code(429).send({ ok: false, error: 'RATE_LIMITED' });
+  if (bucket.count > config.rateLimitMax) return reply.code(429).send({ ok: false, error: 'RATE_LIMITED', message: 'Demasiadas solicitudes. Intenta nuevamente en unos segundos.' });
 });
 
 app.get('/health', async () => ({ ok: true, service: 'andrew2-backend', media: { video: 'chunked-temp', ffmpeg: 'static-npm', generation: 'openai-videos' } }));
@@ -33,7 +38,8 @@ await registerVideoGenerationRoutes(app);
 app.setErrorHandler((error, request, reply) => {
   request.log.error(error);
   const status = error.statusCode && error.statusCode >= 400 ? error.statusCode : 500;
-  return reply.code(status).send({ ok: false, error: status === 413 ? 'PAYLOAD_TOO_LARGE' : 'INTERNAL_ERROR' });
+  const code = status === 400 ? 'BAD_REQUEST' : status === 413 ? 'PAYLOAD_TOO_LARGE' : status === 415 ? 'UNSUPPORTED_MEDIA_TYPE' : status === 429 ? 'RATE_LIMITED' : 'INTERNAL_ERROR';
+  return reply.code(status).send({ ok: false, error: code, message: error.message || 'Error interno del servidor.' });
 });
 
 await app.listen({ port: config.port, host: config.host });
