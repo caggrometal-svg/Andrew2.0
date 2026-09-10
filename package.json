@@ -12,6 +12,7 @@
     "test": "vitest run",
     "test:memory": "vitest run tests/memory.integration.test.mjs",
     "test:learning": "vitest run tests/learning-control.test.mjs",
+    "test:phase4": "vitest run tests/phase4-tool-router.test.ts",
     "backend": "node server/server.mjs",
     "backend:dev": "node --watch server/server.mjs"
   },
