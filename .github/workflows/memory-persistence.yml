@@ -1,0 +1,42 @@
+name: Memory Persistence Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - iac33-integration-next
+
+jobs:
+  memory-persistence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: andrew2_memory
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d andrew2_memory"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/andrew2_memory
+      DATABASE_SSL: disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm install
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm run test:memory
+      - name: PHASE 2 GREEN GATE
+        run: |
+          echo 'PHASE_2=GREEN'
+          echo 'PHASE_3_UNLOCK=true'
