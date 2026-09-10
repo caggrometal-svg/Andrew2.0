@@ -39,16 +39,10 @@ const cleanAttachment = (value) => {
 async function learnFromExchange(request, userText, assistantText) {
   try {
     const userId = resolveUserId(request);
-    await recordObservation({
-      userId,
-      conversationId: request.body.conversationId,
-      userText,
-      assistantText,
-    });
-    return await processLearningObservation({ userId, userText });
+    await recordObservation({ userId, conversationId: request.body.conversationId, userText, assistantText });
+    await processLearningObservation({ userId, userText });
   } catch (error) {
     request.log.error({ error }, 'controlled learning observation failed');
-    return [];
   }
 }
 
@@ -102,7 +96,7 @@ export async function registerChatRoutes(app) {
         attachment: multimodalAttachment,
       });
 
-      const learned = await learnFromExchange(request, userText, result.text);
+      void learnFromExchange(request, userText, result.text);
 
       return reply.send({
         ok: true,
@@ -112,7 +106,7 @@ export async function registerChatRoutes(app) {
         model: result.model,
         learning: {
           eligible: true,
-          candidates: learned,
+          queued: true,
           source: attachment ? `assistant-response-${attachment.type}` : 'assistant-response',
         },
       });
