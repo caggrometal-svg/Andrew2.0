@@ -49,17 +49,17 @@ jobs:
       - name: Sync Capacitor Android
         run: npx cap sync android
 
-      - name: Align Kotlin standard library dependencies
+      - name: Force compatible Kotlin stdlib versions
         run: |
           cat >> android/build.gradle <<'EOF'
 
           allprojects {
             configurations.configureEach {
-              resolutionStrategy.eachDependency { details ->
-                if (details.requested.group == 'org.jetbrains.kotlin' && details.requested.name.startsWith('kotlin-stdlib')) {
-                  details.useVersion('1.8.22')
-                }
-              }
+              resolutionStrategy.force(
+                'org.jetbrains.kotlin:kotlin-stdlib:1.8.22',
+                'org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22',
+                'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22'
+              )
             }
           }
           EOF
