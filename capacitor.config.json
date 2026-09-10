@@ -1,0 +1,6 @@
+{
+  "appId": "com.andrew.iac33",
+  "appName": "Andrew 2.0",
+  "webDir": "dist",
+  "bundledWebRuntime": false
+}
