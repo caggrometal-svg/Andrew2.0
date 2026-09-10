@@ -1,0 +1,79 @@
+name: Build Android APK
+
+on:
+  push:
+    branches:
+      - andrew-backend-openai-v1
+      - iac33-integration-next
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    name: Build Andrew 2.0 APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build web application
+        run: npm run build
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Capacitor dependencies
+        run: |
+          npm install @capacitor/cli @capacitor/core @capacitor/android
+
+      - name: Initialize Android platform if missing
+        run: |
+          if [ ! -d "android" ]; then
+            npx cap add android
+          fi
+
+      - name: Sync Capacitor Android
+        run: npx cap sync android
+
+      - name: Force compatible Kotlin stdlib versions
+        run: |
+          cat >> android/build.gradle <<'EOF'
+
+          allprojects {
+            configurations.configureEach {
+              resolutionStrategy.force(
+                'org.jetbrains.kotlin:kotlin-stdlib:1.8.22',
+                'org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22',
+                'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22'
+              )
+            }
+          }
+          EOF
+
+      - name: Grant Gradle execute permission
+        run: chmod +x android/gradlew
+
+      - name: Build Debug APK
+        working-directory: ./android
+        run: ./gradlew assembleDebug
+
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: andrew-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

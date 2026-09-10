@@ -5,10 +5,12 @@ on:
     branches:
       - iac33-integration-next
       - iac33-dev
+      - andrew-backend-openai-v1
   pull_request:
     branches:
       - iac33-integration-next
       - iac33-dev
+      - andrew-backend-openai-v1
 
 permissions:
   contents: read
@@ -31,5 +33,12 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Build
+      - name: Build frontend
         run: npm run build
+
+      - name: Syntax-check backend
+        run: |
+          node --check server/config.mjs
+          node --check server/openai.mjs
+          node --check server/routes/chat.mjs
+          node --check server/server.mjs

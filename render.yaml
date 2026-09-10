@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: andrew2-api
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm run backend
+    autoDeploy: true
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-5.6-luna
+      - key: CORS_ORIGINS
+        value: https://andrew2-web.onrender.com
+      - key: MAX_BODY_BYTES
+        value: 65536
+      - key: RATE_LIMIT_WINDOW_MS
+        value: 60000
+      - key: RATE_LIMIT_MAX
+        value: 30
+
+  - type: web
+    name: andrew2-web
+    runtime: static
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./dist
+    autoDeploy: true
+    envVars:
+      - key: VITE_ANDREW_BACKEND_URL
+        value: https://andrew2-api.onrender.com
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
