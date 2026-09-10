@@ -1,0 +1,31 @@
+name: Phase 10 System Runtime Gate
+
+on:
+  push:
+    branches: [iac33-phase10-system-runtime]
+  pull_request:
+    branches: [iac33-integration-next]
+
+jobs:
+  phase10:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm install
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm run test:phase10
+      - run: npm run test:phase9
+      - run: npm run test:phase8
+      - run: npm run test:phase7
+      - run: npm run test:phase6
+      - run: npm run test:phase5
+      - run: npm run test:phase4
+      - run: npm run test:learning
+      - run: npm run test:memory
+      - run: npm test
+      - run: echo PHASE_10_GREEN_GATE
