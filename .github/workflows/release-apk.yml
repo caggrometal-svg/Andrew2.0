@@ -1,70 +1,58 @@
-name: Release Android APK
+name: Android APK
 
 on:
   workflow_dispatch:
-    inputs:
-      source_ref:
-        description: 'Branch/commit to build'
-        required: true
-        default: 'andrew-editor-v1'
-      tag:
-        description: 'Release tag to publish/update'
-        required: true
-        default: 'v1.0.0-rc1'
-
-permissions:
-  contents: write
+  push:
+    branches:
+      - main
+      - iac33-integration-next
 
 jobs:
-  build-release-apk:
-    name: Build and publish APK
+  build-apk:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Andrew2.0 source branch
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.source_ref }}
-          fetch-depth: 0
 
-      - name: Setup Node.js
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '20'
+          cache: 'npm'
 
-      - name: Setup Java 21
+      - name: Install Dependencies & Build Frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
-          java-version: '21'
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
 
-      - name: Install dependencies
-        run: npm install
+      - name: Sync Capacitor Android
+        run: npx cap sync android
 
-      - name: Verify protected timeline core
-        shell: bash
+      - name: Grant execute permission for Gradle
+        working-directory: android
+        run: chmod +x gradlew
+
+      - name: Verify Java and Gradle
+        working-directory: android
         run: |
-          EXPECTED_SHA="75395fbeab1549d1ae5978cc407eacf47b20c7db"
-          ACTUAL_SHA="$(git hash-object src/editor/timeline/timeline-store.ts)"
-          test "$ACTUAL_SHA" = "$EXPECTED_SHA"
-          echo "timeline-store.ts: UNTOUCHED ($ACTUAL_SHA)"
+          java -version
+          ./gradlew --version
 
-      - name: Build and test Android APK
-        run: npm run build:apk
+      - name: Build APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: Verify generated APK
-        shell: bash
-        run: |
-          APK="android/app/build/outputs/apk/debug/app-debug.apk"
-          test -f "$APK"
-          test -s "$APK"
-          echo "APK verified: $APK"
-
-      - name: Publish APK to GitHub Release
-        uses: softprops/action-gh-release@v2
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ inputs.tag }}
-          name: Andrew2.0 ${{ inputs.tag }}
-          generate_release_notes: true
-          prerelease: true
-          files: android/app/build/outputs/apk/debug/app-debug.apk
+          name: Andrew2.0-debug-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
