@@ -63,7 +63,7 @@ async function createOpenAiVideo({ prompt, model, seconds, size, referenceImageD
 async function retrieveOpenAiVideo(videoId) {
   const response = await requestWithBackoff(() => fetch(`${OPENAI_VIDEOS}/${encodeURIComponent(videoId)}`, {
     headers: { Authorization: `Bearer ${config.openaiApiKey}` },
-    signal: AbortSignal.timeout(30000),
+    signal: AbortSignal.timeout(60000),
   }));
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data?.error?.message || `OpenAI video status HTTP ${response.status}`);
@@ -119,7 +119,7 @@ export async function registerVideoGenerationRoutes(app) {
 
   app.get('/api/generate-video/:jobId', async (request, reply) => {
     const job = jobs.get(request.params.jobId);
-    if (!job) return reply.code(404).send({ ok: false, error: 'VIDEO_JOB_NOT_FOUND' });
+    if (!job) return reply.code(404).send({ ok: false, error: 'VIDEO_JOB_NOT_FOUND', message: 'El trabajo de video no existe o expiró.' });
     try {
       const remote = await retrieveOpenAiVideo(job.providerId);
       job.status = remote.status || job.status;
@@ -129,19 +129,24 @@ export async function registerVideoGenerationRoutes(app) {
       return reply.send({ ok: true, jobId: job.id, providerId: job.providerId, status: job.status, progress: job.progress, model: job.model, prompt: job.prompt, error: job.error, videoUrl: job.status === 'completed' ? `/api/generate-video/${job.id}/content` : null });
     } catch (error) {
       request.log.warn({ err: error, jobId: job.id }, 'Video generation status lookup failed');
-      return reply.send({ ok: true, jobId: job.id, status: job.status, progress: job.progress, model: job.model, prompt: job.prompt, error: null, videoUrl: null });
+      return reply.code(502).send({ ok: false, error: 'VIDEO_STATUS_UNAVAILABLE', message: error instanceof Error ? error.message : 'No fue posible consultar el estado del video.' });
     }
   });
 
   app.get('/api/generate-video/:jobId/content', async (request, reply) => {
     const job = jobs.get(request.params.jobId);
-    if (!job) return reply.code(404).send({ ok: false, error: 'VIDEO_JOB_NOT_FOUND' });
-    const remote = await retrieveOpenAiVideo(job.providerId);
-    if (remote.status !== 'completed') return reply.code(409).send({ ok: false, error: 'VIDEO_NOT_READY', status: remote.status });
-    const response = await fetch(`${OPENAI_VIDEOS}/${encodeURIComponent(job.providerId)}/content`, { headers: { Authorization: `Bearer ${config.openaiApiKey}` }, signal: AbortSignal.timeout(60000) });
-    if (!response.ok || !response.body) return reply.code(502).send({ ok: false, error: 'VIDEO_CONTENT_UNAVAILABLE' });
-    reply.header('Content-Type', response.headers.get('content-type') || 'video/mp4');
-    reply.header('Cache-Control', 'private, max-age=300');
-    return reply.send(response.body);
+    if (!job) return reply.code(404).send({ ok: false, error: 'VIDEO_JOB_NOT_FOUND', message: 'El trabajo de video no existe o expiró.' });
+    try {
+      const remote = await retrieveOpenAiVideo(job.providerId);
+      if (remote.status !== 'completed') return reply.code(409).send({ ok: false, error: 'VIDEO_NOT_READY', message: 'El video todavía no está listo.', status: remote.status });
+      const response = await requestWithBackoff(() => fetch(`${OPENAI_VIDEOS}/${encodeURIComponent(job.providerId)}/content`, { headers: { Authorization: `Bearer ${config.openaiApiKey}` }, signal: AbortSignal.timeout(60000) }));
+      if (!response.ok || !response.body) return reply.code(502).send({ ok: false, error: 'VIDEO_CONTENT_UNAVAILABLE', message: `No fue posible obtener el contenido del video (HTTP ${response.status}).` });
+      reply.header('Content-Type', response.headers.get('content-type') || 'video/mp4');
+      reply.header('Cache-Control', 'private, max-age=300');
+      return reply.send(response.body);
+    } catch (error) {
+      request.log.error({ err: error, jobId: job.id }, 'Video content delivery failed');
+      return reply.code(502).send({ ok: false, error: 'VIDEO_CONTENT_FAILED', message: error instanceof Error ? error.message : 'No fue posible entregar el video.' });
+    }
   });
 }
