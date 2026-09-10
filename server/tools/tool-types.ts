@@ -1,0 +1,44 @@
+export type ToolRisk = 'read' | 'write' | 'external';
+
+export type ToolInput = Readonly<Record<string, unknown>>;
+
+export interface ToolContext {
+  readonly userId: string;
+  readonly conversationId: string;
+  readonly requestId: string;
+  readonly memory?: ToolMemory;
+  readonly media?: MediaToolService;
+}
+
+export interface ToolMemory {
+  readonly read: (userId: string, key: string) => Promise<unknown | null>;
+  readonly write: (userId: string, key: string, value: unknown) => Promise<void>;
+}
+
+export interface MediaToolService {
+  readonly describe: (input: ToolInput) => Promise<unknown>;
+}
+
+export interface ToolMetadata {
+  readonly toolName: string;
+  readonly risk: ToolRisk;
+  readonly durationMs: number;
+}
+
+export interface ToolResult<TData = unknown> {
+  readonly ok: boolean;
+  readonly data?: TData;
+  readonly error?: string;
+  readonly metadata?: ToolMetadata;
+}
+
+export interface ToolDefinition<TInput extends ToolInput = ToolInput> {
+  readonly name: string;
+  readonly description: string;
+  readonly risk: ToolRisk;
+  readonly validate: (input: TInput) => void;
+  readonly execute: (
+    input: TInput,
+    context: ToolContext,
+  ) => Promise<ToolResult>;
+}
