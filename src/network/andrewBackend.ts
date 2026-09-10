@@ -1,9 +1,17 @@
 export type AndrewMemoryContext = string;
 
+export interface AndrewAttachment {
+  type: 'image' | 'video';
+  name: string;
+  mimeType: string;
+  dataUrl?: string;
+}
+
 export interface AndrewChatRequest {
   message: string;
   conversationId: string;
   memory?: AndrewMemoryContext[];
+  attachment?: AndrewAttachment;
 }
 
 export interface AndrewChatResponse {
@@ -22,40 +30,60 @@ export interface AndrewChatError {
 }
 
 const DEFAULT_TIMEOUT_MS = 45000;
+const MAX_RETRIES = 2;
+const BACKOFF_MS = 700;
 
 function getBackendUrl(): string {
-  const configured = (import.meta.env.VITE_ANDREW_BACKEND_URL || '').trim();
-  if (!configured) throw new Error('Andrew backend URL is not configured');
+  const configured = (import.meta.env.VITE_ANDREW_BACKEND_URL || 'https://andrew2-api.onrender.com').trim();
   return configured.replace(/\/$/, '');
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => window.setTimeout(resolve, ms));
+}
+
+function isRetryable(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError';
 }
 
 export async function sendAndrewMessage(
   request: AndrewChatRequest,
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<AndrewChatResponse> {
-  const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  let lastError: unknown;
 
-  try {
-    const response = await fetch(`${getBackendUrl()}/api/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        message: request.message.trim(),
-        conversationId: request.conversationId,
-        memory: request.memory?.slice(0, 20),
-      }),
-      signal: controller.signal,
-    });
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
 
-    const data = await response.json() as AndrewChatResponse | AndrewChatError;
-    if (!response.ok || !data.ok) {
-      throw new Error(data.ok ? 'Andrew backend request failed' : (data.message || data.error));
+    try {
+      const response = await fetch(`${getBackendUrl()}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: request.message.trim(),
+          conversationId: request.conversationId,
+          memory: request.memory?.slice(0, 20),
+          attachment: request.attachment,
+        }),
+        signal: controller.signal,
+      });
+
+      const data = await response.json() as AndrewChatResponse | AndrewChatError;
+      if (!response.ok || !data.ok) {
+        throw new Error(data.ok ? 'Andrew backend request failed' : (data.message || data.error));
+      }
+      return data;
+    } catch (error) {
+      lastError = error;
+      if (attempt >= MAX_RETRIES || !isRetryable(error)) throw error;
+      await sleep(BACKOFF_MS * (attempt + 1));
+    } finally {
+      window.clearTimeout(timeout);
     }
-    return data;
-  } finally {
-    window.clearTimeout(timeout);
   }
+
+  throw lastError instanceof Error ? lastError : new Error('No fue posible conectar con Andrew.');
 }
 
 export async function checkAndrewBackend(): Promise<boolean> {
