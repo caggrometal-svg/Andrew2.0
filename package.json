@@ -1,10 +1,31 @@
 {
   "name": "iac33",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "IAC33 - Intelligent analysis and probabilistic research platform",
   "type": "module",
-  "scripts": {"dev":"vite","build":"tsc --noEmit && vite build","preview":"vite preview","typecheck":"tsc --noEmit","test":"vitest run"},
-  "dependencies":{"react":"^18.3.1","react-dom":"^18.3.1"},
-  "devDependencies":{"@types/node":"^20.10.0","@types/react":"^18.3.0","@types/react-dom":"^18.3.0","@vitejs/plugin-react":"^4.2.1","typescript":"^5.3.3","vite":"^5.0.8","vitest":"^2.1.9"}
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "backend": "node server/server.mjs",
+    "backend:dev": "node --watch server/server.mjs"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.0.0",
+    "fastify": "^5.4.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.2.1",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.8",
+    "vitest": "^2.1.9"
+  }
 }
