@@ -1,4 +1,4 @@
-import { assertToolInput } from './tool-registry';
+import { assertToolInput, getTool } from './tool-registry';
 import { executeTool } from './tool-executor';
 import { verifyToolResult } from './tool-verifier';
 import type { ToolContext, ToolInput, ToolResult } from './tool-types';
@@ -9,12 +9,10 @@ export interface ToolPermissionPolicy {
   readonly allowExternal?: boolean;
 }
 
-export interface RouteResult extends ToolResult {
-  readonly verified: boolean;
-}
+export interface RouteResult extends ToolResult { readonly verified: boolean; }
 
-function denied(name: string): RouteResult {
-  return { ok: false, verified: false, error: `TOOL_PERMISSION_DENIED:${name}` };
+function denied(name: string, reason = 'TOOL_PERMISSION_DENIED'): RouteResult {
+  return { ok: false, verified: false, error: `${reason}:${name}` };
 }
 
 export async function routeTool(
@@ -24,15 +22,22 @@ export async function routeTool(
   policy: ToolPermissionPolicy,
   timeoutMs?: number,
 ): Promise<RouteResult> {
-  try {
-    assertToolInput(input);
-  } catch (error: unknown) {
+  const normalizedName = name.trim();
+  try { assertToolInput(input); } catch (error: unknown) {
     return { ok: false, verified: false, error: error instanceof Error ? error.message : 'TOOL_INVALID_INPUT' };
   }
 
-  if (!policy.allowed.includes(name.trim())) return denied(name.trim());
+  if (!policy.allowed.includes(normalizedName)) return denied(normalizedName);
 
-  const result = await executeTool(name, input, context, timeoutMs);
+  try {
+    const tool = getTool(normalizedName);
+    if (tool.risk === 'write' && policy.allowWrite !== true) return denied(normalizedName, 'TOOL_WRITE_NOT_ALLOWED');
+    if (tool.risk === 'external' && policy.allowExternal !== true) return denied(normalizedName, 'TOOL_EXTERNAL_NOT_ALLOWED');
+  } catch (error: unknown) {
+    return denied(normalizedName, error instanceof Error ? error.message : 'TOOL_NOT_ALLOWED');
+  }
+
+  const result = await executeTool(normalizedName, input, context, timeoutMs);
   const verification = verifyToolResult(result);
   return {
     ...result,
