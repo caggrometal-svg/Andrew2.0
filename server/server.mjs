@@ -10,6 +10,7 @@ import { registerMemoryRoutes } from './routes/memory.mjs';
 import { registerVideoRoutes } from './media/video.mjs';
 import { registerVideoGenerationRoutes } from './routes/video-generation.mjs';
 import { createMemory, initializeMemoryStore, searchMemories } from './memory/memory-store.mjs';
+import { initializeLearningStore, listAcceptedPatterns } from './learning/learning-store.mjs';
 
 const app = Fastify({ logger: true, bodyLimit: config.maxBodyBytes, trustProxy: true });
 app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer' }, (_request, body, done) => done(null, body));
@@ -28,26 +29,29 @@ app.addHook('preValidation', async (request) => {
   const userId = resolveUserId(request);
   if (!userId) return;
   const memories = await searchMemories(userId, request.body.message, 8);
+  const patterns = await listAcceptedPatterns(userId, 8);
   const persisted = memories.map((m) => `[${m.kind}|${m.importance}/5] ${m.text}`);
-  const supplied = Array.isArray(request.body.memory) ? request.body.memory.filter((x) => typeof x === 'string').slice(0, 12) : [];
-  request.body.memory = [...persisted, ...supplied].slice(0, 20);
+  const learned = patterns.map((p) => `[learned:${p.pattern_type}|${Number(p.confidence).toFixed(2)}] ${p.statement}`);
+  const supplied = Array.isArray(request.body.memory) ? request.body.memory.filter((x) => typeof x === 'string').slice(0, 8) : [];
+  request.body.memory = [...persisted, ...learned, ...supplied].slice(0, 20);
 });
 
 app.addHook('onSend', async (request, reply, payload) => {
   if (request.method !== 'POST' || request.url !== '/api/chat' || reply.statusCode !== 200) return payload;
   const message = request.body?.message;
-  if (!shouldLearn(message)) return payload;
   const userId = resolveUserId(request);
   if (!userId) return payload;
+  if (!shouldLearn(message)) return payload;
   try { await createMemory({ userId, conversationId: request.body.conversationId, kind: 'user_fact', text: String(message).trim().slice(0, 4000), tags: ['learning', 'explicit'], importance: 5, source: 'explicit-user-instruction' }); }
   catch (error) { request.log.error({ error }, 'persistent learning write failed'); }
   return payload;
 });
 
 const inspectBinary = (binaryPath) => { try { accessSync(binaryPath, constants.X_OK); const stat = statSync(binaryPath); return { available: true, executable: true, size: stat.size, path: binaryPath }; } catch (error) { return { available: false, executable: false, path: binaryPath || null, error: error instanceof Error ? error.message : String(error) }; } };
-app.get('/health', async () => { const startedAt = process.hrtime.bigint(); const ffmpeg = inspectBinary(ffmpegPath); const ffprobe = inspectBinary(ffprobePath); const openaiConfigured = Boolean(config.openaiApiKey); const memoryConfigured = Boolean(process.env.DATABASE_URL?.trim()); const system = { uptimeSeconds: Math.floor(process.uptime()), memory: process.memoryUsage(), node: process.version, pid: process.pid }; const latencyMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000; const healthy = openaiConfigured && memoryConfigured && ffmpeg.available && ffmpeg.executable && ffprobe.available && ffprobe.executable; return { ok: healthy, status: healthy ? 'healthy' : 'degraded', service: 'andrew2-backend', latencyMs: Number(latencyMs.toFixed(3)), checks: { server: 'ok', openaiApiKeyConfigured: openaiConfigured, memoryStoreConfigured: memoryConfigured, mediaRuntime: ffmpeg.available && ffmpeg.executable && ffprobe.available && ffprobe.executable ? 'ok' : 'degraded' }, environment: { port: config.port, host: config.host, corsOriginsConfigured: config.corsOrigins.length }, system, media: { video: 'chunked-temp', generation: 'openai-videos', ffmpeg, ffprobe } }; });
+app.get('/health', async () => { const startedAt = process.hrtime.bigint(); const ffmpeg = inspectBinary(ffmpegPath); const ffprobe = inspectBinary(ffprobePath); const openaiConfigured = Boolean(config.openaiApiKey); const memoryConfigured = Boolean(process.env.DATABASE_URL?.trim()); const learningConfigured = memoryConfigured; const system = { uptimeSeconds: Math.floor(process.uptime()), memory: process.memoryUsage(), node: process.version, pid: process.pid }; const latencyMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000; const healthy = openaiConfigured && memoryConfigured && ffmpeg.available && ffmpeg.executable && ffprobe.available && ffprobe.executable; return { ok: healthy, status: healthy ? 'healthy' : 'degraded', service: 'andrew2-backend', latencyMs: Number(latencyMs.toFixed(3)), checks: { server: 'ok', openaiApiKeyConfigured: openaiConfigured, memoryStoreConfigured: memoryConfigured, learningStoreConfigured: learningConfigured, mediaRuntime: ffmpeg.available && ffmpeg.executable && ffprobe.available && ffprobe.executable ? 'ok' : 'degraded' }, environment: { port: config.port, host: config.host, corsOriginsConfigured: config.corsOrigins.length }, system, media: { video: 'chunked-temp', generation: 'openai-videos', ffmpeg, ffprobe } }; });
 
 await initializeMemoryStore();
+await initializeLearningStore();
 await registerChatRoutes(app);
 await registerTelemetryRoutes(app);
 await registerMemoryRoutes(app);
