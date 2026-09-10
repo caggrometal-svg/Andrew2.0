@@ -2,11 +2,13 @@ export type AndrewMemoryContext = string;
 
 export interface AndrewChatRequest {
   message: string;
+  conversationId: string;
   memory?: AndrewMemoryContext[];
 }
 
 export interface AndrewChatResponse {
   ok: true;
+  conversationId: string;
   reply: string;
   responseId: string | null;
   model: string;
@@ -40,6 +42,7 @@ export async function sendAndrewMessage(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         message: request.message.trim(),
+        conversationId: request.conversationId,
         memory: request.memory?.slice(0, 20),
       }),
       signal: controller.signal,
