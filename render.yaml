@@ -3,22 +3,29 @@ services:
     name: andrew2-api
     runtime: node
     plan: free
+    region: ohio
+    branch: iac33-integration-next
     buildCommand: npm install
     startCommand: npm run backend
     autoDeploy: true
+    healthCheckPath: /health
     envVars:
       - key: OPENAI_API_KEY
         sync: false
       - key: OPENAI_MODEL
         value: gpt-5.6-luna
       - key: CORS_ORIGINS
-        value: https://andrew2-web.onrender.com
+        value: https://proyecto-andrew-loca-ev02.bolt.host
       - key: MAX_BODY_BYTES
         value: 65536
       - key: RATE_LIMIT_WINDOW_MS
         value: 60000
       - key: RATE_LIMIT_MAX
         value: 30
+      - key: DATABASE_URL
+        fromDatabase:
+          name: andrew2-memory
+          property: connectionString
 
   - type: web
     name: andrew2-web
@@ -33,3 +40,10 @@ services:
       - type: rewrite
         source: /*
         destination: /index.html
+
+databases:
+  - name: andrew2-memory
+    databaseName: andrew2_memory
+    plan: free
+    region: ohio
+    postgresMajorVersion: "18"
