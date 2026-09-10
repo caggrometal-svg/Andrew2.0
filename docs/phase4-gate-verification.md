@@ -8,3 +8,5 @@ Required runner evidence:
 2. Directed `src/integration/iac33-runtime.integration.test.ts` regression passes.
 3. Full Vitest regression passes.
 4. Production build passes.
+
+The branch contains no production-code change beyond the Phase 4 gate infrastructure already committed to `main`.
