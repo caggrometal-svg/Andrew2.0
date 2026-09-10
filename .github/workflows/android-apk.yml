@@ -2,7 +2,7 @@ name: Build Android APK
 
 on:
   push:
-    branches: [ "andrew-backend-openai-v1", "iac33-integration-next" ]
+    branches: andrew-backend-openai-v1 "iac33-integration-next" ]
   workflow_dispatch:
 
 jobs:
