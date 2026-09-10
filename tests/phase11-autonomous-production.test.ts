@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { assertCapability, canUseCapability } from '../server/runtime/capability-gate';
+import { closeAgentStateStore, loadAgentState, saveAgentState } from '../server/runtime/agent-state-store.mjs';
 
 describe('Phase 11 autonomous production runtime', () => {
   it('denies capabilities that are not explicitly allowed', () => {
@@ -18,5 +19,14 @@ describe('Phase 11 autonomous production runtime', () => {
     expect(allowed).toHaveLength(9);
     expect(canUseCapability('agent.execute', allowed, false)).toBe(false);
     expect(canUseCapability('agent.execute', allowed, true)).toBe(true);
+  });
+
+  it('persists and recovers interrupted agent state through PostgreSQL', async () => {
+    const runId = `phase11-${Date.now()}`;
+    const state = { runId, userId: 'phase11-user', conversationId: 'phase11-session', requestId: runId, input: 'resume', messages: [], phase: 'executing', iteration: 2, maxIterations: 8 } as const;
+    await saveAgentState(state);
+    const recovered = await loadAgentState(runId);
+    expect(recovered).toMatchObject({ runId, phase: 'executing', iteration: 2 });
+    await closeAgentStateStore();
   });
 });
