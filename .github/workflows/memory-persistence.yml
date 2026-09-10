@@ -31,11 +31,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: npm install
-      - run: npm run typecheck
-      - run: npm run build
-      - run: npm run test:memory
+      - name: Install dependencies
+        run: npm install
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build
+        run: npm run build
+      - name: Persistent memory integration test
+        run: npm run test:memory
       - name: PHASE 2 GREEN GATE
         run: |
+          set -euo pipefail
           echo 'PHASE_2=GREEN'
           echo 'PHASE_3_UNLOCK=true'
