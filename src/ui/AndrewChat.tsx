@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { sendAndrewMessage, uploadVideoInChunks, type AndrewAttachment } from '../network/andrewBackend';
+import { sendThroughBridge } from '../network/andrewBridge';
 import { loadChatHistory, saveChatHistory, type PersistedChatMessage } from '../storage/chatPersistence';
 
 type ChatMessage = PersistedChatMessage & { attachment?: AndrewAttachment };
-
 type Props = { conversationId: string };
 
 export default function AndrewChat({ conversationId }: Props) {
@@ -50,8 +50,10 @@ export default function AndrewChat({ conversationId }: Props) {
       setAttachment(undefined);
       setAttachmentFile(null);
       setUploadProgress(null);
-      const memory = nextMessages.slice(-10).map(item => `${item.role}: ${item.text}`);
-      const result = await sendAndrewMessage({ message, conversationId, memory, attachment: preparedAttachment });
+
+      const result = preparedAttachment
+        ? await sendAndrewMessage({ message, conversationId, memory: nextMessages.slice(-10).map(item => `${item.role}: ${item.text}`), attachment: preparedAttachment })
+        : await sendThroughBridge(message, conversationId);
       setChatMessages(current => [...current, { role: 'assistant', text: result.reply }]);
     } catch (error) {
       setChatMessages(current => [...current, { role: 'assistant', text: error instanceof Error ? `No pude completar la solicitud: ${error.message}` : 'No pude conectar con Andrew.' }]);
@@ -73,7 +75,7 @@ export default function AndrewChat({ conversationId }: Props) {
         <input value={text} onChange={event => setText(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') void sendChat(); }} placeholder="Escribe una instrucción para Andrew…" disabled={chatBusy} style={{ flex: 1, minWidth: 0, padding: '12px 14px', color: '#edf3f8', background: '#0a1018', border: '1px solid #26394d', borderRadius: 12, fontSize: 16 }} />
         <button type="button" onClick={() => void sendChat()} disabled={chatBusy || (!text.trim() && !attachment)} style={{ minWidth: 92, minHeight: 44, borderRadius: 12, border: '1px solid #2b4057', background: '#214c72', color: '#eaf3fb' }}>{chatBusy ? 'Procesando' : 'Enviar'}</button>
       </div>
-      <div aria-live="polite" style={{ fontSize: 12, opacity: .65 }}>Backend: https://andrew2-api.onrender.com</div>
+      <div aria-live="polite" style={{ fontSize: 12, opacity: .65 }}>Bridge: persistent gateway · Backend: https://andrew2-api.onrender.com</div>
     </section>
   );
 }

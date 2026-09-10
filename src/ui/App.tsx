@@ -4,6 +4,7 @@ import { earthquakeRisk, socialEventRisk, type Signal } from '@analysis/probabil
 import { defaultCapabilities } from '@assistant/autonomy';
 import { createC33Brief } from '@assistant/expedienteC33';
 import { getRecentEarthquakes } from '@network/publicWeb';
+import { getBridgeSessionId } from '@network/andrewBridge';
 import AndrewChat from './AndrewChat';
 import VideoGenerationPanel from './VideoGenerationPanel';
 
@@ -35,7 +36,7 @@ export default function App() {
   const [brief, setBrief] = useState(createC33Brief(topic));
   const [quakeCount, setQuakeCount] = useState<number | null>(null);
   const [status, setStatus] = useState('Listo · sistema preparado');
-  const [conversationId] = useState(() => crypto.randomUUID());
+  const [conversationId] = useState(() => getBridgeSessionId());
   const result = useMemo(() => domain === 'earthquake' ? earthquakeRisk(demoSignals) : socialEventRisk(demoSignals), [domain]);
   const critical = useMemo(() => assessEvidence(demoEvidence), []);
 
