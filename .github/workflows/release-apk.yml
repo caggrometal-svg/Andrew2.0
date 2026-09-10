@@ -19,11 +19,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
 
       - name: Install Dependencies & Build Frontend
         run: |
-          npm ci
+          npm install
           npm run build
 
       - name: Set up JDK 17
