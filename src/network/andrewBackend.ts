@@ -53,6 +53,8 @@ function sleep(ms: number): Promise<void> {
 function notify(listener: NetworkStatusListener | undefined, status: NetworkStatus, detail?: string): void {
   listener?.(status, detail);
   window.dispatchEvent(new CustomEvent('andrew:network-status', { detail: { status, detail } }));
+  const live = document.querySelector<HTMLElement>('[aria-live="polite"]');
+  if (live) live.textContent = status === 'connecting' ? 'Conectando…' : status === 'retrying' ? (detail || 'Reintentando…') : status === 'error' ? 'Conexión interrumpida' : 'Conexión establecida';
 }
 
 function isRetryableError(error: unknown): boolean {
@@ -67,7 +69,7 @@ async function fetchWithRetry(input: RequestInfo | URL, init: RequestInit, timeo
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
     if (attempt === 0) notify(listener, 'connecting');
-    else notify(listener, 'retrying', `Intento ${attempt + 1} de ${attempts + 1}`);
+    else notify(listener, 'retrying', `Reintentando conexión (${attempt + 1}/${attempts + 1})`);
     try {
       const response = await fetch(input, { ...init, signal: controller.signal });
       if (response.ok) notify(listener, 'connected');
