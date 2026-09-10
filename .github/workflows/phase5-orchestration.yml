@@ -1,0 +1,104 @@
+name: Phase 5 Orchestration Gate
+
+on:
+  push:
+    branches:
+      - phase5-external-orchestration
+  pull_request:
+    branches:
+      - phase5-external-orchestration
+
+permissions:
+  contents: read
+
+jobs:
+  phase5-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/andrew_ci
+      DATABASE_SSL: disable
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: andrew_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d andrew_ci"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Tool Router Vitest gate
+        run: npx vitest run tests/tools/tool-router.test.ts
+
+      - name: Phase 5 orchestration Vitest gate
+        run: npx vitest run tests/tools/agent-orchestrator.test.ts
+
+      - name: Strict any exclusion scan
+        shell: bash
+        run: |
+          set -euo pipefail
+          matches="$(git grep -n -E '\\bany\\b' -- src server tests || true)"
+          if [ -n "$matches" ]; then
+            echo 'STRICT ANY GATE FAILED'
+            printf '%s\n' "$matches"
+            exit 1
+          fi
+          echo 'STRICT_ANY=GREEN'
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Full regression tests
+        run: npm test
+
+      - name: Production build
+        run: npm run build
+
+      - name: Protected layer integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin phase4-tool-router --depth=1
+          protected=(
+            'src/core/memory'
+            'src/memory'
+            'src/core/learning'
+            'src/learning'
+            'src/editor/timeline-store.ts'
+          )
+          for path in "${protected[@]}"; do
+            if ! git diff --quiet "origin/phase4-tool-router...HEAD" -- "$path"; then
+              echo "PROTECTED LAYER MODIFIED: $path"
+              git diff --stat "origin/phase4-tool-router...HEAD" -- "$path"
+              exit 1
+            fi
+          done
+          echo 'PROTECTED_LAYERS=INTACT'
+
+      - name: PHASE 5 GREEN GATE
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'phase5-external-orchestration'
+          test -n "$GITHUB_SHA"
+          echo 'PHASE_5_EXTERNAL_ORCHESTRATION=GREEN'
