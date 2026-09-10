@@ -29,7 +29,7 @@ export function extractCandidates(userText) {
 }
 
 function confidenceFor(evidenceCount) {
-  return Math.min(0.99, 0.55 + Math.max(0, evidenceCount - 1) * 0.15);
+  return Math.min(0.99, 0.55 + Math.max(0, evidenceCount - 1) * 0.25);
 }
 
 export async function processLearningObservation({ userId, userText }) {
