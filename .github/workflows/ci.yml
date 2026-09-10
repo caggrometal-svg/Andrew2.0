@@ -1,4 +1,4 @@
-name: IAC33 CI
+name: Phase 4 Release Gate
 
 on:
   push:
@@ -11,13 +11,14 @@ permissions:
   contents: read
 
 jobs:
-  verify:
+  release-gate:
+    name: Phase 4 Release Gate
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -28,5 +29,11 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Build
+      - name: Directed IAC33 runtime integration
+        run: npm run test:regression
+
+      - name: Full Vitest regression
+        run: npm test
+
+      - name: Production build
         run: npm run build
