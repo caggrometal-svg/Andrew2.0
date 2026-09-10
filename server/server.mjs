@@ -3,6 +3,7 @@ import cors from '@fastify/cors';
 import { config } from './config.mjs';
 import { registerChatRoutes } from './routes/chat.mjs';
 import { registerVideoRoutes } from './media/video.mjs';
+import { registerVideoGenerationRoutes } from './routes/video-generation.mjs';
 
 const app = Fastify({ logger: true, bodyLimit: config.maxBodyBytes });
 app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer' }, (_request, body, done) => done(null, body));
@@ -24,9 +25,10 @@ app.addHook('onRequest', async (request, reply) => {
   if (bucket.count > config.rateLimitMax) return reply.code(429).send({ ok: false, error: 'RATE_LIMITED' });
 });
 
-app.get('/health', async () => ({ ok: true, service: 'andrew2-backend', media: { video: 'chunked-temp', ffmpeg: 'static-npm' } }));
+app.get('/health', async () => ({ ok: true, service: 'andrew2-backend', media: { video: 'chunked-temp', ffmpeg: 'static-npm', generation: 'openai-videos' } }));
 await registerChatRoutes(app);
 await registerVideoRoutes(app);
+await registerVideoGenerationRoutes(app);
 
 app.setErrorHandler((error, request, reply) => {
   request.log.error(error);
