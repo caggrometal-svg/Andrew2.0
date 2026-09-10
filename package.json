@@ -16,6 +16,7 @@
     "test:phase5": "vitest run tests/phase5-agent-loop.test.ts",
     "test:phase6": "vitest run tests/phase6-gateway.test.mjs",
     "test:phase7": "vitest run tests/phase7-hardening.test.mjs",
+    "test:phase8": "vitest run tests/phase8-bridge.test.ts",
     "backend": "node server/server.mjs",
     "backend:dev": "node --watch server/server.mjs"
   },
