@@ -16,6 +16,26 @@ function decodeDataUrl(value) {
   return { mimeType: match[1], buffer };
 }
 
+function retryable(status) {
+  return status === 408 || status === 409 || status === 429 || status >= 500;
+}
+
+async function requestWithBackoff(requestFactory, attempts = 3) {
+  let lastError;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const response = await requestFactory();
+      if (response.ok || !retryable(response.status) || attempt === attempts - 1) return response;
+      await sleep(700 * (2 ** attempt));
+    } catch (error) {
+      lastError = error;
+      if (attempt === attempts - 1) throw error;
+      await sleep(700 * (2 ** attempt));
+    }
+  }
+  throw lastError || new Error('VIDEO_PROVIDER_REQUEST_FAILED');
+}
+
 async function createOpenAiVideo({ prompt, model, seconds, size, referenceImageDataUrl }) {
   const form = new FormData();
   form.set('model', model);
@@ -29,22 +49,22 @@ async function createOpenAiVideo({ prompt, model, seconds, size, referenceImageD
     form.set('input_reference', new Blob([buffer], { type: mimeType }), `reference.${extension}`);
   }
 
-  const response = await fetch(OPENAI_VIDEOS, {
+  const response = await requestWithBackoff(() => fetch(OPENAI_VIDEOS, {
     method: 'POST',
     headers: { Authorization: `Bearer ${config.openaiApiKey}` },
     body: form,
     signal: AbortSignal.timeout(60000),
-  });
+  }));
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data?.error?.message || `OpenAI video HTTP ${response.status}`);
   return data;
 }
 
 async function retrieveOpenAiVideo(videoId) {
-  const response = await fetch(`${OPENAI_VIDEOS}/${encodeURIComponent(videoId)}`, {
+  const response = await requestWithBackoff(() => fetch(`${OPENAI_VIDEOS}/${encodeURIComponent(videoId)}`, {
     headers: { Authorization: `Bearer ${config.openaiApiKey}` },
     signal: AbortSignal.timeout(30000),
-  });
+  }));
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data?.error?.message || `OpenAI video status HTTP ${response.status}`);
   return data;
@@ -100,24 +120,13 @@ export async function registerVideoGenerationRoutes(app) {
   app.get('/api/generate-video/:jobId', async (request, reply) => {
     const job = jobs.get(request.params.jobId);
     if (!job) return reply.code(404).send({ ok: false, error: 'VIDEO_JOB_NOT_FOUND' });
-
     try {
       const remote = await retrieveOpenAiVideo(job.providerId);
       job.status = remote.status || job.status;
       job.progress = Number(remote.progress || (job.status === 'completed' ? 100 : 0));
       job.error = remote.error?.message || null;
       job.updatedAt = Date.now();
-      return reply.send({
-        ok: true,
-        jobId: job.id,
-        providerId: job.providerId,
-        status: job.status,
-        progress: job.progress,
-        model: job.model,
-        prompt: job.prompt,
-        error: job.error,
-        videoUrl: job.status === 'completed' ? `/api/generate-video/${job.id}/content` : null,
-      });
+      return reply.send({ ok: true, jobId: job.id, providerId: job.providerId, status: job.status, progress: job.progress, model: job.model, prompt: job.prompt, error: job.error, videoUrl: job.status === 'completed' ? `/api/generate-video/${job.id}/content` : null });
     } catch (error) {
       request.log.warn({ err: error, jobId: job.id }, 'Video generation status lookup failed');
       return reply.send({ ok: true, jobId: job.id, status: job.status, progress: job.progress, model: job.model, prompt: job.prompt, error: null, videoUrl: null });
@@ -129,16 +138,10 @@ export async function registerVideoGenerationRoutes(app) {
     if (!job) return reply.code(404).send({ ok: false, error: 'VIDEO_JOB_NOT_FOUND' });
     const remote = await retrieveOpenAiVideo(job.providerId);
     if (remote.status !== 'completed') return reply.code(409).send({ ok: false, error: 'VIDEO_NOT_READY', status: remote.status });
-
-    const response = await fetch(`${OPENAI_VIDEOS}/${encodeURIComponent(job.providerId)}/content`, {
-      headers: { Authorization: `Bearer ${config.openaiApiKey}` },
-      signal: AbortSignal.timeout(60000),
-    });
+    const response = await fetch(`${OPENAI_VIDEOS}/${encodeURIComponent(job.providerId)}/content`, { headers: { Authorization: `Bearer ${config.openaiApiKey}` }, signal: AbortSignal.timeout(60000) });
     if (!response.ok || !response.body) return reply.code(502).send({ ok: false, error: 'VIDEO_CONTENT_UNAVAILABLE' });
     reply.header('Content-Type', response.headers.get('content-type') || 'video/mp4');
     reply.header('Cache-Control', 'private, max-age=300');
     return reply.send(response.body);
   });
 }
-
-export { sleep };
