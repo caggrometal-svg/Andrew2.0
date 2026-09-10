@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:regression": "vitest run src/integration/iac33-runtime.integration.test.ts"
+    "test:regression": "vitest run src/integration/iac33-runtime.integration.test.ts",
+    "test:phase5": "vitest run src/integration/phase5-memory.integration.test.ts"
   },
   "dependencies": {
     "@capacitor/android": "^7.4.4",

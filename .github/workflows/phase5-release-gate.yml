@@ -1,0 +1,38 @@
+name: Phase 5 Persistent Memory Gate
+
+on:
+  push:
+    branches: [main, phase5-persistent-memory]
+  pull_request:
+    branches: [main]
+
+jobs:
+  phase5-gate:
+    name: persistent-memory-gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Phase 5 persistent memory integration
+        run: npm run test:phase5
+
+      - name: Full regression
+        run: npm test
+
+      - name: Production build
+        run: npm run build
+
+      - name: PHASE 5 GREEN GATE
+        run: echo "PHASE 5 GREEN GATE"
