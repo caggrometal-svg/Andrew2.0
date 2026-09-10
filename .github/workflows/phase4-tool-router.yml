@@ -1,0 +1,86 @@
+name: Phase 4 Tool Router Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - phase4-tool-router
+  pull_request:
+    branches:
+      - phase4-tool-router
+
+permissions:
+  contents: read
+
+jobs:
+  phase4-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Tool Router Vitest gate
+        run: npx vitest run tests/tools/tool-router.test.ts
+
+      - name: Strict any exclusion scan
+        shell: bash
+        run: |
+          set -euo pipefail
+          matches="$(git grep -n -E '\\bany\\b' -- src server tests || true)"
+          if [ -n "$matches" ]; then
+            echo 'STRICT ANY GATE FAILED'
+            printf '%s\n' "$matches"
+            exit 1
+          fi
+          echo 'STRICT_ANY=GREEN'
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Full regression tests
+        run: npm test
+
+      - name: Production build
+        run: npm run build
+
+      - name: Protected layer integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin iac33-integration-next --depth=1
+          protected=(
+            'src/core/memory'
+            'src/memory'
+            'src/core/learning'
+            'src/learning'
+            'src/editor/timeline-store.ts'
+          )
+          for path in "${protected[@]}"; do
+            if ! git diff --quiet "origin/iac33-integration-next...HEAD" -- "$path"; then
+              echo "PROTECTED LAYER MODIFIED: $path"
+              git diff --stat "origin/iac33-integration-next...HEAD" -- "$path"
+              exit 1
+            fi
+          done
+          echo 'PROTECTED_LAYERS=INTACT'
+
+      - name: PHASE 4 GREEN GATE
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'phase4-tool-router'
+          test -n "$GITHUB_SHA"
+          echo 'PHASE_4_TOOL_ROUTER=GREEN'
+          echo 'PHASE_5_UNLOCK=true'
