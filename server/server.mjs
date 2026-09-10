@@ -5,12 +5,14 @@ import { accessSync, constants, statSync } from 'node:fs';
 import { config } from './config.mjs';
 import { ffmpegPath, ffprobePath } from './media/ffmpeg-runtime.mjs';
 import { registerChatRoutes } from './routes/chat.mjs';
+import { registerGatewayRoutes } from './routes/gateway.mjs';
 import { registerTelemetryRoutes } from './routes/telemetry.mjs';
 import { registerMemoryRoutes } from './routes/memory.mjs';
 import { registerVideoRoutes } from './media/video.mjs';
 import { registerVideoGenerationRoutes } from './routes/video-generation.mjs';
 import { createMemory, initializeMemoryStore, searchMemories } from './memory/memory-store.mjs';
 import { initializeLearningStore, listAcceptedPatterns } from './learning/learning-store.mjs';
+import { initializeSessionStore } from './session/session-store.mjs';
 
 const app = Fastify({ logger: true, bodyLimit: config.maxBodyBytes, trustProxy: true });
 app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer' }, (_request, body, done) => done(null, body));
@@ -19,7 +21,8 @@ await app.register(cors, { origin: (origin, callback) => { if (!origin || config
 await app.register(rateLimit, { global: false, max: 20, timeWindow: '1 minute', errorResponseBuilder: (_request, context) => ({ ok: false, error: 'RATE_LIMITED', message: `Demasiadas solicitudes. Intenta nuevamente en ${Math.ceil(context.ttl / 1000)} segundos.` }) });
 const chatRateLimit = app.createRateLimit({ max: 20, timeWindow: '1 minute' });
 const telemetryRateLimit = app.createRateLimit({ max: 60, timeWindow: '1 minute' });
-app.addHook('onRequest', async (request, reply) => { if (request.method !== 'POST') return; const limiter = request.url === '/api/chat' ? chatRateLimit : request.url === '/api/telemetry' ? telemetryRateLimit : undefined; if (!limiter) return; const result = await limiter(request); if (!result.isExceeded) return; return reply.code(429).send({ ok: false, error: 'RATE_LIMITED', message: `Demasiadas solicitudes. Intenta nuevamente en ${Math.ceil(result.ttl / 1000)} segundos.` }); });
+const gatewayRateLimit = app.createRateLimit({ max: 30, timeWindow: '1 minute' });
+app.addHook('onRequest', async (request, reply) => { if (request.method !== 'POST') return; const limiter = request.url === '/api/chat' ? chatRateLimit : request.url === '/api/telemetry' ? telemetryRateLimit : request.url.startsWith('/api/v1/sessions') ? gatewayRateLimit : undefined; if (!limiter) return; const result = await limiter(request); if (!result.isExceeded) return; return reply.code(429).send({ ok: false, error: 'RATE_LIMITED', message: `Demasiadas solicitudes. Intenta nuevamente en ${Math.ceil(result.ttl / 1000)} segundos.` }); });
 
 const resolveUserId = (request) => { const header = request.headers['x-andrew-user-id']; const conversationId = request.body?.conversationId; return typeof header === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(header) ? header : typeof conversationId === 'string' ? `conversation:${conversationId}` : null; };
 const shouldLearn = (message) => typeof message === 'string' && /\b(recuerda|recuérdame|recordar|mi nombre es|me llamo|prefiero|quiero que recuerdes|guarda esto|guárdalo)\b/i.test(message);
@@ -48,10 +51,12 @@ app.addHook('onSend', async (request, reply, payload) => {
 });
 
 const inspectBinary = (binaryPath) => { try { accessSync(binaryPath, constants.X_OK); const stat = statSync(binaryPath); return { available: true, executable: true, size: stat.size, path: binaryPath }; } catch (error) { return { available: false, executable: false, path: binaryPath || null, error: error instanceof Error ? error.message : String(error) }; } };
-app.get('/health', async () => { const startedAt = process.hrtime.bigint(); const ffmpeg = inspectBinary(ffmpegPath); const ffprobe = inspectBinary(ffprobePath); const openaiConfigured = Boolean(config.openaiApiKey); const memoryConfigured = Boolean(process.env.DATABASE_URL?.trim()); const learningConfigured = memoryConfigured; const system = { uptimeSeconds: Math.floor(process.uptime()), memory: process.memoryUsage(), node: process.version, pid: process.pid }; const latencyMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000; const healthy = openaiConfigured && memoryConfigured && ffmpeg.available && ffmpeg.executable && ffprobe.available && ffprobe.executable; return { ok: healthy, status: healthy ? 'healthy' : 'degraded', service: 'andrew2-backend', latencyMs: Number(latencyMs.toFixed(3)), checks: { server: 'ok', openaiApiKeyConfigured: openaiConfigured, memoryStoreConfigured: memoryConfigured, learningStoreConfigured: learningConfigured, mediaRuntime: ffmpeg.available && ffmpeg.executable && ffprobe.available && ffprobe.executable ? 'ok' : 'degraded' }, environment: { port: config.port, host: config.host, corsOriginsConfigured: config.corsOrigins.length }, system, media: { video: 'chunked-temp', generation: 'openai-videos', ffmpeg, ffprobe } }; });
+app.get('/health', async () => { const startedAt = process.hrtime.bigint(); const ffmpeg = inspectBinary(ffmpegPath); const ffprobe = inspectBinary(ffprobePath); const openaiConfigured = Boolean(config.openaiApiKey); const memoryConfigured = Boolean(process.env.DATABASE_URL?.trim()); const learningConfigured = memoryConfigured; const sessionConfigured = memoryConfigured; const system = { uptimeSeconds: Math.floor(process.uptime()), memory: process.memoryUsage(), node: process.version, pid: process.pid }; const latencyMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000; const healthy = openaiConfigured && memoryConfigured && ffmpeg.available && ffmpeg.executable && ffprobe.available && ffprobe.executable; return { ok: healthy, status: healthy ? 'healthy' : 'degraded', service: 'andrew2-backend', latencyMs: Number(latencyMs.toFixed(3)), checks: { server: 'ok', openaiApiKeyConfigured: openaiConfigured, memoryStoreConfigured: memoryConfigured, learningStoreConfigured: learningConfigured, sessionStoreConfigured: sessionConfigured, mediaRuntime: ffmpeg.available && ffmpeg.executable && ffprobe.available && ffprobe.executable ? 'ok' : 'degraded' }, environment: { port: config.port, host: config.host, corsOriginsConfigured: config.corsOrigins.length }, system, media: { video: 'chunked-temp', generation: 'openai-videos', ffmpeg, ffprobe } }; });
 
 await initializeMemoryStore();
 await initializeLearningStore();
+await initializeSessionStore();
+await registerGatewayRoutes(app);
 await registerChatRoutes(app);
 await registerTelemetryRoutes(app);
 await registerMemoryRoutes(app);
