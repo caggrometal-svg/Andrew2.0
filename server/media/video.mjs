@@ -78,6 +78,13 @@ export async function extractVideoFrames(uploadId) {
   return frames;
 }
 
+export async function getVideoFrames(uploadId) {
+  const upload = uploads.get(uploadId);
+  if (!upload) throw new Error('UPLOAD_NOT_FOUND');
+  if (upload.received !== upload.size) throw new Error('VIDEO_UPLOAD_INCOMPLETE');
+  return extractVideoFrames(uploadId);
+}
+
 export async function getVideoUpload(uploadId) {
   const upload = uploads.get(uploadId);
   if (!upload) return null;
