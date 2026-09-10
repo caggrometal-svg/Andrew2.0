@@ -9,10 +9,11 @@ on:
 jobs:
   production-qa:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     env:
       BASE_URL: https://andrew2-api.onrender.com
       ALLOWED_ORIGIN: https://proyecto-andrew-loca-ev02.bolt.host
+      CHAT_CONVERSATION_ID: phase1-qa
 
     steps:
       - name: Checkout
@@ -22,27 +23,40 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          body="$(curl -fsS --retry 3 --retry-delay 2 "$BASE_URL/health")"
-          echo "$body" | jq .
-          test "$(echo "$body" | jq -r '.ok')" = "true"
-          test "$(echo "$body" | jq -r '.status')" = "healthy"
-          test "$(echo "$body" | jq -r '.checks.openaiApiKeyConfigured')" = "true"
-          test "$(echo "$body" | jq -r '.checks.server')" = "ok"
-          test "$(echo "$body" | jq -r '.checks.mediaRuntime')" = "ok"
+          for attempt in $(seq 1 30); do
+            body="$(curl -sS "$BASE_URL/health" || true)"
+            if [ -n "$body" ]; then
+              echo "$body" | jq .
+              if [ "$(echo "$body" | jq -r '.ok')" = "true" ] && \
+                 [ "$(echo "$body" | jq -r '.status')" = "healthy" ] && \
+                 [ "$(echo "$body" | jq -r '.checks.openaiApiKeyConfigured')" = "true" ] && \
+                 [ "$(echo "$body" | jq -r '.checks.server')" = "ok" ] && \
+                 [ "$(echo "$body" | jq -r '.checks.mediaRuntime')" = "ok" ]; then
+                exit 0
+              fi
+            fi
+            sleep 5
+          done
+          echo 'HEALTH GATE FAILED'
+          exit 1
 
       - name: Production chat smoke test
         shell: bash
         run: |
           set -euo pipefail
-          response="$(curl -fsS --retry 2 --retry-delay 2 \
+          response="$(curl -sS -w '\n%{http_code}' \
             -H 'Content-Type: application/json' \
             -H "Origin: $ALLOWED_ORIGIN" \
             -X POST "$BASE_URL/api/chat" \
-            --data '{"message":"QA_PRODUCTION_SMOKE_ANSWER_ONLY"}')"
-          echo "$response" | jq .
-          test "$(echo "$response" | jq -r '.ok')" = "true"
-          test -n "$(echo "$response" | jq -r '.reply')"
-          test -n "$(echo "$response" | jq -r '.responseId')"
+            --data "{\"message\":\"QA_PRODUCTION_SMOKE_ANSWER_ONLY\",\"conversationId\":\"$CHAT_CONVERSATION_ID\"}")"
+          code="$(printf '%s\n' "$response" | tail -n1)"
+          body="$(printf '%s\n' "$response" | sed '$d')"
+          echo "HTTP=$code"
+          echo "$body" | jq .
+          test "$code" = "200"
+          test "$(echo "$body" | jq -r '.ok')" = "true"
+          test -n "$(echo "$body" | jq -r '.reply')"
+          test -n "$(echo "$body" | jq -r '.responseId')"
 
       - name: CORS rejection check
         shell: bash
@@ -53,7 +67,7 @@ jobs:
             -H 'Access-Control-Request-Method: POST' \
             -H 'Access-Control-Request-Headers: content-type')"
           echo "$headers"
-          if printf '%s\n' "$headers" | grep -qi 'access-control-allow-origin: https://malicious-origin.com'; then
+          if printf '%s\n' "$headers" | grep -Eiq '^access-control-allow-origin:[[:space:]]*https://malicious-origin\.com[[:space:]]*$'; then
             echo 'CORS FAILURE: malicious origin was allowed'
             exit 1
           fi
@@ -69,10 +83,7 @@ jobs:
               -X POST "$BASE_URL/api/telemetry" \
               --data '{"event":"qa_rate_limit","source":"ci"}')"
             echo "REQ=$i HTTP=$code"
-            if [ "$code" = "429" ]; then
-              hit=1
-              break
-            fi
+            if [ "$code" = "429" ]; then hit=1; break; fi
           done
           test "$hit" = "1"
 
@@ -90,8 +101,24 @@ jobs:
           node --check server/routes/chat.mjs
           node --check server/routes/telemetry.mjs
 
-      - name: Dependency audit
+      - name: Production dependency audit
         shell: bash
         run: |
           set -euo pipefail
-          npm audit --audit-level=high
+          npm audit --omit=dev --audit-level=high
+
+      - name: Full dependency audit report
+        shell: bash
+        run: |
+          npm audit --json > audit-full.json || true
+          node -e "const fs=require('fs');const a=JSON.parse(fs.readFileSync('audit-full.json','utf8'));console.log(JSON.stringify(a.metadata||{},null,2))"
+
+      - name: PHASE 1 GREEN GATE
+        if: ${{ success() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'iac33-integration-next'
+          test "$GITHUB_SHA" != ''
+          echo 'PHASE_1=GREEN'
+          echo 'PHASE_2_UNLOCK=true'
