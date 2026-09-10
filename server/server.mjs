@@ -14,7 +14,7 @@ await app.register(cors, {
 
 const buckets = new Map();
 app.addHook('onRequest', async (request, reply) => {
-  if (request.method === 'OPTIONS' || request.url === '/health') return;
+  if (request.method === 'OPTIONS' || request.url === '/health' || (request.method === 'PUT' && request.url.startsWith('/api/media/video/'))) return;
   const now = Date.now();
   const key = request.ip;
   const bucket = buckets.get(key) || { start: now, count: 0 };
@@ -24,7 +24,7 @@ app.addHook('onRequest', async (request, reply) => {
   if (bucket.count > config.rateLimitMax) return reply.code(429).send({ ok: false, error: 'RATE_LIMITED' });
 });
 
-app.get('/health', async () => ({ ok: true, service: 'andrew2-backend', media: { video: 'chunked-temp' } }));
+app.get('/health', async () => ({ ok: true, service: 'andrew2-backend', media: { video: 'chunked-temp', ffmpeg: 'static-npm' } }));
 await registerChatRoutes(app);
 await registerVideoRoutes(app);
 
