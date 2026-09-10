@@ -1,0 +1,49 @@
+name: Phase 9 Autonomous Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [iac33-phase9-autonomous]
+  pull_request:
+    branches: [iac33-integration-next]
+
+jobs:
+  phase9:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: andrew2_learning
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d andrew2_learning"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/andrew2_learning
+      DATABASE_SSL: disable
+      OPENAI_API_KEY: phase9-ci-key
+      OPENAI_MODEL: gpt-5.6-luna
+      CORS_ORIGINS: https://proyecto-andrew-loca-ev02.bolt.host
+      MAX_BODY_BYTES: 65536
+      RATE_LIMIT_WINDOW_MS: 60000
+      RATE_LIMIT_MAX: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+      - run: npm install
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm run test:phase9
+      - run: npm run test:phase8
+      - run: npm run test:phase7
+      - run: npm run test:phase6
+      - run: npm run test:phase5
+      - run: npm run test:phase4
+      - run: npm run test:learning
+      - run: npm run test:memory
+      - run: npm test
+      - name: PHASE 9 GREEN GATE
+        run: echo PHASE_9_GREEN
