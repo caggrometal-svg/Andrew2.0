@@ -31,7 +31,6 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-          cache: 'gradle'
 
       - name: Sync Capacitor Android
         run: npx cap sync android
