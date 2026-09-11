@@ -22,6 +22,7 @@
     "test:phase11": "vitest run tests/phase11-autonomous-production.test.ts",
     "test:phase12": "vitest run tests/phase12-runtime-integration.test.ts",
     "test:phase13": "vitest run tests/phase13-tool-router-2.test.ts",
+    "test:phase14": "vitest run tests/phase14-android-bridge-v2.test.ts",
     "backend": "node server/server.mjs",
     "backend:dev": "node --watch server/server.mjs"
   },
