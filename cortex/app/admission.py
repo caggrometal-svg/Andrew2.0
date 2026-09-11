@@ -1,7 +1,8 @@
 import asyncio
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Awaitable, Callable, TypeVar
+from typing import TypeVar
 
 T = TypeVar("T")
 
@@ -69,7 +70,7 @@ class AdmissionController:
                 async with self._semaphore:
                     try:
                         result = await item.work()
-                    except Exception as exc:
+                    except Exception as exc:  # noqa: BLE001 - propagate arbitrary work errors to caller
                         if not item.future.done():
                             item.future.set_exception(exc)
                     else:
