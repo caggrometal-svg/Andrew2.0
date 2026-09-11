@@ -83,5 +83,6 @@ def test_circuit_closed_open_half_open_closed(monkeypatch):
     clock["now"] += 20
     assert circuit.allow()
     assert circuit.state is CircuitState.HALF_OPEN
+    assert not circuit.allow()
     circuit.success()
     assert circuit.state is CircuitState.CLOSED
