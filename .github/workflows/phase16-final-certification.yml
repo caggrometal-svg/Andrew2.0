@@ -1,0 +1,50 @@
+name: Phase 16 Final Certification Gate
+
+on:
+  push:
+    branches: [iac33-phase16-final-certification]
+  pull_request:
+    branches: [iac33-integration-next]
+
+jobs:
+  phase16:
+    name: Final integration and release gate
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: iac33
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d iac33"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/iac33
+      DATABASE_SSL: disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm run test:phase15
+      - run: npm run test:phase14
+      - run: npm run test:phase13
+      - run: npm run test:phase12
+      - run: npm run test:phase11
+      - run: npm run test:phase10
+      - run: npm run test:phase9
+      - run: npm run test:phase8
+      - run: npm run test:phase7
+      - run: npm run test:phase6
+      - run: npm run test:phase5
+      - run: npm run test:phase4
+      - run: npm run test:learning
+      - run: npm run test:memory
+      - run: npm test
+      - run: npx vitest run tests/phase16-final-certification.test.ts
+      - run: echo PHASE_16_FINAL_CERTIFICATION_GREEN_GATE
