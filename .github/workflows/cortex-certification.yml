@@ -1,0 +1,42 @@
+name: Cortex Certification
+
+on:
+  push:
+    branches: [cortex-foundation]
+  pull_request:
+    branches: [cortex-foundation, iac33-integration-next]
+
+permissions:
+  contents: read
+
+jobs:
+  cortex-unit-static:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cortex
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: cortex/pyproject.toml
+
+      - name: Install Cortex test dependencies
+        run: python -m pip install --upgrade pip && python -m pip install ".[test]"
+
+      - name: Unit tests
+        run: python -m pytest -q --cov=app --cov-report=term-missing
+
+      - name: Compile check
+        run: python -m compileall -q app tests
+
+      - name: Ruff check
+        run: python -m ruff check app tests
+
+      - name: Docker Compose config
+        run: docker compose -f docker-compose.yml config
