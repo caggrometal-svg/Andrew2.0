@@ -4,56 +4,39 @@ import type {
   BridgeEvent,
   BridgeMessage,
   BridgeResponse,
+  RuntimeParameterKey,
+  RuntimeParameterValue,
+  RuntimeStatusPayload,
 } from './types';
 
 export type BridgeEventHandler<TPayload = unknown> = (event: BridgeEvent<TPayload>) => void;
-
-export interface BridgeRequestOptions {
-  readonly timeoutMs?: number;
-}
-
+export interface BridgeRequestOptions { readonly timeoutMs?: number; }
 const DEFAULT_TIMEOUT_MS = 10000;
 
 function bridge(): AndrewBridgeNative {
-  if (!window.AndrewBridge) {
-    throw new Error('AndrewBridge no está disponible en el entorno nativo.');
-  }
+  if (!window.AndrewBridge) throw new Error('AndrewBridge no está disponible en el entorno nativo.');
   return window.AndrewBridge;
 }
 
-function createId(): string {
-  return `bridge-${crypto.randomUUID()}`;
-}
+function createId(): string { return `bridge-${crypto.randomUUID()}`; }
 
 function createCommand<TPayload>(method: string, payload: TPayload): BridgeCommand<TPayload> {
-  return {
-    id: createId(),
-    type: 'command',
-    method,
-    payload,
-    timestamp: Date.now(),
-    version: '1',
-  };
+  return { id: createId(), type: 'command', method, payload, timestamp: Date.now(), version: '1' };
 }
 
-function parseNativeStatus(status: unknown): unknown {
-  if (typeof status !== 'string') return status;
+function parseJson(value: string): unknown {
+  try { return JSON.parse(value) as unknown; } catch { return value; }
+}
 
-  try {
-    const parsed = JSON.parse(status) as Record<string, unknown>;
-
-    if (typeof parsed.runtime === 'string') {
-      try {
-        parsed.runtime = JSON.parse(parsed.runtime);
-      } catch {
-        // Preserve the raw runtime value when the native payload is not JSON.
-      }
-    }
-
-    return parsed;
-  } catch {
-    return status;
+function parseNativeStatus(status: unknown): RuntimeStatusPayload {
+  const parsed = typeof status === 'string' ? parseJson(status) : status;
+  if (!parsed || typeof parsed !== 'object') return {};
+  const record = parsed as Record<string, unknown>;
+  const runtime = typeof record.runtime === 'string' ? parseJson(record.runtime) : record.runtime;
+  if (runtime && typeof runtime === 'object') {
+    return { ...(record as RuntimeStatusPayload), ...(runtime as Partial<RuntimeStatusPayload>) };
   }
+  return record as RuntimeStatusPayload;
 }
 
 export class AndrewBridgeClient {
@@ -63,34 +46,15 @@ export class AndrewBridgeClient {
   constructor(private readonly nativeBridge: AndrewBridgeNative = bridge()) {}
 
   async send<TPayload = unknown>(method: string, payload: TPayload = {} as TPayload): Promise<void> {
-    const command = createCommand(method, payload);
-    if (!this.nativeBridge.send) {
-      throw new Error(`AndrewBridge no expone el canal genérico send() para ${method}.`);
-    }
-    await this.nativeBridge.send(command);
+    if (!this.nativeBridge.send) throw new Error(`AndrewBridge no expone send() para ${method}.`);
+    await this.nativeBridge.send(createCommand(method, payload));
   }
 
-  async request<TPayload = unknown, TResponse = unknown>(
-    method: string,
-    payload: TPayload = {} as TPayload,
-    options: BridgeRequestOptions = {},
-  ): Promise<BridgeResponse<TResponse>> {
+  async request<TPayload = unknown, TResponse = unknown>(method: string, payload: TPayload = {} as TPayload, options: BridgeRequestOptions = {}): Promise<BridgeResponse<TResponse>> {
     const command = createCommand(method, payload);
-    const requestMethod = this.nativeBridge.request;
-
-    if (requestMethod) {
-      return await requestMethod(command) as BridgeResponse<TResponse>;
-    }
-
-    if (!this.nativeBridge.send) {
-      throw new Error(`AndrewBridge no expone request() ni send() para ${method}.`);
-    }
-
-    const responsePromise = this.waitForResponse<TResponse>(
-      command.id,
-      options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-    );
-
+    if (this.nativeBridge.request) return await this.nativeBridge.request(command) as BridgeResponse<TResponse>;
+    if (!this.nativeBridge.send) throw new Error(`AndrewBridge no expone request() ni send() para ${method}.`);
+    const responsePromise = this.waitForResponse<TResponse>(command.id, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
     await this.nativeBridge.send(command);
     return await responsePromise;
   }
@@ -99,72 +63,42 @@ export class AndrewBridgeClient {
     const handlers = this.listeners.get(method) ?? new Set<BridgeEventHandler>();
     handlers.add(handler as BridgeEventHandler);
     this.listeners.set(method, handlers);
-    return () => {
-      handlers.delete(handler as BridgeEventHandler);
-      if (handlers.size === 0) this.listeners.delete(method);
-    };
+    return () => { handlers.delete(handler as BridgeEventHandler); if (!handlers.size) this.listeners.delete(method); };
   }
 
   handleMessage(message: BridgeMessage): void {
-    if (message.type === 'event') {
-      this.listeners.get(message.method)?.forEach(handler => handler(message));
-      return;
-    }
-
-    if (message.type === 'response') {
-      this.responseListeners.get(message.id)?.(message);
-    }
+    if (message.type === 'event') this.listeners.get(message.method)?.forEach(handler => handler(message));
+    if (message.type === 'response') this.responseListeners.get(message.id)?.(message);
   }
 
   async openSettings(): Promise<void> {
-    if (this.nativeBridge.openSettings) {
-      await this.nativeBridge.openSettings();
-      return;
-    }
+    if (this.nativeBridge.openSettings) return await this.nativeBridge.openSettings();
     await this.send('openSettings', {});
   }
 
-  async setRuntimeParameter(key: string, value: string): Promise<void> {
-    if (this.nativeBridge.setRuntimeParameter) {
-      await this.nativeBridge.setRuntimeParameter(key, value);
-      return;
-    }
-    await this.send('setRuntimeParameter', { key, value });
+  async setRuntimeParameter(key: RuntimeParameterKey, value: RuntimeParameterValue): Promise<void> {
+    const serialized = String(value);
+    if (this.nativeBridge.setRuntimeParameter) return await this.nativeBridge.setRuntimeParameter(key, serialized);
+    await this.send('setRuntimeParameter', { key, value: serialized });
   }
 
-  async requestStatus(): Promise<unknown> {
-    if (this.nativeBridge.requestStatus) {
-      return parseNativeStatus(await this.nativeBridge.requestStatus());
-    }
-
+  async requestStatus(): Promise<RuntimeStatusPayload> {
+    if (this.nativeBridge.requestStatus) return parseNativeStatus(await this.nativeBridge.requestStatus());
     const response = await this.request('requestStatus', {});
     return parseNativeStatus(response.payload);
   }
 
   async syncNow(): Promise<void> {
-    if (this.nativeBridge.syncNow) {
-      await this.nativeBridge.syncNow();
-      return;
-    }
+    if (this.nativeBridge.syncNow) return await this.nativeBridge.syncNow();
     await this.send('syncNow', {});
   }
 
   private waitForResponse<TResponse>(id: string, timeoutMs: number): Promise<BridgeResponse<TResponse>> {
     return new Promise((resolve, reject) => {
-      const timer = window.setTimeout(() => {
-        this.responseListeners.delete(id);
-        reject(new Error(`Timeout esperando respuesta del bridge (${timeoutMs} ms).`));
-      }, timeoutMs);
-
-      this.responseListeners.set(id, response => {
-        window.clearTimeout(timer);
-        this.responseListeners.delete(id);
-        resolve(response as BridgeResponse<TResponse>);
-      });
+      const timer = window.setTimeout(() => { this.responseListeners.delete(id); reject(new Error(`Timeout esperando respuesta del bridge (${timeoutMs} ms).`)); }, timeoutMs);
+      this.responseListeners.set(id, response => { window.clearTimeout(timer); this.responseListeners.delete(id); resolve(response as BridgeResponse<TResponse>); });
     });
   }
 }
 
-export function createAndrewBridgeClient(nativeBridge?: AndrewBridgeNative): AndrewBridgeClient {
-  return new AndrewBridgeClient(nativeBridge);
-}
+export function createAndrewBridgeClient(nativeBridge?: AndrewBridgeNative): AndrewBridgeClient { return new AndrewBridgeClient(nativeBridge); }
