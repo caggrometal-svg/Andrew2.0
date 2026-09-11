@@ -57,10 +57,15 @@ function historyInput(history) {
   return history
     .filter((item) => item && (item.role === 'user' || item.role === 'assistant') && typeof item.content === 'string')
     .slice(-MAX_HISTORY)
-    .map((item) => ({
-      role: item.role,
-      content: item.content.slice(0, 12000),
-    }));
+    .map((item) => item.role === 'assistant'
+      ? {
+          role: 'assistant',
+          content: [{ type: 'output_text', text: item.content.slice(0, 12000) }],
+        }
+      : {
+          role: 'user',
+          content: [{ type: 'input_text', text: item.content.slice(0, 12000) }],
+        });
 }
 
 export async function createResponse({ message, memory = [], attachment, history = [] }) {
@@ -75,9 +80,8 @@ export async function createResponse({ message, memory = [], attachment, history
 
   const current = `Eres Andrew 2.0, asistente personal conectado al runtime IAC33.\nUsa el contexto de memoria solo como información de apoyo. No inventes recuerdos.\nResponde en el idioma del usuario y de forma clara.${memoryBlock}${mediaBlock}\n\nMensaje del usuario:\n${message}`;
   const input = historyInput(history);
-  input.push({ role: 'user', content: current });
+  input.push({ role: 'user', content: [{ type: 'input_text', text: current }] });
 
-  const content = input[input.length - 1].content;
   if (attachment?.type === 'image' && attachment.dataUrl) {
     input[input.length - 1].content = [
       { type: 'input_text', text: current },
