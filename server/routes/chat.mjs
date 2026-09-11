@@ -1,7 +1,7 @@
 import { createResponse } from '../openai.mjs';
 import { getVideoFrames, getVideoUpload } from '../media/video.mjs';
 import { processLearningObservation } from '../learning/learning-engine.mjs';
-import { recordObservation } from '../learning/learning-store.mjs';
+import { listAcceptedPatterns, recordObservation } from '../learning/learning-store.mjs';
 
 const MAX_IMAGE_DATA_URL = 7_000_000;
 const USER_ID = /^[A-Za-z0-9._:-]{1,128}$/;
@@ -15,6 +15,15 @@ const resolveUserId = (request) => {
   if (typeof header === 'string' && USER_ID.test(header)) return header;
   return `conversation:${request.body.conversationId}`;
 };
+
+async function acceptedMemory(userId) {
+  try {
+    const patterns = await listAcceptedPatterns(userId, 20);
+    return patterns.map((pattern) => `[${pattern.pattern_type}] ${String(pattern.statement).slice(0, 500)}`);
+  } catch {
+    return [];
+  }
+}
 
 const cleanAttachment = (value) => {
   if (!value || typeof value !== 'object') return undefined;
@@ -90,9 +99,13 @@ export async function registerChatRoutes(app) {
       }
 
       const userText = request.body.message.trim();
+      const userId = resolveUserId(request);
+      const clientMemory = cleanMemory(request.body.memory);
+      const persistentMemory = await acceptedMemory(userId);
+      const memory = [...persistentMemory, ...clientMemory].slice(0, 20);
       const result = await createResponse({
         message: userText,
-        memory: cleanMemory(request.body.memory),
+        memory,
         attachment: multimodalAttachment,
       });
 
