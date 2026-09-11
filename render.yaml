@@ -47,3 +47,5 @@ databases:
     plan: free
     region: ohio
     postgresMajorVersion: "18"
+
+# Post-release DB wiring sync: DATABASE_URL must resolve from the Render Postgres resource.
