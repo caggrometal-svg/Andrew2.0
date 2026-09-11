@@ -2,7 +2,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", case_sensitive=True, extra="ignore")
+    model_config = SettingsConfigDict(env_file=".env", case_sensitive=False, extra="ignore")
 
     app_name: str = "andrew-cortex"
     host: str = "0.0.0.0"
