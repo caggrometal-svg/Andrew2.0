@@ -1,0 +1,92 @@
+.mode-bar {
+  grid-template-columns: repeat(6, minmax(92px, 1fr));
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.mode-button {
+  white-space: nowrap;
+}
+
+.tab-panel {
+  min-width: 0;
+  display: grid;
+  gap: 14px;
+}
+
+.tab-panel h2,
+.tab-panel h3 {
+  margin: 0;
+}
+
+.metric-list {
+  display: grid;
+  gap: 8px;
+}
+
+.metric-list > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #182538;
+  border-radius: 12px;
+  background: #070d16;
+}
+
+.metric-list span,
+.metric-list strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.metric-list strong {
+  white-space: nowrap;
+}
+
+.notice {
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid #3a2f19;
+  background: #151108;
+  color: #d8c69d;
+  line-height: 1.5;
+}
+
+.c33-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.chat-input,
+textarea {
+  max-height: 132px;
+}
+
+.chat-input {
+  overflow-y: auto;
+}
+
+.chat-messages {
+  contain: layout paint;
+}
+
+@media (max-width: 720px) {
+  .mode-bar {
+    grid-template-columns: repeat(6, minmax(104px, 1fr));
+  }
+
+  .c33-input-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+  }
+}
