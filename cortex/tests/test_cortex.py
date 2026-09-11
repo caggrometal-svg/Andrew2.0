@@ -1,5 +1,3 @@
-import pytest
-
 from app.admission import AdmissionController, Priority
 from app.orchestrator import AndrewOrchestrator, Intent
 
