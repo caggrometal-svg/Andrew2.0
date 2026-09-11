@@ -6,42 +6,43 @@ services:
     env_file: .env
     depends_on:
       redis:
-        condition: service_started
+        condition: service_healthy
       qdrant:
         condition: service_started
       litellm:
         condition: service_started
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     restart: unless-stopped
 
   redis:
-    image: redis/redis-stack-server:latest
+    image: redis/redis-stack-server:7.4.0-v2
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
     restart: unless-stopped
 
   qdrant:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:v1.15.4
     volumes:
       - qdrant-data:/qdrant/storage
-    ports:
-      - "6333:6333"
     restart: unless-stopped
 
   litellm:
-    image: ghcr.io/berriai/litellm:main-stable
+    image: ghcr.io/berriai/litellm:v1.75.5
     command: ["--config", "/app/config.yaml", "--port", "4000", "--num_workers", "2"]
     env_file: .env
     volumes:
       - ./litellm.yaml:/app/config.yaml:ro
-    ports:
-      - "4000:4000"
     restart: unless-stopped
 
   vllm:
-    image: vllm/vllm-openai:latest
+    image: vllm/vllm-openai:v0.10.2
     profiles: ["gpu"]
     environment:
       HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN}
@@ -55,8 +56,6 @@ services:
       - "--enable-prefix-caching"
       - "--gpu-memory-utilization"
       - "0.90"
-    ports:
-      - "8000:8000"
     volumes:
       - hf-cache:/root/.cache/huggingface
     deploy:
