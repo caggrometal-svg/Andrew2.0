@@ -1,59 +1,98 @@
-import { useEffect, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import './styles.css';
+import { TimelineStore, type TimelineState } from './editor/timeline-store';
+import { sendThroughBridge } from './network/andrewBridge';
+
+type Message = { role: 'user' | 'assistant'; text: string };
+
+function formatSeconds(value: number): string { return `${value.toFixed(1)}s`; }
 
 export default function App() {
-  const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant'; text: string }>>([]);
+  const store = useMemo(() => new TimelineStore(), []);
+  const [mode, setMode] = useState<'chat' | 'editor'>('chat');
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
-  const chatRef = useRef<HTMLDivElement>(null);
-  const endRef = useRef<HTMLDivElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [timeline, setTimeline] = useState<TimelineState>(() => store.snapshot());
+  const [error, setError] = useState('');
 
-  useEffect(() => {
-    const container = chatRef.current;
-    if (!container) return;
-    const frame = requestAnimationFrame(() => {
-      container.scrollTop = container.scrollHeight;
-      endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [messages]);
+  function apply(action: () => TimelineState): void {
+    try { setTimeline(action()); setError(''); } catch (cause) { setError(cause instanceof Error ? cause.message : 'No se pudo modificar la línea de tiempo.'); }
+  }
 
-  function sendMessage() {
+  async function sendMessage(): Promise<void> {
     const value = input.trim();
-    if (!value) return;
+    if (!value || busy) return;
     setMessages((current) => [...current, { role: 'user', text: value }]);
     setInput('');
+    setBusy(true);
+    setError('');
+    try {
+      const response = await sendThroughBridge(value);
+      setMessages((current) => [...current, { role: 'assistant', text: response.reply }]);
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : 'Error de conexión con Andrew.';
+      setError(message);
+      setMessages((current) => [...current, { role: 'assistant', text: `No pude procesar la solicitud: ${message}` }]);
+    } finally { setBusy(false); }
   }
+
+  function addClip(): void {
+    apply(() => store.addClip({ assetId: `asset-${Date.now()}`, trackId: 'video-1', start: timeline.duration, duration: 5, sourceStart: 0, sourceDuration: 5, title: `Clip ${timeline.tracks[0].clips.length + 1}` }));
+  }
+
+  const selected = timeline.selectedClipId;
+  const selectedClip = timeline.tracks.flatMap((track) => track.clips).find((clip) => clip.id === selected);
 
   return (
     <main className="app-shell">
       <header className="app-header">
-        <div>
-          <span className="eyebrow">IAC33 · NEURAL RUNTIME</span>
-          <h1>Andrew 2.0</h1>
-          <p>Asistente personal · análisis · memoria · creación multimedia</p>
-        </div>
-        <span className="status-pill">Listo</span>
+        <div><span className="eyebrow">IAC33 · NEURAL RUNTIME</span><h1>Andrew 2.0</h1><p>Asistente · memoria · bridge · edición local</p></div>
+        <span className="status-pill">{busy ? 'Procesando' : 'Listo'}</span>
       </header>
+
       <nav className="mode-bar" aria-label="Secciones">
-        <button className="mode-button active" type="button">Andrew Chat</button>
-        <button className="mode-button" type="button">Multimedia / Video</button>
+        <button className={`mode-button ${mode === 'chat' ? 'active' : ''}`} type="button" onClick={() => setMode('chat')}>Andrew Chat</button>
+        <button className={`mode-button ${mode === 'editor' ? 'active' : ''}`} type="button" onClick={() => setMode('editor')}>Editor / Timeline</button>
       </nav>
-      <section className="chat-panel">
-        <div ref={chatRef} className="messages" role="log" aria-live="polite" aria-relevant="additions text">
-          {messages.length === 0 && <div className="empty-state">Listo · sistema preparado</div>}
-          {messages.map((message, index) => (
-            <article key={`${message.role}-${index}`} className={`message ${message.role}`}>
-              <span className="message-label">{message.role === 'user' ? 'Tú' : 'Andrew 2.0'}</span>
-              <div className="message-body">{message.text}</div>
-            </article>
-          ))}
-          <div ref={endRef} aria-hidden="true" />
-        </div>
-        <form className="composer" onSubmit={(event) => { event.preventDefault(); sendMessage(); }}>
-          <input className="composer-input" value={input} onChange={(event) => setInput(event.target.value)} placeholder="Escribe un mensaje…" aria-label="Mensaje" />
-          <button className="send-button" type="submit" disabled={!input.trim()}>Enviar</button>
-        </form>
-      </section>
+
+      {error && <div className="error-banner" role="alert">{error}</div>}
+
+      {mode === 'chat' ? (
+        <section className="chat-panel">
+          <div className="messages" role="log" aria-live="polite">
+            {messages.length === 0 && <div className="empty-state">Bridge listo · memoria persistente en backend</div>}
+            {messages.map((message, index) => <article key={`${message.role}-${index}`} className={`message ${message.role}`}><span className="message-label">{message.role === 'user' ? 'Tú' : 'Andrew 2.0'}</span><div className="message-body">{message.text}</div></article>)}
+          </div>
+          <form className="composer" onSubmit={(event) => { event.preventDefault(); void sendMessage(); }}>
+            <input className="composer-input" value={input} onChange={(event) => setInput(event.target.value)} placeholder="Escribe un mensaje…" aria-label="Mensaje" />
+            <button className="send-button" type="submit" disabled={!input.trim() || busy}>{busy ? '…' : 'Enviar'}</button>
+          </form>
+        </section>
+      ) : (
+        <section className="editor-panel" aria-label="Editor local">
+          <div className="editor-toolbar">
+            <button type="button" onClick={addClip}>+ Clip</button>
+            <button type="button" disabled={!selectedClip} onClick={() => selectedClip && apply(() => store.splitClip(selectedClip.id, Math.max(0.1, selectedClip.duration / 2)))}>Cortar</button>
+            <button type="button" disabled={!selectedClip} onClick={() => selectedClip && apply(() => store.trimClip(selectedClip.id, selectedClip.sourceStart, Math.max(0.5, selectedClip.duration - 0.5)))}>Recortar</button>
+            <button type="button" disabled={!selectedClip} onClick={() => selectedClip && apply(() => store.removeClip(selectedClip.id))}>Eliminar</button>
+            <span className="timeline-meta">Duración {formatSeconds(timeline.duration)} · Playhead {formatSeconds(timeline.playhead)}</span>
+          </div>
+          <div className="preview-stage"><span>Vista previa local</span><strong>{selectedClip?.title || 'Selecciona un clip'}</strong></div>
+          <div className="timeline" role="region" aria-label="Línea de tiempo">
+            {timeline.tracks.map((track) => <div className="track" key={track.id}>
+              <div className="track-label"><strong>{track.name}</strong><small>{track.kind}</small></div>
+              <div className="track-lane">
+                {track.clips.map((clip) => <button type="button" className={`timeline-clip ${clip.id === selected ? 'selected' : ''}`} key={clip.id} style={{ left: `${clip.start * 10}px`, width: `${Math.max(54, clip.duration * 10)}px` }} onClick={() => setTimeline({ ...timeline, selectedClipId: clip.id })}>
+                  <strong>{clip.title || clip.assetId}</strong><small>{formatSeconds(clip.duration)}</small>
+                </button>)}
+              </div>
+            </div>)}
+          </div>
+          <input className="playhead" type="range" min="0" max={Math.max(0.1, timeline.duration)} step="0.1" value={Math.min(timeline.playhead, Math.max(0.1, timeline.duration))} onChange={(event) => apply(() => store.setPlayhead(Number(event.target.value)))} aria-label="Playhead" />
+          <p className="editor-note">Persistencia local activa. El bridge de Andrew puede analizar el proyecto y sus decisiones desde el chat.</p>
+        </section>
+      )}
     </main>
   );
 }
