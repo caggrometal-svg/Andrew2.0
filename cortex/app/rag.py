@@ -1,3 +1,4 @@
+import asyncio
 from dataclasses import dataclass
 from typing import Any
 
@@ -6,9 +7,8 @@ from qdrant_client import AsyncQdrantClient, models
 
 from .config import settings
 
-
-_dense = TextEmbedding(model_name=settings.embedding_model)
-_sparse = SparseTextEmbedding(model_name=settings.sparse_embedding_model)
+_dense: TextEmbedding | None = None
+_sparse: SparseTextEmbedding | None = None
 
 
 @dataclass(frozen=True)
@@ -19,6 +19,15 @@ class RetrievedChunk:
     payload: dict[str, Any]
 
 
+def _models() -> tuple[TextEmbedding, SparseTextEmbedding]:
+    global _dense, _sparse
+    if _dense is None:
+        _dense = TextEmbedding(model_name=settings.embedding_model)
+    if _sparse is None:
+        _sparse = SparseTextEmbedding(model_name=settings.sparse_embedding_model)
+    return _dense, _sparse
+
+
 class PrecisionRAG:
     def __init__(self):
         self.client = AsyncQdrantClient(url=settings.qdrant_url)
@@ -26,20 +35,32 @@ class PrecisionRAG:
 
     async def ensure_collection(self) -> None:
         exists = await self.client.collection_exists(self.collection)
-        if exists:
-            return
-        await self.client.create_collection(
-            collection_name=self.collection,
-            vectors_config={"dense": models.VectorParams(size=settings.embedding_dim, distance=models.Distance.COSINE)},
-            sparse_vectors_config={"sparse": models.SparseVectorParams(index=models.SparseIndexParams(on_disk=True))},
-        )
+        if not exists:
+            await self.client.create_collection(
+                collection_name=self.collection,
+                vectors_config={
+                    "dense": models.VectorParams(size=settings.embedding_dim, distance=models.Distance.COSINE)
+                },
+                sparse_vectors_config={
+                    "sparse": models.SparseVectorParams(index=models.SparseIndexParams(on_disk=True))
+                },
+            )
+        for field in ("tenant", "user", "project"):
+            try:
+                await self.client.create_payload_index(
+                    collection_name=self.collection,
+                    field_name=field,
+                    field_schema=models.PayloadSchemaType.KEYWORD,
+                )
+            except Exception as exc:
+                if "already exists" not in str(exc).lower():
+                    raise
 
     async def _embeddings(self, text: str):
-        import asyncio
-
         def run():
-            dense = list(_dense.embed([text]))[0].tolist()
-            sparse = list(_sparse.embed([text]))[0]
+            dense_model, sparse_model = _models()
+            dense = list(dense_model.embed([text]))[0].tolist()
+            sparse = list(sparse_model.embed([text]))[0]
             return dense, sparse
 
         return await asyncio.to_thread(run)
@@ -66,8 +87,12 @@ class PrecisionRAG:
             limit=limit,
         )
         candidates = [
-            RetrievedChunk(str(point.id), str((point.payload or {}).get("text", "")),
-                           float(point.score or 0), dict(point.payload or {}))
+            RetrievedChunk(
+                str(point.id),
+                str((point.payload or {}).get("text", "")),
+                float(point.score or 0),
+                dict(point.payload or {}),
+            )
             for point in points.points
         ]
         return self._rerank(query, candidates)[: top_k or settings.rag_top_k]
