@@ -37,7 +37,21 @@ describe.skipIf(!dbAvailable)('controlled learning persistence gate', () => {
     await pool.end();
   });
 
-  it('requires two distinct conversations and survives a pool restart', async () => {
+  it('accepts explicit identity from one conversation', async () => {
+    await recordObservation({ userId, conversationId: conversationA, userText: 'Me llamo Camilo.', assistantText: 'Entendido.' });
+    const result = await processLearningObservation({ userId, userText: 'Me llamo Camilo.' });
+    expect(result[0].patternType ?? result[0].type).toBe('identity');
+    expect(result[0].status).toBe('accepted');
+
+    await closeLearningStore();
+    await initializeLearningStore();
+    const accepted = await listAcceptedPatterns(userId);
+    expect(accepted).toHaveLength(1);
+    expect(accepted[0].pattern_type).toBe('identity');
+    expect(accepted[0].statement).toBe('Camilo');
+  });
+
+  it('requires two distinct conversations for preferences and survives a pool restart', async () => {
     await recordObservation({ userId, conversationId: conversationA, userText: 'Prefiero respuestas breves.', assistantText: 'Entendido.' });
     let result = await processLearningObservation({ userId, userText: 'Prefiero respuestas breves.' });
     expect(result[0].status).toBe('candidate');
