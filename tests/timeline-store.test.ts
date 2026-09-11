@@ -1,7 +1,19 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TimelineStore } from '../src/editor/timeline-store';
 
 describe('TimelineStore', () => {
+  beforeEach(() => {
+    vi.stubGlobal('window', {
+      localStorage: {
+        values: new Map<string, string>(),
+        getItem(key: string) { return this.values.get(key) ?? null; },
+        setItem(key: string, value: string) { this.values.set(key, value); },
+        removeItem(key: string) { this.values.delete(key); },
+      },
+    });
+    vi.stubGlobal('crypto', { randomUUID: vi.fn(() => '00000000-0000-4000-8000-000000000000') });
+  });
+
   it('creates tracks and persists clips', () => {
     const store = new TimelineStore();
     store.reset();
