@@ -177,7 +177,7 @@ jobs:
           grep -q "package:" /tmp/andrew-apk-badging.txt
           grep -q "application:" /tmp/andrew-apk-badging.txt
           grep -q "launchable-activity:" /tmp/andrew-apk-badging.txt
-          grep -q "uses-permission:'android.permission.INTERNET'" /tmp/andrew-apk-badging.txt
+          grep -q "uses-permission:.*android.permission.INTERNET" /tmp/andrew-apk-badging.txt
 
           echo "Required Android permission: INTERNET -> PASS"
 
