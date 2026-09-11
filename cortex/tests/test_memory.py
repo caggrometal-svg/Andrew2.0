@@ -1,4 +1,4 @@
-import json
+import fnmatch
 
 import pytest
 
@@ -22,9 +22,8 @@ class FakeRedis:
         return [self.data.get(key) for key in keys]
 
     async def scan_iter(self, match, count=100):
-        prefix = match.replace("*", "")
         for key in list(self.data):
-            if key.startswith(prefix):
+            if fnmatch.fnmatch(key, match):
                 yield key
 
 
