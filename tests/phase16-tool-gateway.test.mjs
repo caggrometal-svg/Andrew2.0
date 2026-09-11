@@ -1,7 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import Fastify from 'fastify';
-import { registerGatewayRoutes } from '../server/routes/gateway.mjs';
-import { registerBuiltinTools } from '../server/tools/builtins/index.ts';
+
+process.env.DATABASE_URL ||= 'postgresql://postgres:postgres@127.0.0.1:5432/andrew2_learning';
+process.env.DATABASE_SSL = 'disable';
+process.env.OPENAI_API_KEY ||= 'phase16-test-key';
+process.env.OPENAI_MODEL ||= 'gpt-5.6-luna';
+
+const { registerGatewayRoutes } = await import('../server/routes/gateway.mjs');
+const { registerBuiltinTools } = await import('../server/tools/builtins/index.ts');
 
 const app = Fastify();
 const userId = 'phase16-test-user';
