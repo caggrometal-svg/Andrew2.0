@@ -1,0 +1,34 @@
+name: Phase 22 Capacitor Bridge Boundary
+
+on:
+  push:
+    branches: [iac33-integration-next]
+    paths:
+      - 'src/network/androidBridgeV3CapacitorAdapter.ts'
+      - 'src/network/androidBridgeV3Executor.ts'
+      - 'tests/phase22-capacitor-bridge.test.ts'
+      - 'tests/phase21-android-bridge-executor.test.ts'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/phase22-capacitor-bridge.yml'
+  workflow_dispatch:
+
+jobs:
+  phase22:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm run test:phase22
+      - run: npm run test:phase21
+      - run: npm run test:phase20
+      - run: npm run test:phase19
+      - run: npm run test:phase18
+      - run: npm run test:phase17
+      - run: npm run test:phase16
+      - run: echo PHASE_22_GREEN_GATE
