@@ -17,7 +17,7 @@ describe('Phase 18 bridge contract hardening', () => {
     expect(route).toContain('randomUUID');
     expect(route).toContain('TTL_MS = 5 * 60 * 1000');
     expect(route).toContain('MAX_PAYLOAD_KEYS = 8');
-    expect(client).toContain('MAX_QUEUE_SIZE = 100');
+    expect(client).toContain('MAX_QUEUE = 100');
     expect(client).toContain('expiresAt');
   });
 
