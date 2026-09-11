@@ -1,5 +1,19 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import Fastify from 'fastify';
+
+const pending = new Map();
+vi.mock('../server/bridge/bridge-store.mjs', () => ({
+  initializeBridgeStore: vi.fn(async () => undefined),
+  enqueueBridgeCommand: vi.fn(async ({ userId, envelope }) => { pending.set(`${userId}:${envelope.id}`, { userId, envelope }); return envelope; }),
+  listPendingBridgeCommands: vi.fn(async (userId) => [...pending.values()].filter((item) => item.userId === userId).map((item) => item.envelope)),
+  acknowledgeBridgeCommand: vi.fn(async ({ userId, id }) => {
+    const key = `${userId}:${id}`;
+    if (!pending.has(key)) return false;
+    pending.delete(key);
+    return true;
+  }),
+}));
+
 import { registerBridgeV3Routes } from '../server/routes/bridge-v3.mjs';
 
 describe('Phase 18 Android Bridge V3 gateway', () => {
@@ -51,6 +65,20 @@ describe('Phase 18 Android Bridge V3 gateway', () => {
     expect(unsupported.json().error).toBe('unsupported_command');
     expect(malformed.statusCode).toBe(400);
     expect(malformed.json().error).toBe('invalid_payload');
+    await app.close();
+  });
+
+  it('delivers pending commands and accepts correlated acknowledgements', async () => {
+    const app = await build();
+    const commandResponse = await app.inject({ method: 'POST', url: '/api/v1/bridge/v3/command', headers: { 'x-andrew-user-id': 'camilo-test' }, payload: { command: 'request_status' } });
+    const id = commandResponse.json().envelope.id;
+    const pendingResponse = await app.inject({ method: 'GET', url: '/api/v1/bridge/v3/commands', headers: { 'x-andrew-user-id': 'camilo-test' } });
+    expect(pendingResponse.statusCode).toBe(200);
+    expect(pendingResponse.json().commands.some((item) => item.id === id)).toBe(true);
+    const ackResponse = await app.inject({ method: 'POST', url: '/api/v1/bridge/v3/ack', headers: { 'x-andrew-user-id': 'camilo-test' }, payload: { id, ok: true } });
+    expect(ackResponse.statusCode).toBe(200);
+    const afterAck = await app.inject({ method: 'GET', url: '/api/v1/bridge/v3/commands', headers: { 'x-andrew-user-id': 'camilo-test' } });
+    expect(afterAck.json().commands.some((item) => item.id === id)).toBe(false);
     await app.close();
   });
 });
