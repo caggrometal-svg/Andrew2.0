@@ -19,7 +19,8 @@ class Settings(BaseSettings):
     local_vllm_base_url: str = "http://vllm:8000/v1"
     local_vllm_api_key: str = "local-dev-key"
 
-    embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    embedding_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    sparse_embedding_model: str = "Qdrant/bm25"
     embedding_dim: int = 384
     cache_similarity_threshold: float = 0.94
     cache_ttl_seconds: int = 3600

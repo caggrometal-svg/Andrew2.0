@@ -2,10 +2,10 @@ import hashlib
 import time
 from dataclasses import dataclass
 
-import litellm
 from redis.asyncio import Redis
 
 from .config import settings
+from .embeddings import dense_embedding
 
 
 @dataclass(frozen=True)
@@ -59,16 +59,12 @@ class SemanticCache:
             if "Index already exists" not in str(exc):
                 raise
 
-    async def _embed(self, text: str) -> list[float]:
-        result = await litellm.aembedding(model=settings.embedding_model, input=[text])
-        return result.data[0]["embedding"]
-
     async def get(self, key: CacheKey, prompt: str) -> str | None:
         exact = await self.redis.get(self._exact_key(key, prompt))
         if exact is not None:
             return exact.decode() if isinstance(exact, bytes) else str(exact)
 
-        vector = await self._embed(prompt)
+        vector = await dense_embedding(prompt)
         query = (
             f"(@tenant:{{{key.tenant}}} @user:{{{key.user}}} "
             f"@locale:{{{key.locale}}} @model_version:{{{key.model_version}}} "
@@ -101,7 +97,7 @@ class SemanticCache:
         return None
 
     async def put(self, key: CacheKey, prompt: str, response: str) -> None:
-        vector = await self._embed(prompt)
+        vector = await dense_embedding(prompt)
         exact_key = self._exact_key(key, prompt)
         hash_key = self._hash_key(key, prompt)
         pipe = self.redis.pipeline()

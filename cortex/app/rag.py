@@ -1,10 +1,14 @@
 from dataclasses import dataclass
 from typing import Any
 
-import litellm
+from fastembed import SparseTextEmbedding, TextEmbedding
 from qdrant_client import AsyncQdrantClient, models
 
 from .config import settings
+
+
+_dense = TextEmbedding(model_name=settings.embedding_model)
+_sparse = SparseTextEmbedding(model_name=settings.sparse_embedding_model)
 
 
 @dataclass(frozen=True)
@@ -16,38 +20,45 @@ class RetrievedChunk:
 
 
 class PrecisionRAG:
-    """Hybrid dense+sparse retrieval with payload isolation and final rerank.
-
-    Qdrant performs dense+sparse prefetch and RRF fusion. The final local
-    reranker is intentionally isolated behind _rerank so it can be replaced
-    by a cross-encoder/ColBERT service without changing the retrieval contract.
-    """
-
     def __init__(self):
         self.client = AsyncQdrantClient(url=settings.qdrant_url)
         self.collection = settings.qdrant_collection
 
-    async def _dense(self, text: str) -> list[float]:
-        result = await litellm.aembedding(model=settings.embedding_model, input=[text])
-        return result.data[0]["embedding"]
+    async def ensure_collection(self) -> None:
+        exists = await self.client.collection_exists(self.collection)
+        if exists:
+            return
+        await self.client.create_collection(
+            collection_name=self.collection,
+            vectors_config={"dense": models.VectorParams(size=settings.embedding_dim, distance=models.Distance.COSINE)},
+            sparse_vectors_config={"sparse": models.SparseVectorParams(index=models.SparseIndexParams(on_disk=True))},
+        )
+
+    async def _embeddings(self, text: str):
+        import asyncio
+
+        def run():
+            dense = list(_dense.embed([text]))[0].tolist()
+            sparse = list(_sparse.embed([text]))[0]
+            return dense, sparse
+
+        return await asyncio.to_thread(run)
 
     async def search(self, query: str, tenant: str, user: str, top_k: int | None = None) -> list[RetrievedChunk]:
-        dense = await self._dense(query)
+        dense, sparse = await self._embeddings(query)
         limit = max((top_k or settings.rag_top_k) * 4, 20)
         query_filter = models.Filter(must=[
             models.FieldCondition(key="tenant", match=models.MatchValue(value=tenant)),
             models.FieldCondition(key="user", match=models.MatchValue(value=user)),
         ])
-
-        # Sparse query generation is kept explicit: production deployments can
-        # use Qdrant's BM25 Document inference or an external SPLADE service.
-        # The collection must expose a named `sparse` vector.
-        sparse_query = models.Document(text=query, model="Qdrant/bm25")
         points = await self.client.query_points(
             collection_name=self.collection,
             prefetch=[
                 models.Prefetch(query=dense, using="dense", limit=limit),
-                models.Prefetch(query=sparse_query, using="sparse", limit=limit),
+                models.Prefetch(
+                    query=models.SparseVector(indices=sparse.indices.tolist(), values=sparse.values.tolist()),
+                    using="sparse", limit=limit,
+                ),
             ],
             query=models.FusionQuery(fusion=models.Fusion.RRF),
             query_filter=query_filter,
@@ -59,12 +70,10 @@ class PrecisionRAG:
                            float(point.score or 0), dict(point.payload or {}))
             for point in points.points
         ]
-        ranked = await self._rerank(query, candidates)
-        return ranked[: top_k or settings.rag_top_k]
+        return self._rerank(query, candidates)[: top_k or settings.rag_top_k]
 
-    async def _rerank(self, query: str, candidates: list[RetrievedChunk]) -> list[RetrievedChunk]:
-        # Stable baseline reranker. Replace with a cross-encoder service once
-        # the benchmark set exists; never silently invent relevance scores.
+    @staticmethod
+    def _rerank(query: str, candidates: list[RetrievedChunk]) -> list[RetrievedChunk]:
         query_terms = {token.lower() for token in query.split() if len(token) > 2}
         scored: list[tuple[float, RetrievedChunk]] = []
         for chunk in candidates:

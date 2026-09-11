@@ -12,7 +12,6 @@ from .orchestrator import AIRequest, AndrewOrchestrator
 
 REQUESTS = Counter("andrew_requests_total", "Total Andrew requests", ["source", "intent"])
 LATENCY = Histogram("andrew_request_latency_seconds", "End-to-end request latency")
-FALLBACKS = Counter("andrew_fallback_total", "Model fallback attempts")
 
 
 class ChatRequest(BaseModel):
@@ -39,7 +38,9 @@ orchestrator = AndrewOrchestrator(redis, admission)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    await redis.ping()
     await orchestrator.cache.ensure_index()
+    await orchestrator.rag.ensure_collection()
     await admission.start()
     yield
     await admission.close()
