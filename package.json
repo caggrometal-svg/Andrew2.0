@@ -29,6 +29,7 @@
     "test:phase18": "vitest run tests/phase18-bridge-gateway.test.mjs",
     "test:phase19": "vitest run tests/phase19-bridge-persistence.test.mjs",
     "test:phase20": "vitest run tests/phase20-android-bridge-inbox-client.test.ts",
+    "test:phase21": "vitest run tests/phase21-android-bridge-executor.test.ts",
     "test:bridge-hardening": "vitest run tests/android-bridge-v3.test.ts",
     "backend": "node --import tsx server/server.mjs",
     "backend:dev": "node --import tsx --watch server/server.mjs"
