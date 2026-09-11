@@ -10,8 +10,7 @@ export interface BridgeResponse {
   readonly model: string;
 }
 
-interface SessionResponse { ok: true; session: { id: string } }
-interface MessageResponse { ok: true; sessionId: string; message: { content: string }; responseId: string | null; model: string }
+interface ChatResponse { ok: true; conversationId: string; reply: string; responseId: string | null; model: string }
 type GatewayError = { message?: unknown; error?: unknown };
 
 function backendUrl(): string {
@@ -53,24 +52,15 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export async function ensureBridgeSession(sessionId = getBridgeSessionId()): Promise<string> {
-  try {
-    const existing = await request<{ ok: true; session: unknown }>(`/api/v1/sessions/${encodeURIComponent(sessionId)}`);
-    if (existing.ok && existing.session) return sessionId;
-  } catch { /* Session creation is the recovery path. */ }
-  const data = await request<SessionResponse>('/api/v1/sessions', {
-    method: 'POST',
-    body: JSON.stringify({ sessionId, title: 'Andrew 2.0' }),
-  });
-  return data.session.id;
+  return sessionId;
 }
 
 export async function sendThroughBridge(message: string, sessionId = getBridgeSessionId()): Promise<BridgeResponse> {
   const normalized = message.trim();
   if (!normalized) throw new Error('El mensaje está vacío.');
-  const readySessionId = await ensureBridgeSession(sessionId);
-  const data = await request<MessageResponse>(`/api/v1/sessions/${encodeURIComponent(readySessionId)}/messages`, {
+  const data = await request<ChatResponse>('/api/chat', {
     method: 'POST',
-    body: JSON.stringify({ message: normalized }),
+    body: JSON.stringify({ message: normalized, conversationId: sessionId }),
   });
-  return { ok: true, sessionId: data.sessionId, reply: data.message.content, responseId: data.responseId, model: data.model };
+  return { ok: true, sessionId: data.conversationId, reply: data.reply, responseId: data.responseId, model: data.model };
 }
