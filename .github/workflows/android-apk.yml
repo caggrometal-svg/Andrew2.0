@@ -14,10 +14,6 @@ permissions:
   contents: write
   actions: write
 
-concurrency:
-  group: android-apk-${{ github.ref }}
-  cancel-in-progress: true
-
 env:
   NODE_VERSION: '20'
   CAPACITOR_VERSION: '7.4.4'
@@ -177,6 +173,7 @@ jobs:
           name: andrew-debug-apk-${{ github.sha }}
           path: |
             release/andrew-2.0-${{ github.sha }}.apk
+            release/andrew-latest.apk
             release/SHA256SUMS.txt
           if-no-files-found: error
       - name: Publish immutable GitHub Release
@@ -185,9 +182,9 @@ jobs:
           tag_name: andrew-${{ github.sha }}
           name: Andrew 2.0 ${{ github.sha }}
           body: |
-            Immutable APK release generated from `${{ github.sha }}` on `${{ github.ref_name }}`.
-            The APK was ZIP-tested, manifest-inspected and bridge-inspected before publication.
-          prerelease: true
+            Stable APK release generated from `${{ github.sha }}` on `${{ github.ref_name }}`.
+            APK was ZIP-tested, manifest-inspected and bridge-inspected before publication.
+          prerelease: false
           make_latest: false
           files: |
             release/andrew-2.0-${{ github.sha }}.apk
@@ -200,10 +197,10 @@ jobs:
           tag_name: andrew-latest
           name: Andrew 2.0 Latest APK
           body: |
-            Latest verified APK generated from `${{ github.sha }}` on `${{ github.ref_name }}`.
+            Stable latest APK generated from `${{ github.sha }}` on `${{ github.ref_name }}`.
             Verification: ZIP integrity, Android manifest, INTERNET permission, MainActivity and AndrewBridge.
             SHA-256 is included in `SHA256SUMS.txt`.
-          prerelease: true
+          prerelease: false
           make_latest: true
           files: |
             release/andrew-latest.apk
