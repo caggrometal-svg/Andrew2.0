@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { assessEvidence, type Evidence } from '@analysis/critical';
 import { earthquakeRisk, socialEventRisk, type Signal } from '@analysis/probabilistic';
 import { defaultCapabilities } from '@assistant/autonomy';
 import { createC33Brief } from '@assistant/expedienteC33';
 import { getRecentEarthquakes } from '@network/publicWeb';
 import { findRelevantLessons, learnFromOutcome, learningStats } from '@core/learning';
+import SettingsBridge, { isSettingsBridgeRequest, settingsBridgeUrl } from '@ui/SettingsBridge';
 
 const demoSignals: Signal[] = [
   { name: 'Actividad reciente', value: 0.62, weight: 1.2 },
@@ -26,10 +27,29 @@ export default function App() {
   const [projectId] = useState('iac33-main');
   const [lessonQuery, setLessonQuery] = useState('');
   const [learningVersion, setLearningVersion] = useState(0);
+  const [showSettings, setShowSettings] = useState(isSettingsBridgeRequest);
   const result = useMemo(() => domain === 'earthquake' ? earthquakeRisk(demoSignals) : socialEventRisk(demoSignals), [domain]);
   const critical = useMemo(() => assessEvidence(demoEvidence), []);
   const stats = useMemo(() => learningStats(projectId), [projectId, learningVersion]);
   const lessons = useMemo(() => lessonQuery.trim() ? findRelevantLessons(lessonQuery, projectId) : [], [lessonQuery, projectId, learningVersion]);
+
+  useEffect(() => {
+    if (showSettings) window.setTimeout(() => document.getElementById('configuracion')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+  }, [showSettings]);
+
+  function openSettings() {
+    window.history.replaceState({}, '', settingsBridgeUrl());
+    setShowSettings(true);
+  }
+
+  function closeSettings() {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('open');
+    url.searchParams.delete('screen');
+    url.hash = '';
+    window.history.replaceState({}, '', url.toString());
+    setShowSettings(false);
+  }
 
   async function updateNetwork() {
     setStatus('Consultando datos públicos…');
@@ -55,7 +75,13 @@ export default function App() {
   }
 
   return <main style={{ maxWidth: 1050, margin: '0 auto', padding: 24, fontFamily: 'system-ui, sans-serif', background: '#0b0f14', color: '#e8edf2', minHeight: '100vh' }}>
-    <h1>Andrew 2.0</h1><p>Pensador · visionario · análisis crítico · autonomía configurable</p>
+    <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+      <div><h1 style={{ marginBottom: 4 }}>Andrew 2.0</h1><p style={{ marginTop: 0 }}>Pensador · visionario · análisis crítico · autonomía configurable</p></div>
+      <button onClick={openSettings} style={{ padding: '10px 14px', borderRadius: 10, cursor: 'pointer' }}>Configuración</button>
+    </header>
+
+    {showSettings && <SettingsBridge onClose={closeSettings} />}
+
     <section style={{ display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))' }}>
       <article><h2>Red mundial pública</h2><p>Acceso web público: <b>ACTIVO</b></p><p>Datos satelitales públicos: <b>ACTIVOS</b></p><button onClick={updateNetwork}>Actualizar datos sísmicos</button>{quakeCount !== null && <p>Eventos recibidos: {quakeCount}</p>}<small>Andrew no controla satélites ni accede a redes privadas o restringidas.</small></article>
       <article><h2>Pronóstico</h2><button onClick={() => setDomain('earthquake')}>Riesgo sísmico</button>{' '}<button onClick={() => setDomain('social')}>Eventos sociales</button><p>Horizonte: {result.horizon} · Confianza: {result.confidence}</p><ol>{result.scenarios.map(s => <li key={s.label}>{s.label}: <strong>{Math.round(s.probability * 100)}%</strong></li>)}</ol><small>{result.warning}</small></article>
