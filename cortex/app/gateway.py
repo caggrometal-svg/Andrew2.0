@@ -114,7 +114,7 @@ class ModelGateway:
                 choice = data.get("choices", [{}])[0]
                 content = choice.get("message", {}).get("content")
                 if not isinstance(content, str):
-                    raise RuntimeError(f"{model}: invalid completion payload")
+                    raise TypeError(f"{model}: invalid completion payload")
                 GATEWAY_REQUESTS.labels(model, "success").inc()
                 usage = data.get("usage") or {}
                 completion_tokens = usage.get("completion_tokens")
