@@ -1,0 +1,50 @@
+model_list:
+  - model_name: andrew-primary
+    litellm_params:
+      model: openai/${PRIMARY_MODEL}
+      api_key: os.environ/PRIMARY_API_KEY
+      api_base: ${PRIMARY_API_BASE}
+
+  - model_name: andrew-secondary
+    litellm_params:
+      model: openai/${SECONDARY_MODEL}
+      api_key: os.environ/SECONDARY_API_KEY
+      api_base: ${SECONDARY_API_BASE}
+
+  - model_name: andrew-code-primary
+    litellm_params:
+      model: openai/${CODE_MODEL}
+      api_key: os.environ/CODE_API_KEY
+      api_base: ${CODE_API_BASE}
+
+  - model_name: andrew-multimodal-primary
+    litellm_params:
+      model: openai/${MULTIMODAL_MODEL}
+      api_key: os.environ/MULTIMODAL_API_KEY
+      api_base: ${MULTIMODAL_API_BASE}
+
+  - model_name: andrew-general-secondary
+    litellm_params:
+      model: openai/${SECONDARY_MODEL}
+      api_key: os.environ/SECONDARY_API_KEY
+      api_base: ${SECONDARY_API_BASE}
+
+  - model_name: andrew-local
+    litellm_params:
+      model: openai/${LOCAL_MODEL}
+      api_key: os.environ/LOCAL_VLLM_API_KEY
+      api_base: ${LOCAL_VLLM_BASE_URL}
+
+router_settings:
+  routing_strategy: latency-based-routing
+  num_retries: 1
+  timeout: 30
+  fallbacks:
+    - {"andrew-primary": ["andrew-secondary", "andrew-local"]}
+    - {"andrew-code-primary": ["andrew-general-secondary", "andrew-local"]}
+    - {"andrew-multimodal-primary": ["andrew-general-secondary", "andrew-local"]}
+
+litellm_settings:
+  drop_params: true
+  set_verbose: false
+  request_timeout: 30
