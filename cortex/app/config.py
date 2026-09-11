@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     p2_queue_size: int = 128
     p3_queue_size: int = 128
     p4_queue_size: int = 64
+    memory_max_scan_keys: int = 256
 
     system_prompt_version: str = "v1"
     model_version_routing: str = "v1"
