@@ -40,10 +40,23 @@ const MAX_RETRIES = 3;
 const BACKOFF_MS = 900;
 const VIDEO_CHUNK_BYTES = 2 * 1024 * 1024;
 const VIDEO_CHUNK_RETRIES = 4;
+const USER_ID_STORAGE_KEY = 'andrew:user-id';
 
 function getBackendUrl(): string {
   const configured = (import.meta.env.VITE_ANDREW_BACKEND_URL || 'https://andrew2-api.onrender.com').trim();
   return configured.replace(/\/$/, '');
+}
+
+function getAndrewUserId(): string {
+  try {
+    const existing = window.localStorage.getItem(USER_ID_STORAGE_KEY)?.trim();
+    if (existing && /^[A-Za-z0-9._:-]{1,128}$/.test(existing)) return existing;
+    const generated = `user:${crypto.randomUUID()}`;
+    window.localStorage.setItem(USER_ID_STORAGE_KEY, generated);
+    return generated;
+  } catch {
+    return `session:${crypto.randomUUID()}`;
+  }
 }
 
 function sleep(ms: number): Promise<void> {
@@ -141,7 +154,7 @@ export async function uploadVideoInChunks(file: File, onProgress?: (percent: num
 
   const initResponse = await fetchWithRetry(`${base}/api/media/video/init`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-Andrew-User-Id': getAndrewUserId() },
     body: JSON.stringify({ name: file.name, mimeType: file.type, size: file.size, chunkSize: VIDEO_CHUNK_BYTES }),
   }, 65000, onNetworkStatus);
   const init = await initResponse.json().catch(() => ({})) as { ok: boolean; uploadId?: string; chunkSize?: number; error?: string; message?: string };
@@ -166,7 +179,7 @@ export async function uploadVideoInChunks(file: File, onProgress?: (percent: num
 export async function sendAndrewMessage(request: AndrewChatRequest, timeoutMs = DEFAULT_TIMEOUT_MS, onNetworkStatus?: NetworkStatusListener): Promise<AndrewChatResponse> {
   const response = await fetchWithRetry(`${getBackendUrl()}/api/chat`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-Andrew-User-Id': getAndrewUserId() },
     body: JSON.stringify({ message: request.message.trim(), conversationId: request.conversationId, memory: request.memory?.slice(0, 20), attachment: request.attachment }),
   }, Math.max(timeoutMs, 60000), onNetworkStatus);
   const data = await response.json().catch(() => ({})) as AndrewChatResponse | AndrewChatError;
