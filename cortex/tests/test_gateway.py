@@ -13,12 +13,11 @@ async def test_429_falls_back_to_secondary():
     calls = []
 
     def handler(request: httpx.Request):
-        calls.append(request.read().decode())
-        model = request.read().decode()
-        return response(429) if 'primary' in model else response(200, "secondary")
+        body = request.content.decode()
+        calls.append(body)
+        return response(429) if "primary" in body else response(200, "secondary")
 
-    transport = httpx.MockTransport(handler)
-    client = httpx.AsyncClient(transport=transport)
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     gateway = ModelGateway(client)
     try:
         result = await gateway.chat([], ["primary", "secondary"], "u1")
@@ -33,17 +32,10 @@ async def test_429_falls_back_to_secondary():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("exc", [httpx.ReadTimeout("timeout"), httpx.ConnectError("down")])
 async def test_timeout_or_provider_down_falls_back(exc):
-    def handler(request: httpx.Request):
-        if request.url.path.endswith("/v1/chat/completions"):
-            if request.headers.get("x-model") == "secondary":
-                return response(200, "local")
-            raise exc
-        return response(500)
-
     class RouteTransport(httpx.AsyncBaseTransport):
         async def handle_async_request(self, request):
-            model = request.content.decode()
-            if "primary" in model:
+            body = request.content.decode()
+            if "primary" in body:
                 raise exc
             return response(200, "secondary")
 
@@ -61,8 +53,8 @@ async def test_timeout_or_provider_down_falls_back(exc):
 async def test_5xx_retries_and_local_is_last_fallback():
     class Transport(httpx.AsyncBaseTransport):
         async def handle_async_request(self, request):
-            model = request.content.decode()
-            if "local" in model:
+            body = request.content.decode()
+            if "local" in body:
                 return response(200, "local-ok")
             return response(503)
 
