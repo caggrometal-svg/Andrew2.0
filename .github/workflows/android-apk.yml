@@ -189,21 +189,46 @@ jobs:
             echo "apkanalyzer unavailable; AAPT2 remains authoritative for manifest validation"
           fi
 
-          echo "Checking Phase 23 native bridge in DEX files"
+          echo "Checking Phase 23 native bridge in all DEX files"
+          mapfile -t DEX_FILES < <(unzip -Z1 "$APK" | grep -E '^classes([0-9]+)?\.dex$' | sort -V)
+          if [ "${#DEX_FILES[@]}" -eq 0 ]; then
+            echo "No classes*.dex files found in APK"
+            exit 1
+          fi
+
           BRIDGE_DEX_MATCHES=0
-          while IFS= read -r DEX; do
-            if unzip -p "$APK" "$DEX" | strings | grep -q "AndrewBridge"; then
+          MAIN_ACTIVITY_DEX_MATCHES=0
+          for DEX in "${DEX_FILES[@]}"; do
+            echo "Inspecting $DEX"
+            DEX_STRINGS="$(unzip -p "$APK" "$DEX" | strings || true)"
+
+            if printf '%s\n' "$DEX_STRINGS" | grep -Fq "AndrewBridge"; then
               echo "AndrewBridge found in $DEX"
               BRIDGE_DEX_MATCHES=$((BRIDGE_DEX_MATCHES + 1))
             fi
-            if unzip -p "$APK" "$DEX" | strings | grep -q "MainActivity"; then
+
+            if printf '%s\n' "$DEX_STRINGS" | grep -Fq "MainActivity"; then
               echo "MainActivity found in $DEX"
+              MAIN_ACTIVITY_DEX_MATCHES=$((MAIN_ACTIVITY_DEX_MATCHES + 1))
             fi
-          done < <(unzip -Z1 "$APK" | grep -E '^classes([0-9]+)?\\.dex$')
-          test "$BRIDGE_DEX_MATCHES" -ge 1
+          done
+
+          echo "DEX files inspected: ${#DEX_FILES[@]}"
+          echo "AndrewBridge matches: $BRIDGE_DEX_MATCHES"
+          echo "MainActivity matches: $MAIN_ACTIVITY_DEX_MATCHES"
+
+          if [ "$BRIDGE_DEX_MATCHES" -lt 1 ]; then
+            echo "AndrewBridge class not found in any classes*.dex file"
+            exit 1
+          fi
+
+          if [ "$MAIN_ACTIVITY_DEX_MATCHES" -lt 1 ]; then
+            echo "MainActivity not found in any classes*.dex file"
+            exit 1
+          fi
+
           echo "AndrewBridge class present -> PASS"
           echo "MainActivity bridge host present -> PASS"
-
           echo "Manifest structural checks -> PASS"
           echo "APK ZIP integrity -> PASS"
           echo "APK deep inspection -> PASS"
