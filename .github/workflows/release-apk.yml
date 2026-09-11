@@ -7,6 +7,10 @@ on:
       - main
       - iac33-integration-next
 
+permissions:
+  contents: read
+  actions: write
+
 jobs:
   build-apk:
     runs-on: ubuntu-latest
