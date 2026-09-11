@@ -15,7 +15,7 @@ import { createMemory, initializeMemoryStore, searchMemories } from './memory/me
 import { initializeLearningStore, listAcceptedPatterns } from './learning/learning-store.mjs';
 import { initializeSessionStore } from './session/session-store.mjs';
 import { snapshotMetrics } from './observability/runtime-metrics.mjs';
-import { registerBuiltinTools } from './tools/builtins/index.ts';
+import { registerCalculatorTool } from './tools/builtins/calculator.ts';
 
 const app = Fastify({ logger: true, bodyLimit: config.maxBodyBytes, trustProxy: true });
 app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer' }, (_request, body, done) => done(null, body));
@@ -73,7 +73,7 @@ app.get('/health', async () => { const startedAt = process.hrtime.bigint(); cons
 await initializeMemoryStore();
 await initializeLearningStore();
 await initializeSessionStore();
-registerBuiltinTools();
+registerCalculatorTool();
 await registerGatewayRoutes(app);
 await registerBridgeV3Routes(app);
 await registerChatRoutes(app);
