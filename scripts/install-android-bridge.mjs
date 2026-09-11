@@ -6,10 +6,10 @@ const gradlePath = path.join(androidRoot, 'app', 'build.gradle');
 if (!fs.existsSync(gradlePath)) throw new Error('android/app/build.gradle not found');
 
 const gradle = fs.readFileSync(gradlePath, 'utf8');
-const namespace = gradle.match(/\bnamespace\s*(?:=\s*)?['\"]([^'\"]+)['\"]/)?.[1]
-  ?? gradle.match(/\bapplicationId\s*(?:=\s*)?['\"]([^'\"]+)['\"]/)?.[1]
+const namespace = gradle.match(/\bnamespace\s*(?:=\s*)?['"]([^'"]+)['"]/)?.[1]
+  ?? gradle.match(/\bapplicationId\s*(?:=\s*)?['"]([^'"]+)['"]/)?.[1]
   ?? fs.readFileSync(path.join(androidRoot, 'app', 'src', 'main', 'AndroidManifest.xml'), 'utf8')
-    .match(/\bpackage\s*=\s*['\"]([^'\"]+)['\"]/)?.[1];
+    .match(/\bpackage\s*=\s*['"]([^'"]+)['"]/)?.[1];
 if (!namespace) throw new Error('Unable to determine Android namespace');
 
 const packagePath = namespace.split('.').join(path.sep);
