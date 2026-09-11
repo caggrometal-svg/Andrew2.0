@@ -189,9 +189,18 @@ jobs:
             echo "apkanalyzer unavailable; AAPT2 remains authoritative for manifest validation"
           fi
 
-          echo "Checking Phase 23 native bridge in DEX"
-          unzip -p "$APK" classes.dex | strings | grep -q "AndrewBridge"
-          unzip -p "$APK" classes.dex | strings | grep -q "MainActivity"
+          echo "Checking Phase 23 native bridge in DEX files"
+          BRIDGE_DEX_MATCHES=0
+          while IFS= read -r DEX; do
+            if unzip -p "$APK" "$DEX" | strings | grep -q "AndrewBridge"; then
+              echo "AndrewBridge found in $DEX"
+              BRIDGE_DEX_MATCHES=$((BRIDGE_DEX_MATCHES + 1))
+            fi
+            if unzip -p "$APK" "$DEX" | strings | grep -q "MainActivity"; then
+              echo "MainActivity found in $DEX"
+            fi
+          done < <(unzip -Z1 "$APK" | grep -E '^classes([0-9]+)?\\.dex$')
+          test "$BRIDGE_DEX_MATCHES" -ge 1
           echo "AndrewBridge class present -> PASS"
           echo "MainActivity bridge host present -> PASS"
 
