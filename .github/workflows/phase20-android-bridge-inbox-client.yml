@@ -19,7 +19,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
       - run: npm install
       - run: npm run typecheck
       - run: npm run build
@@ -29,5 +28,3 @@ jobs:
       - run: npm run test:phase17
       - run: npm run test:phase16
       - run: echo PHASE_20_GREEN_GATE
-
-# Phase 20 CI trigger marker
