@@ -1,0 +1,24 @@
+name: Phase 17 Android Bridge V3 Gate
+
+on:
+  push:
+    branches: [iac33-integration-next]
+  pull_request:
+    branches: [iac33-integration-next]
+  workflow_dispatch:
+
+jobs:
+  phase17:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm run test:bridge-hardening
+      - run: npm run test:phase16
+      - run: npm run test:phase14
+      - run: echo PHASE_17_GREEN_GATE
