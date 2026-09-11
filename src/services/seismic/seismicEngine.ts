@@ -6,6 +6,10 @@ export interface SeismicEvent {
   coordinates: [number, number, number];
 }
 
+export interface SeismicLocalEvent extends SeismicEvent {
+  localTime: string;
+}
+
 export interface SeismicForecastResult {
   totalEventsAnalyzed: number;
   windowDays: number;
@@ -15,6 +19,8 @@ export interface SeismicForecastResult {
   activeAnomaliesDetected: boolean;
   lastUpdated: string;
   dataSource: string;
+  chileEventsAnalyzed: number;
+  chileLatestEvents: SeismicLocalEvent[];
 }
 
 interface USGSFeature {
@@ -30,14 +36,14 @@ interface USGSFeed {
 /**
  * Statistical seismic activity engine.
  *
- * This is not an earthquake prediction model. It estimates the probability of
- * at least one event above the configured magnitude threshold using the
- * observed 30-day Poisson rate, and estimates the median maximum magnitude
- * under a fitted Gutenberg-Richter frequency-magnitude relation.
+ * Global activity is retained for the statistical baseline, while a Chile
+ * geographic filter exposes the local events that matter to the operator.
+ * This is not an earthquake prediction model or an official warning system.
  */
 export class SeismicPredictionEngine {
   private readonly USGS_ENDPOINT = 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_month.geojson';
   private readonly WINDOW_DAYS = 30;
+  private readonly CHILE_BOUNDS = { minLat: -56, maxLat: -17, minLon: -76, maxLon: -66 };
 
   async fetchAndComputeForecast(minMagnitudeFilter = 4.0): Promise<SeismicForecastResult> {
     const response = await fetch(this.USGS_ENDPOINT, { signal: AbortSignal.timeout(15000) });
@@ -65,6 +71,7 @@ export class SeismicPredictionEngine {
       })
       .filter((event): event is SeismicEvent => event !== null && event.magnitude >= minMagnitudeFilter);
 
+    const chileEvents = events.filter(event => this.isInChile(event.coordinates[1], event.coordinates[0]));
     const totalEvents = events.length;
     const probabilityNext14Days = this.poissonAtLeastOneProbability(totalEvents / this.WINDOW_DAYS, 14);
     const probabilityNext30Days = this.poissonAtLeastOneProbability(totalEvents / this.WINDOW_DAYS, 30);
@@ -79,7 +86,25 @@ export class SeismicPredictionEngine {
       activeAnomaliesDetected: this.detectRateAnomaly(events, now),
       lastUpdated: new Date().toISOString(),
       dataSource: 'USGS Earthquake Hazards Program · all_month.geojson',
+      chileEventsAnalyzed: chileEvents.length,
+      chileLatestEvents: chileEvents
+        .sort((a, b) => b.time - a.time)
+        .slice(0, 12)
+        .map(event => ({ ...event, localTime: this.formatChileTime(event.time) })),
     };
+  }
+
+  private isInChile(latitude: number, longitude: number): boolean {
+    return latitude >= this.CHILE_BOUNDS.minLat && latitude <= this.CHILE_BOUNDS.maxLat && longitude >= this.CHILE_BOUNDS.minLon && longitude <= this.CHILE_BOUNDS.maxLon;
+  }
+
+  private formatChileTime(timestamp: number): string {
+    return new Intl.DateTimeFormat('es-CL', {
+      timeZone: 'America/Santiago',
+      dateStyle: 'short',
+      timeStyle: 'medium',
+      hour12: false,
+    }).format(new Date(timestamp));
   }
 
   private poissonAtLeastOneProbability(ratePerDay: number, horizonDays: number): number {
