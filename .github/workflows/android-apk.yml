@@ -132,9 +132,56 @@ jobs:
 
       - name: Verify APK output
         run: |
-          test -s android/app/build/outputs/apk/debug/app-debug.apk
-          sha256sum android/app/build/outputs/apk/debug/app-debug.apk
-          ls -lh android/app/build/outputs/apk/debug/app-debug.apk
+          set -euo pipefail
+          APK="android/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          echo "APK: $APK"
+          ls -lh "$APK"
+          sha256sum "$APK"
+          unzip -t "$APK" >/tmp/apk-zip-test.txt
+          tail -n 2 /tmp/apk-zip-test.txt
+          test -f <(unzip -Z1 "$APK" | grep -Fx 'AndroidManifest.xml')
+          test -f <(unzip -Z1 "$APK" | grep -Fx 'classes.dex')
+          test -f <(unzip -Z1 "$APK" | grep -Fx 'resources.arsc')
+
+      - name: Deep inspect APK Manifest and Android bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="android/app/build/outputs/apk/debug/app-debug.apk"
+          BUILD_TOOLS_DIR="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          AAPT2="$BUILD_TOOLS_DIR/aapt2"
+          APKANALYZER="$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
+
+          test -x "$AAPT2"
+          echo "Using AAPT2: $AAPT2"
+          "$AAPT2" dump badging "$APK" | tee /tmp/andrew-apk-badging.txt
+          "$AAPT2" dump xmltree "$APK" AndroidManifest.xml | tee /tmp/andrew-apk-manifest-tree.txt >/dev/null
+
+          grep -q "package:" /tmp/andrew-apk-badging.txt
+          grep -q "application:" /tmp/andrew-apk-badging.txt
+          grep -q "launchable-activity:" /tmp/andrew-apk-badging.txt
+          grep -q "uses-permission:'android.permission.INTERNET'" /tmp/andrew-apk-badging.txt
+
+          echo "Required Android permission: INTERNET -> PASS"
+
+          if [ -x "$APKANALYZER" ]; then
+            "$APKANALYZER" manifest permissions "$APK" | tee /tmp/andrew-apk-permissions.txt
+            grep -q "android.permission.INTERNET" /tmp/andrew-apk-permissions.txt
+            echo "apkanalyzer manifest permission check -> PASS"
+          else
+            echo "apkanalyzer unavailable; AAPT2 remains authoritative for manifest validation"
+          fi
+
+          echo "Checking Phase 23 native bridge in DEX"
+          unzip -p "$APK" classes.dex | strings | grep -q "AndrewBridge"
+          unzip -p "$APK" classes.dex | strings | grep -q "MainActivity"
+          echo "AndrewBridge class present -> PASS"
+          echo "MainActivity bridge host present -> PASS"
+
+          echo "Manifest structural checks -> PASS"
+          echo "APK ZIP integrity -> PASS"
+          echo "APK deep inspection -> PASS"
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
