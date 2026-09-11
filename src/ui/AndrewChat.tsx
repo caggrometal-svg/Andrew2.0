@@ -86,7 +86,13 @@ export default function AndrewChat({ conversationId }: Props) {
     setChatBusy(true);
     try {
       const bridgeClient = bridgeClientRef.current;
-      if (bridgeClient) await bridgeClient.syncNow();
+      if (bridgeClient) {
+        try {
+          await bridgeClient.syncNow();
+        } catch {
+          setBridgeAvailable(false);
+        }
+      }
 
       let preparedAttachment = attachment;
       if (attachment?.type === 'video' && attachmentFile) preparedAttachment = await uploadVideoInChunks(attachmentFile, setUploadProgress);
