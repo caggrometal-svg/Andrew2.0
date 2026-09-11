@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
+import secrets
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 from redis.asyncio import Redis
@@ -36,6 +37,14 @@ admission = AdmissionController(
 orchestrator = AndrewOrchestrator(redis, admission)
 
 
+def require_cortex_token(authorization: str | None = Header(default=None)) -> None:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Cortex authentication required")
+    supplied = authorization[7:].strip()
+    if not secrets.compare_digest(supplied, settings.cortex_shared_token):
+        raise HTTPException(status_code=401, detail="Invalid Cortex token")
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     await redis.ping()
@@ -58,12 +67,12 @@ async def health():
 
 
 @app.get("/metrics")
-async def metrics():
+async def metrics(_: None = Depends(require_cortex_token)):
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.post("/v1/chat")
-async def chat(payload: ChatRequest, x_andrew_user_id: str | None = Header(default=None)):
+async def chat(payload: ChatRequest, _: None = Depends(require_cortex_token), x_andrew_user_id: str | None = Header(default=None)):
     user_id = x_andrew_user_id or f"conversation:{payload.conversation_id}"
     try:
         with LATENCY.time():

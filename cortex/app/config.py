@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8080
     log_level: str = "INFO"
+    cortex_shared_token: str
 
     redis_url: str
     qdrant_url: str
