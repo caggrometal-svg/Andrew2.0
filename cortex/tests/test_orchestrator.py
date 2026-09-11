@@ -34,6 +34,16 @@ def test_priority_policy():
     assert orchestrator.priority_for(Intent.CHAT, Priority.P3) is Priority.P3
 
 
+def test_cache_identity_is_sanitized():
+    orchestrator = AndrewOrchestrator.__new__(AndrewOrchestrator)
+    assert orchestrator._cache_tag("tenant:admin") == "tenant_admin"
+    assert orchestrator._cache_tag("user with spaces") == "user_with_spaces"
+    with pytest.raises(ValueError):
+        orchestrator._cache_tag("")
+    with pytest.raises(ValueError):
+        orchestrator._cache_tag("x" * 257)
+
+
 @pytest.mark.asyncio
 async def test_execute_uses_cache_without_gateway():
     admission = AdmissionController(1, {priority: 4 for priority in Priority})
