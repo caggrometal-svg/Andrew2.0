@@ -7,6 +7,10 @@ on:
       - iac33-integration-next
   workflow_dispatch:
 
+permissions:
+  contents: read
+  actions: write
+
 concurrency:
   group: android-apk-${{ github.ref }}
   cancel-in-progress: true
