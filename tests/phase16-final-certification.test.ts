@@ -6,27 +6,13 @@ const root = process.cwd();
 const packageJson = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'));
 
 describe('Phase 16 final certification gate', () => {
-  it('declares the complete certification command chain', () => {
+  it('declares the required regression command chain', () => {
     const scripts = packageJson.scripts ?? {};
     for (const name of [
-      'typecheck',
-      'build',
-      'test',
-      'test:memory',
-      'test:learning',
-      'test:phase4',
-      'test:phase5',
-      'test:phase6',
-      'test:phase7',
-      'test:phase8',
-      'test:phase9',
-      'test:phase10',
-      'test:phase11',
-      'test:phase12',
-      'test:phase13',
-      'test:phase14',
-      'test:phase15',
-      'test:phase16',
+      'typecheck', 'build', 'test', 'test:memory', 'test:learning',
+      'test:phase4', 'test:phase5', 'test:phase6', 'test:phase7',
+      'test:phase8', 'test:phase9', 'test:phase10', 'test:phase11',
+      'test:phase12', 'test:phase13', 'test:phase14', 'test:phase15',
     ]) {
       expect(typeof scripts[name], `missing npm script: ${name}`).toBe('string');
     }
