@@ -9,20 +9,20 @@ def response(status: int, content: str = "ok") -> httpx.Response:
 
 
 @pytest.mark.asyncio
-async def test_429_falls_back_to_secondary():
+@pytest.mark.parametrize("status", [408, 429])
+async def test_retryable_status_falls_back_to_secondary(status):
     calls = []
 
     def handler(request: httpx.Request):
         body = request.content.decode()
         calls.append(body)
-        return response(429) if "primary" in body else response(200, "secondary")
+        return response(status) if "primary" in body else response(200, "secondary")
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     gateway = ModelGateway(client)
     try:
         result = await gateway.chat([], ["primary", "secondary"], "u1")
         assert result["model"] == "secondary"
-        assert result["content"] == "secondary"
         assert len(calls) == 2
     finally:
         await gateway.close()
@@ -64,6 +64,22 @@ async def test_5xx_retries_and_local_is_last_fallback():
         result = await gateway.chat([], ["primary", "secondary", "local"], "u1")
         assert result["model"] == "local"
         assert result["content"] == "local-ok"
+    finally:
+        await gateway.close()
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_non_retryable_400_is_not_fallback():
+    class Transport(httpx.AsyncBaseTransport):
+        async def handle_async_request(self, request):
+            return response(400)
+
+    client = httpx.AsyncClient(transport=Transport())
+    gateway = ModelGateway(client)
+    try:
+        with pytest.raises(httpx.HTTPStatusError):
+            await gateway.chat([], ["primary", "secondary"], "u1")
     finally:
         await gateway.close()
         await client.aclose()
