@@ -20,6 +20,7 @@
     "test:phase9": "vitest run tests/phase9-autonomous.test.ts",
     "test:phase10": "vitest run tests/phase10-system-runtime.test.ts",
     "test:phase11": "vitest run tests/phase11-autonomous-production.test.ts",
+    "test:phase12": "vitest run tests/phase12-runtime-integration.test.ts",
     "backend": "node server/server.mjs",
     "backend:dev": "node --watch server/server.mjs"
   },
