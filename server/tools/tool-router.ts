@@ -1,8 +1,8 @@
-import { assertToolInput, getTool } from './tool-registry';
-import { executeTool } from './tool-executor';
-import { verifyToolResult } from './tool-verifier';
-import type { ToolContext, ToolInput, ToolResult } from './tool-types';
-import type { ToolCapability } from './tool-capabilities';
+import { assertToolInput, getTool } from './tool-registry.ts';
+import { executeTool } from './tool-executor.ts';
+import { verifyToolResult } from './tool-verifier.ts';
+import type { ToolContext, ToolInput, ToolResult } from './tool-types.ts';
+import type { ToolCapability } from './tool-capabilities.ts';
 
 export interface ToolPermissionPolicy {
   readonly allowed: readonly string[];
