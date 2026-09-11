@@ -1,0 +1,31 @@
+name: Phase 20 Android Bridge Inbox Client
+
+on:
+  push:
+    branches: [iac33-integration-next]
+    paths:
+      - 'src/network/androidBridgeV3Inbox.ts'
+      - 'tests/phase20-android-bridge-inbox-client.test.ts'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/phase20-android-bridge-inbox-client.yml'
+  workflow_dispatch:
+
+jobs:
+  phase20:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm install
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm run test:phase20
+      - run: npm run test:phase19
+      - run: npm run test:phase18
+      - run: npm run test:phase17
+      - run: npm run test:phase16
+      - run: echo PHASE_20_GREEN_GATE
