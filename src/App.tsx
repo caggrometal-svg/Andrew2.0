@@ -34,17 +34,13 @@ export default function App() {
         </div>
         <span className="status-pill">Listo</span>
       </header>
-
       <nav className="mode-bar" aria-label="Secciones">
         <button className="mode-button active" type="button">Andrew Chat</button>
         <button className="mode-button" type="button">Multimedia / Video</button>
       </nav>
-
       <section className="chat-panel">
         <div ref={chatRef} className="messages" role="log" aria-live="polite" aria-relevant="additions text">
-          {messages.length === 0 && (
-            <div className="empty-state">Listo · sistema preparado</div>
-          )}
+          {messages.length === 0 && <div className="empty-state">Listo · sistema preparado</div>}
           {messages.map((message, index) => (
             <article key={`${message.role}-${index}`} className={`message ${message.role}`}>
               <span className="message-label">{message.role === 'user' ? 'Tú' : 'Andrew 2.0'}</span>
@@ -53,24 +49,9 @@ export default function App() {
           ))}
           <div ref={endRef} aria-hidden="true" />
         </div>
-
-        <form
-          className="composer"
-          onSubmit={(event) => {
-            event.preventDefault();
-            sendMessage();
-          }}
-        >
-          <input
-            className="composer-input"
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            placeholder="Escribe un mensaje…"
-            aria-label="Mensaje"
-          />
-          <button className="send-button" type="submit" disabled={!input.trim()}>
-            Enviar
-          </button>
+        <form className="composer" onSubmit={(event) => { event.preventDefault(); sendMessage(); }}>
+          <input className="composer-input" value={input} onChange={(event) => setInput(event.target.value)} placeholder="Escribe un mensaje…" aria-label="Mensaje" />
+          <button className="send-button" type="submit" disabled={!input.trim()}>Enviar</button>
         </form>
       </section>
     </main>
