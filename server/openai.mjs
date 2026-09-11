@@ -1,56 +1,8 @@
-import { config } from './config.mjs';
+import { ProviderRouter } from './ai/provider-router.mjs';
 
-const endpoint = 'https://api.openai.com/v1/responses';
 const MAX_VIDEO_FRAMES = 6;
 const MAX_HISTORY = 40;
-const OPENAI_TIMEOUT_MS = 60_000;
-const MAX_ATTEMPTS = 3;
-const RETRY_BASE_MS = 900;
-
-function extractText(data) {
-  if (typeof data?.output_text === 'string') return data.output_text.trim();
-  const parts = [];
-  for (const item of data?.output || []) {
-    for (const content of item?.content || []) {
-      if (content?.type === 'output_text' && typeof content?.text === 'string') parts.push(content.text);
-    }
-  }
-  return parts.join('\n').trim();
-}
-
-function retryableStatus(status) {
-  return status === 408 || status === 409 || status === 429 || status >= 500;
-}
-
-async function requestOpenAI(body) {
-  let lastError;
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), OPENAI_TIMEOUT_MS);
-    try {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${config.openaiApiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-      const data = await response.json().catch(() => ({}));
-      if (response.ok) return data;
-      const error = new Error(data?.error?.message || `OpenAI HTTP ${response.status}`);
-      error.status = response.status;
-      if (!retryableStatus(response.status) || attempt === MAX_ATTEMPTS) throw error;
-      lastError = error;
-    } catch (error) {
-      lastError = error;
-      if (attempt === MAX_ATTEMPTS) throw error;
-      if (error?.status && !retryableStatus(error.status)) throw error;
-    } finally {
-      clearTimeout(timeout);
-    }
-    await new Promise((resolve) => setTimeout(resolve, RETRY_BASE_MS * (2 ** (attempt - 1))));
-  }
-  throw lastError || new Error('OpenAI request failed');
-}
+const router = new ProviderRouter();
 
 function historyInput(history) {
   if (!Array.isArray(history)) return [];
@@ -69,10 +21,10 @@ export async function createResponse({ message, memory = [], attachment, history
 
   const hasVideoFrames = attachment?.type === 'video' && Array.isArray(attachment.frames) && attachment.frames.length > 0;
   const mediaBlock = attachment?.type === 'video'
-    ? `\nEl usuario adjuntó el video ${attachment.name || 'sin nombre'}${attachment.duration ? ` (${attachment.duration.toFixed(1)} s)` : ''}. Se extrajeron ${attachment.frames?.length || 0} fotogramas representativos${hasVideoFrames ? ' y se entregan como entradas visuales reales' : ''}. Analiza solo lo que pueda observarse en esos fotogramas y deja claro cuando una conclusión no pueda determinarse por falta de continuidad temporal, audio o frames.`
+    ? `\nEl usuario adjuntó el video ${attachment.name || 'sin nombre'}${attachment.duration ? ` (${attachment.duration.toFixed(1)} s)` : ''}. Se extrajeron ${attachment.frames?.length || 0} fotogramas representativos. Analiza solo lo observable y declara cualquier limitación temporal o de audio.`
     : '';
 
-  const current = `Eres Andrew 2.0, asistente personal conectado al runtime IAC33.\nUsa el contexto de memoria solo como información de apoyo. No inventes recuerdos.\nResponde en el idioma del usuario y de forma clara.${memoryBlock}${mediaBlock}\n\nMensaje del usuario:\n${message}`;
+  const current = `Eres Andrew 2.0, asistente personal conectado al runtime IAC33.\nUsa la memoria solo como información de apoyo. No inventes recuerdos.\nResponde en el idioma del usuario y de forma clara.${memoryBlock}${mediaBlock}\n\nMensaje del usuario:\n${message}`;
   const input = historyInput(history);
   input.push({ role: 'user', content: current });
 
@@ -82,19 +34,30 @@ export async function createResponse({ message, memory = [], attachment, history
       { type: 'input_image', image_url: attachment.dataUrl, detail: 'auto' },
     ];
   }
+
   if (hasVideoFrames) {
-    const visualContent = [
+    input[input.length - 1].content = [
       { type: 'input_text', text: current },
       ...attachment.frames.slice(0, MAX_VIDEO_FRAMES).flatMap((frame) => [
-        { type: 'input_text', text: `Fotograma ${frame.index} — timestamp exacto ${Number(frame.timestamp).toFixed(3)} s.` },
+        { type: 'input_text', text: `Fotograma ${frame.index} — timestamp ${Number(frame.timestamp).toFixed(3)} s.` },
         { type: 'input_image', image_url: frame.dataUrl, detail: 'auto' },
       ]),
     ];
-    input[input.length - 1].content = visualContent;
   }
 
-  const data = await requestOpenAI({ model: config.openaiModel, input, store: false });
-  const text = extractText(data);
-  if (!text) throw new Error('OpenAI returned an empty response');
-  return { text, responseId: data.id || null, model: data.model || config.openaiModel };
+  const result = await router.execute({
+    prompt: current,
+    history,
+    input,
+    temperature: 0.2,
+    attachment: attachment ? { type: attachment.type, name: attachment.name } : null,
+  });
+
+  return {
+    text: result.text,
+    responseId: null,
+    model: result.provider,
+    provider: result.provider,
+    latencyMs: result.latencyMs,
+  };
 }
