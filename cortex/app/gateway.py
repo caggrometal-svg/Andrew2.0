@@ -122,7 +122,7 @@ class ModelGateway:
                 if isinstance(completion_tokens, (int, float)) and elapsed > 0:
                     result["tokens_per_second"] = round(float(completion_tokens) / elapsed, 2)
                 return result
-            except (httpx.TimeoutException, httpx.NetworkError, RuntimeError) as exc:
+            except (httpx.TimeoutException, httpx.NetworkError, RuntimeError, TypeError) as exc:
                 circuit.failure()
                 CIRCUIT_STATE.labels(model).set(self._state_number(circuit.state))
                 GATEWAY_REQUESTS.labels(model, "exception").inc()
