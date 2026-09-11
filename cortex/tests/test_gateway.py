@@ -5,7 +5,11 @@ from app.gateway import Circuit, CircuitState, ModelGateway
 
 
 def response(status: int, content: str = "ok") -> httpx.Response:
-    return httpx.Response(status, json={"choices": [{"message": {"content": content}}]})
+    return httpx.Response(
+        status,
+        json={"choices": [{"message": {"content": content}}]},
+        request=httpx.Request("POST", "http://test/v1/chat/completions"),
+    )
 
 
 @pytest.mark.asyncio
