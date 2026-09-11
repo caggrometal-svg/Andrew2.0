@@ -1,0 +1,34 @@
+name: Phase 21 Android Bridge Executor
+
+on:
+  push:
+    branches: [iac33-integration-next]
+    paths:
+      - 'src/network/androidBridgeV3.ts'
+      - 'src/network/androidBridgeV3Inbox.ts'
+      - 'src/network/androidBridgeV3Executor.ts'
+      - 'tests/phase21-android-bridge-executor.test.ts'
+      - 'tests/phase20-android-bridge-inbox-client.test.ts'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/phase21-android-bridge-executor.yml'
+  workflow_dispatch:
+
+jobs:
+  phase21:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm run test:phase21
+      - run: npm run test:phase20
+      - run: npm run test:phase19
+      - run: npm run test:phase18
+      - run: npm run test:phase17
+      - run: npm run test:phase16
+      - run: echo PHASE_21_GREEN_GATE
