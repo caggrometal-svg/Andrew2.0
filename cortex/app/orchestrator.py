@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from enum import StrEnum
+import re
 import time
 from typing import Any
 
@@ -33,6 +34,8 @@ class AIRequest:
 
 
 class AndrewOrchestrator:
+    _CACHE_TAG_SAFE = re.compile(r"[^A-Za-z0-9_@-]")
+
     def __init__(self, redis: Redis, admission: AdmissionController):
         self.redis = redis
         self.admission = admission
@@ -40,6 +43,13 @@ class AndrewOrchestrator:
         self.memory = MemoryManager(redis)
         self.rag = PrecisionRAG()
         self.gateway = ModelGateway()
+
+    @classmethod
+    def _cache_tag(cls, value: str) -> str:
+        normalized = cls._CACHE_TAG_SAFE.sub("_", value)
+        if not normalized or len(normalized) > 256:
+            raise ValueError("invalid cache identity")
+        return normalized
 
     @staticmethod
     def classify_intent(message: str) -> Intent:
@@ -87,11 +97,11 @@ class AndrewOrchestrator:
         async def work() -> dict[str, Any]:
             started = time.perf_counter()
             key = CacheKey(
-                tenant=request.tenant,
-                user=request.user_id,
-                locale=request.locale,
-                model_version=settings.model_version_routing,
-                system_prompt_version=settings.system_prompt_version,
+                tenant=self._cache_tag(request.tenant),
+                user=self._cache_tag(request.user_id),
+                locale=self._cache_tag(request.locale),
+                model_version=self._cache_tag(settings.model_version_routing),
+                system_prompt_version=self._cache_tag(settings.system_prompt_version),
             )
             cached = await self.cache.get(key, request.message)
             if cached is not None:
