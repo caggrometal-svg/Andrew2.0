@@ -58,12 +58,14 @@ function historyInput(history) {
     .filter((item) => item && (item.role === 'user' || item.role === 'assistant') && typeof item.content === 'string')
     .slice(-MAX_HISTORY)
     .map((item) => item.role === 'assistant'
-      // Responses API treats assistant messages as prior model output. Sending
-      // input_text here makes the API validate an output content item as input
-      // and produces: "Invalid value: 'input_text'. Supported values are:
-      // 'output_text' and 'refusal'." Preserve assistant turns as plain text.
-      ? { role: 'assistant', content: item.content.slice(0, 12000) }
-      : { role: 'user', content: [{ type: 'input_text', text: item.content.slice(0, 12000) }] });
+      ? {
+          role: 'assistant',
+          content: [{ type: 'output_text', text: item.content.slice(0, 12000) }],
+        }
+      : {
+          role: 'user',
+          content: [{ type: 'input_text', text: item.content.slice(0, 12000) }],
+        });
 }
 
 export async function createResponse({ message, memory = [], attachment, history = [] }) {
