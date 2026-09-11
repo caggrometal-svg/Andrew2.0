@@ -1,0 +1,25 @@
+name: Phase 18 Android Bridge Gateway Gate
+
+on:
+  push:
+    branches: [iac33-integration-next]
+  pull_request:
+    branches: [iac33-integration-next]
+  workflow_dispatch:
+
+jobs:
+  phase18:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm install
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm run test:phase18
+      - run: npm run test:phase17
+      - run: npm run test:phase16
+      - run: echo PHASE_18_GREEN_GATE
