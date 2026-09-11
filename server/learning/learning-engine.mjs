@@ -28,7 +28,8 @@ export function extractCandidates(userText) {
   return candidates;
 }
 
-function confidenceFor(evidenceCount) {
+function confidenceFor(patternType, evidenceCount) {
+  if (patternType === 'identity') return Math.min(0.99, 0.85 + Math.max(0, evidenceCount - 1) * 0.10);
   return Math.min(0.99, 0.55 + Math.max(0, evidenceCount - 1) * 0.25);
 }
 
@@ -40,8 +41,10 @@ export async function processLearningObservation({ userId, userText }) {
 
   for (const candidate of candidates) {
     const evidenceCount = await countDistinctEvidence(userId, candidate.patternKey, since);
-    const confidence = confidenceFor(evidenceCount);
-    const accepted = evidenceCount >= MIN_EVIDENCE && confidence >= ACCEPT_THRESHOLD;
+    const confidence = confidenceFor(candidate.patternType, evidenceCount);
+    const accepted = candidate.patternType === 'identity'
+      ? evidenceCount >= 1 && confidence >= ACCEPT_THRESHOLD
+      : evidenceCount >= MIN_EVIDENCE && confidence >= ACCEPT_THRESHOLD;
     const row = await upsertPattern({
       userId,
       patternKey: candidate.patternKey,
