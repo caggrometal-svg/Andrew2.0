@@ -20,43 +20,20 @@ const STATUS_POLL_MS = 5000;
 
 function normalizeRuntime(value: unknown): Partial<RuntimeParams> {
   if (!value || typeof value !== 'object') return {};
-
   const source = value as Record<string, unknown>;
-
-  const runtime =
-    typeof source.runtime === 'object' && source.runtime
-      ? (source.runtime as Record<string, unknown>)
-      : source;
-
+  const runtime = typeof source.runtime === 'object' && source.runtime
+    ? (source.runtime as Record<string, unknown>)
+    : source;
   const result: MutableRuntimePatch = {};
-
-  if (typeof runtime.model === 'string') {
-    result.model = runtime.model;
-  }
-
-  if (
-    typeof runtime.timeoutMs === 'number' &&
-    Number.isFinite(runtime.timeoutMs)
-  ) {
-    result.timeoutMs = runtime.timeoutMs;
-  }
-
-  if (
-    typeof runtime.pollIntervalMs === 'number' &&
-    Number.isFinite(runtime.pollIntervalMs)
-  ) {
-    result.pollIntervalMs = runtime.pollIntervalMs;
-  }
-
-  if (typeof runtime.syncEnabled === 'boolean') {
-    result.syncEnabled = runtime.syncEnabled;
-  }
-
+  if (typeof runtime.model === 'string') result.model = runtime.model;
+  if (typeof runtime.timeoutMs === 'number' && Number.isFinite(runtime.timeoutMs)) result.timeoutMs = runtime.timeoutMs;
+  if (typeof runtime.pollIntervalMs === 'number' && Number.isFinite(runtime.pollIntervalMs)) result.pollIntervalMs = runtime.pollIntervalMs;
+  if (typeof runtime.syncEnabled === 'boolean') result.syncEnabled = runtime.syncEnabled;
   return result;
 }
 
 export default function AndrewChat({ conversationId }: Props) {
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(() => loadChatHistory() as ChatMessage[]);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(() => loadChatHistory(conversationId) as ChatMessage[]);
   const [chatBusy, setChatBusy] = useState(false);
   const [text, setText] = useState('');
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
@@ -76,11 +53,9 @@ export default function AndrewChat({ conversationId }: Props) {
   useEffect(() => {
     const client = bridgeClientRef.current;
     if (!client) return;
-
     let active = true;
     let timer: number | undefined;
     setBridgeAvailable(true);
-
     const refreshRuntime = async () => {
       try {
         const status = await client.requestStatus();
@@ -92,17 +67,15 @@ export default function AndrewChat({ conversationId }: Props) {
         if (active) setBridgeAvailable(false);
       }
     };
-
     void refreshRuntime();
     timer = window.setInterval(() => void refreshRuntime(), STATUS_POLL_MS);
-
     return () => {
       active = false;
       if (timer !== undefined) window.clearInterval(timer);
     };
   }, []);
 
-  useEffect(() => saveChatHistory(chatMessages), [chatMessages]);
+  useEffect(() => saveChatHistory(chatMessages, conversationId), [chatMessages, conversationId]);
 
   useEffect(() => {
     const container = chatScrollRef.current;
