@@ -131,18 +131,34 @@ jobs:
           exit 1
 
       - name: Verify APK output
+        shell: bash
         run: |
           set -euo pipefail
           APK="android/app/build/outputs/apk/debug/app-debug.apk"
-          test -s "$APK"
+
+          if [ ! -f "$APK" ]; then
+            echo "APK missing: $APK"
+            exit 1
+          fi
+          if [ ! -s "$APK" ]; then
+            echo "APK is empty: $APK"
+            exit 1
+          fi
+
           echo "APK: $APK"
           ls -lh "$APK"
           sha256sum "$APK"
-          unzip -t "$APK" >/tmp/apk-zip-test.txt
+
+          unzip -t "$APK" > /tmp/apk-zip-test.txt
           tail -n 2 /tmp/apk-zip-test.txt
-          test -f <(unzip -Z1 "$APK" | grep -Fx 'AndroidManifest.xml')
-          test -f <(unzip -Z1 "$APK" | grep -Fx 'classes.dex')
-          test -f <(unzip -Z1 "$APK" | grep -Fx 'resources.arsc')
+
+          unzip -Z1 "$APK" > /tmp/apk-files.txt
+          grep -Fxq 'AndroidManifest.xml' /tmp/apk-files.txt
+          grep -Fxq 'classes.dex' /tmp/apk-files.txt
+          grep -Fxq 'resources.arsc' /tmp/apk-files.txt
+
+          echo "APK output verification -> PASS"
+          echo "Required APK entries -> PASS"
 
       - name: Deep inspect APK Manifest and Android bridge
         shell: bash
