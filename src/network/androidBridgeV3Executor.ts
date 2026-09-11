@@ -20,10 +20,7 @@ function validPayload(payload: unknown): payload is Record<string, unknown> {
     && Object.keys(payload).length <= 8);
 }
 
-/**
- * Phase 21 controlled native adapter. It exposes only the four bridge commands;
- * arbitrary shell/native execution is intentionally impossible through this API.
- */
+/** Phase 21 controlled adapter: only four explicit Android operations are exposed. */
 export class AndroidBridgeV3Executor {
   private readonly hooks: AndroidBridgeExecutionHooks;
 
@@ -53,5 +50,7 @@ export class AndroidBridgeV3Executor {
   }
 }
 
-export const createAndroidBridgeV3Executor = (hooks?: AndroidBridgeExecutionHooks): BridgeExecutor =>
-  new AndroidBridgeV3Executor(hooks).execute.bind(new AndroidBridgeV3Executor(hooks));
+export const createAndroidBridgeV3Executor = (hooks?: AndroidBridgeExecutionHooks): BridgeExecutor => {
+  const executor = new AndroidBridgeV3Executor(hooks);
+  return executor.execute.bind(executor);
+};
