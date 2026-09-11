@@ -2,9 +2,11 @@ import { assertToolInput, getTool } from './tool-registry';
 import { executeTool } from './tool-executor';
 import { verifyToolResult } from './tool-verifier';
 import type { ToolContext, ToolInput, ToolResult } from './tool-types';
+import type { ToolCapability } from './tool-capabilities';
 
 export interface ToolPermissionPolicy {
   readonly allowed: readonly string[];
+  readonly capabilities?: readonly ToolCapability[];
   readonly allowWrite?: boolean;
   readonly allowExternal?: boolean;
 }
@@ -31,6 +33,9 @@ export async function routeTool(
 
   try {
     const tool = getTool(normalizedName);
+    if (tool.capability !== undefined && policy.capabilities !== undefined && !policy.capabilities.includes(tool.capability as ToolCapability)) {
+      return denied(normalizedName, 'TOOL_CAPABILITY_DENIED');
+    }
     if (tool.risk === 'write' && policy.allowWrite !== true) return denied(normalizedName, 'TOOL_WRITE_NOT_ALLOWED');
     if (tool.risk === 'external' && policy.allowExternal !== true) return denied(normalizedName, 'TOOL_EXTERNAL_NOT_ALLOWED');
   } catch (error: unknown) {

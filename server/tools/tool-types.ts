@@ -25,20 +25,21 @@ export interface ToolMetadata {
   readonly durationMs: number;
 }
 
-export interface ToolResult<TData = unknown> {
-  readonly ok: boolean;
-  readonly data?: TData;
-  readonly error?: string;
-  readonly metadata?: ToolMetadata;
-}
-
 export interface ToolDefinition<TInput extends ToolInput = ToolInput> {
   readonly name: string;
   readonly description: string;
   readonly risk: ToolRisk;
+  readonly capability?: string;
   readonly validate: (input: TInput) => void;
   readonly execute: (
     input: TInput,
     context: ToolContext,
   ) => Promise<ToolResult>;
+}
+
+export interface ToolResult<TData = unknown> {
+  readonly ok: boolean;
+  readonly data?: TData;
+  readonly error?: string;
+  readonly metadata?: ToolMetadata;
 }
