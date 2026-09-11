@@ -1,0 +1,149 @@
+import crypto from 'node:crypto';
+import { config } from '../config.mjs';
+
+const DEFAULT_TIMEOUT_MS = 60_000;
+const CACHE_TTL_MS = 15 * 60 * 1000;
+const MAX_CACHE_ENTRIES = 256;
+
+export class AIProviderError extends Error {
+  constructor(message, { provider, status = null, retryable = false, cause } = {}) {
+    super(message, { cause });
+    this.name = 'AIProviderError';
+    this.provider = provider;
+    this.status = status;
+    this.retryable = retryable;
+  }
+}
+
+function hash(value) {
+  return crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
+}
+
+function retryableStatus(status) {
+  return status === 408 || status === 409 || status === 429 || status >= 500;
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function fetchJson(url, options, provider, timeoutMs = DEFAULT_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new AIProviderError(data?.error?.message || `${provider} HTTP ${response.status}`, {
+        provider,
+        status: response.status,
+        retryable: retryableStatus(response.status),
+      });
+    }
+    return data;
+  } catch (error) {
+    if (error instanceof AIProviderError) throw error;
+    throw new AIProviderError(error?.name === 'AbortError' ? `${provider} timeout` : `${provider} network failure`, {
+      provider,
+      retryable: true,
+      cause: error,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export class ProviderRouter {
+  #cache = new Map();
+
+  async execute(request) {
+    const key = hash({
+      prompt: request.prompt,
+      history: request.history || [],
+      temperature: request.temperature ?? null,
+      attachment: request.attachment || null,
+    });
+    const cached = this.#getCache(key);
+    if (cached) return { ...cached, provider: 'cache', latencyMs: 0 };
+
+    const started = Date.now();
+    const failures = [];
+    const providers = [
+      ['primary', () => this.#primary(request)],
+      ...(config.secondaryApiKey && config.secondaryEndpoint ? [['secondary', () => this.#secondary(request)]] : []),
+    ];
+
+    for (const [name, execute] of providers) {
+      try {
+        const text = await execute();
+        const result = { text, provider: name, latencyMs: Date.now() - started };
+        this.#setCache(key, result);
+        return result;
+      } catch (error) {
+        failures.push(error);
+        if (error instanceof AIProviderError && !error.retryable && error.status !== 402 && error.status !== 401 && error.status !== 403) break;
+        if (error instanceof AIProviderError && (error.status === 429 || error.status === 402)) continue;
+        await sleep(50);
+      }
+    }
+
+    const local = this.#local(request.prompt, failures);
+    return { text: local, provider: 'local-degraded', latencyMs: Date.now() - started };
+  }
+
+  #getCache(key) {
+    const item = this.#cache.get(key);
+    if (!item) return null;
+    if (Date.now() - item.timestamp >= CACHE_TTL_MS) {
+      this.#cache.delete(key);
+      return null;
+    }
+    return { text: item.text, provider: item.provider, latencyMs: item.latencyMs };
+  }
+
+  #setCache(key, result) {
+    this.#cache.set(key, { ...result, timestamp: Date.now() });
+    while (this.#cache.size > MAX_CACHE_ENTRIES) this.#cache.delete(this.#cache.keys().next().value);
+  }
+
+  async #primary(request) {
+    const data = await fetchJson('https://api.openai.com/v1/responses', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${config.openaiApiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: config.openaiModel, input: request.input, store: false }),
+    }, 'primary');
+    const text = extractResponseText(data);
+    if (!text) throw new AIProviderError('Primary provider returned an empty response', { provider: 'primary', retryable: true });
+    return text;
+  }
+
+  async #secondary(request) {
+    const messages = [
+      ...(request.history || []).map(item => ({ role: item.role, content: item.content })),
+      { role: 'user', content: request.prompt },
+    ];
+    const data = await fetchJson(config.secondaryEndpoint, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${config.secondaryApiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: config.secondaryModel, messages, temperature: request.temperature ?? 0.2 }),
+    }, 'secondary');
+    const text = data?.choices?.[0]?.message?.content?.trim();
+    if (!text) throw new AIProviderError('Secondary provider returned an empty response', { provider: 'secondary', retryable: true });
+    return text;
+  }
+
+  #local(prompt, failures) {
+    const last = failures.at(-1);
+    const reason = last?.status === 429 ? 'límite temporal del proveedor' : last?.status === 402 ? 'cuota o saldo del proveedor' : 'conectividad del proveedor';
+    return `Andrew continúa en modo degradado local. La consulta quedó registrada y no se perdió. Motivo de degradación: ${reason}. No se presenta este modo como una IA generativa equivalente al proveedor externo. Consulta: ${prompt.slice(0, 160)}`;
+  }
+}
+
+function extractResponseText(data) {
+  if (typeof data?.output_text === 'string') return data.output_text.trim();
+  return (data?.output || []).flatMap(item => item?.content || [])
+    .filter(content => content?.type === 'output_text' && typeof content.text === 'string')
+    .map(content => content.text)
+    .join('\n')
+    .trim();
+}
