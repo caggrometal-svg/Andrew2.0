@@ -1,8 +1,10 @@
 import hashlib
+import re
 import time
 from dataclasses import dataclass
 
 from redis.asyncio import Redis
+from redis.exceptions import RedisError
 
 from .config import settings
 from .embeddings import dense_embedding
@@ -21,14 +23,20 @@ class SemanticCache:
     INDEX = "andrew_cache_idx"
     PREFIX = "andrew:cache:"
     HASH_PREFIX = "andrew:cache:item:"
+    _TAG_ESCAPE = re.compile(r"([,.<>{}\[\]\\\"':;|=])")
 
     def __init__(self, redis: Redis):
         self.redis = redis
 
+    @classmethod
+    def _tag(cls, value: str) -> str:
+        if not value or len(value) > 256:
+            raise ValueError("invalid cache identity")
+        return cls._TAG_ESCAPE.sub(r"\\\1", value)
+
     @staticmethod
     def _digest(key: CacheKey, prompt: str) -> str:
-        raw = "|".join([key.tenant, key.user, key.locale, key.model_version,
-                         key.system_prompt_version, prompt])
+        raw = f"{key.tenant}|{key.user}|{key.locale}|{key.model_version}|{key.system_prompt_version}|{prompt}"
         return hashlib.sha256(raw.encode()).hexdigest()
 
     @classmethod
@@ -43,7 +51,7 @@ class SemanticCache:
         try:
             await self.redis.execute_command("FT.INFO", self.INDEX)
             return
-        except Exception:
+        except RedisError:
             pass
         schema = [
             "FT.CREATE", self.INDEX, "ON", "HASH", "PREFIX", "1", self.HASH_PREFIX,
@@ -55,7 +63,7 @@ class SemanticCache:
         ]
         try:
             await self.redis.execute_command(*schema)
-        except Exception as exc:
+        except RedisError as exc:
             if "Index already exists" not in str(exc):
                 raise
 
@@ -66,9 +74,9 @@ class SemanticCache:
 
         vector = await dense_embedding(prompt)
         query = (
-            f"(@tenant:{{{key.tenant}}} @user:{{{key.user}}} "
-            f"@locale:{{{key.locale}}} @model_version:{{{key.model_version}}} "
-            f"@system_prompt_version:{{{key.system_prompt_version}}})=>[KNN 1 "
+            f"(@tenant:{{{self._tag(key.tenant)}}} @user:{{{self._tag(key.user)}}} "
+            f"@locale:{{{self._tag(key.locale)}}} @model_version:{{{self._tag(key.model_version)}}} "
+            f"@system_prompt_version:{{{self._tag(key.system_prompt_version)}}})=>[KNN 1 "
             f"@prompt_embedding $vec AS distance]"
         )
         try:
@@ -76,7 +84,7 @@ class SemanticCache:
                 "FT.SEARCH", self.INDEX, query, "PARAMS", "2", "vec", self._vector_blob(vector),
                 "SORTBY", "distance", "ASC", "RETURN", "2", "response", "distance", "DIALECT", "2",
             )
-        except Exception:
+        except RedisError:
             return None
         if not result or result[0] == 0:
             return None
