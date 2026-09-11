@@ -1,0 +1,24 @@
+name: Post-release Android Bridge Hardening Gate
+
+on:
+  push:
+    branches: [iac33-postrelease-android-bridge-hardening]
+  pull_request:
+    branches: [iac33-integration-next]
+
+jobs:
+  bridge-hardening:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm run test:bridge-hardening
+      - run: npm run test:phase14
+      - run: npm run test:phase13
+      - run: npm test
+      - run: echo POST_RELEASE_BRIDGE_HARDENING_GREEN
