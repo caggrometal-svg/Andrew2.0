@@ -59,8 +59,8 @@ class PrecisionRAG:
     async def _embeddings(self, text: str):
         def run():
             dense_model, sparse_model = _models()
-            dense = list(dense_model.embed([text]))[0].tolist()
-            sparse = list(sparse_model.embed([text]))[0]
+            dense = next(iter(dense_model.embed([text]))).tolist()
+            sparse = next(iter(sparse_model.embed([text])))
             return dense, sparse
 
         return await asyncio.to_thread(run)
