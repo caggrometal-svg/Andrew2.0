@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from app.admission import AdmissionItem, AdmissionController, Priority
+from app.admission import AdmissionItem, Priority
 
 
 @pytest.mark.asyncio
