@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   actions: write
 
 concurrency:
@@ -135,28 +135,17 @@ jobs:
         run: |
           set -euo pipefail
           APK="android/app/build/outputs/apk/debug/app-debug.apk"
-
-          if [ ! -f "$APK" ]; then
-            echo "APK missing: $APK"
-            exit 1
-          fi
-          if [ ! -s "$APK" ]; then
-            echo "APK is empty: $APK"
-            exit 1
-          fi
-
+          test -f "$APK"
+          test -s "$APK"
           echo "APK: $APK"
           ls -lh "$APK"
           sha256sum "$APK"
-
           unzip -t "$APK" > /tmp/apk-zip-test.txt
           tail -n 2 /tmp/apk-zip-test.txt
-
           unzip -Z1 "$APK" > /tmp/apk-files.txt
           grep -Fxq 'AndroidManifest.xml' /tmp/apk-files.txt
           grep -Fxq 'classes.dex' /tmp/apk-files.txt
           grep -Fxq 'resources.arsc' /tmp/apk-files.txt
-
           echo "APK output verification -> PASS"
           echo "Required APK entries -> PASS"
 
@@ -168,69 +157,29 @@ jobs:
           BUILD_TOOLS_DIR="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
           AAPT2="$BUILD_TOOLS_DIR/aapt2"
           APKANALYZER="$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
-
           test -x "$AAPT2"
-          echo "Using AAPT2: $AAPT2"
           "$AAPT2" dump badging "$APK" | tee /tmp/andrew-apk-badging.txt
           "$AAPT2" dump xmltree --file AndroidManifest.xml "$APK" | tee /tmp/andrew-apk-manifest-tree.txt >/dev/null
-
           grep -q "package:" /tmp/andrew-apk-badging.txt
           grep -q "application:" /tmp/andrew-apk-badging.txt
           grep -q "launchable-activity:" /tmp/andrew-apk-badging.txt
           grep -q "uses-permission:.*android.permission.INTERNET" /tmp/andrew-apk-badging.txt
-
           echo "Required Android permission: INTERNET -> PASS"
-
           if [ -x "$APKANALYZER" ]; then
             "$APKANALYZER" manifest permissions "$APK" | tee /tmp/andrew-apk-permissions.txt
             grep -q "android.permission.INTERNET" /tmp/andrew-apk-permissions.txt
-            echo "apkanalyzer manifest permission check -> PASS"
-          else
-            echo "apkanalyzer unavailable; AAPT2 remains authoritative for manifest validation"
           fi
-
-          echo "Checking Phase 23 native bridge in all DEX files"
           mapfile -t DEX_FILES < <(unzip -Z1 "$APK" | grep -E '^classes([0-9]+)?\.dex$' | sort -V)
-          if [ "${#DEX_FILES[@]}" -eq 0 ]; then
-            echo "No classes*.dex files found in APK"
-            exit 1
-          fi
-
+          test "${#DEX_FILES[@]}" -gt 0
           BRIDGE_DEX_MATCHES=0
           MAIN_ACTIVITY_DEX_MATCHES=0
           for DEX in "${DEX_FILES[@]}"; do
-            echo "Inspecting $DEX"
             DEX_STRINGS="$(unzip -p "$APK" "$DEX" | strings || true)"
-
-            if printf '%s\n' "$DEX_STRINGS" | grep -Fq "AndrewBridge"; then
-              echo "AndrewBridge found in $DEX"
-              BRIDGE_DEX_MATCHES=$((BRIDGE_DEX_MATCHES + 1))
-            fi
-
-            if printf '%s\n' "$DEX_STRINGS" | grep -Fq "MainActivity"; then
-              echo "MainActivity found in $DEX"
-              MAIN_ACTIVITY_DEX_MATCHES=$((MAIN_ACTIVITY_DEX_MATCHES + 1))
-            fi
+            if printf '%s\n' "$DEX_STRINGS" | grep -Fq "AndrewBridge"; then BRIDGE_DEX_MATCHES=$((BRIDGE_DEX_MATCHES + 1)); fi
+            if printf '%s\n' "$DEX_STRINGS" | grep -Fq "MainActivity"; then MAIN_ACTIVITY_DEX_MATCHES=$((MAIN_ACTIVITY_DEX_MATCHES + 1)); fi
           done
-
-          echo "DEX files inspected: ${#DEX_FILES[@]}"
-          echo "AndrewBridge matches: $BRIDGE_DEX_MATCHES"
-          echo "MainActivity matches: $MAIN_ACTIVITY_DEX_MATCHES"
-
-          if [ "$BRIDGE_DEX_MATCHES" -lt 1 ]; then
-            echo "AndrewBridge class not found in any classes*.dex file"
-            exit 1
-          fi
-
-          if [ "$MAIN_ACTIVITY_DEX_MATCHES" -lt 1 ]; then
-            echo "MainActivity not found in any classes*.dex file"
-            exit 1
-          fi
-
-          echo "AndrewBridge class present -> PASS"
-          echo "MainActivity bridge host present -> PASS"
-          echo "Manifest structural checks -> PASS"
-          echo "APK ZIP integrity -> PASS"
+          test "$BRIDGE_DEX_MATCHES" -ge 1
+          test "$MAIN_ACTIVITY_DEX_MATCHES" -ge 1
           echo "APK deep inspection -> PASS"
 
       - name: Upload Debug APK
@@ -239,3 +188,17 @@ jobs:
           name: andrew-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      - name: Publish public GitHub Release APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: andrew-latest
+          name: Andrew 2.0 Latest APK
+          body: |
+            Latest Andrew 2.0 debug APK generated from `${{ github.sha }}` on `${{ github.ref_name }}`.
+            This release is intentionally public for direct Samsung/Android testing.
+          prerelease: true
+          make_latest: true
+          files: android/app/build/outputs/apk/debug/app-debug.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
