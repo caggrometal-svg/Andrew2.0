@@ -3,7 +3,7 @@ import { assessEvidence, type Evidence } from '@analysis/critical';
 import { defaultCapabilities } from '@assistant/autonomy';
 import { createC33Brief } from '@assistant/expedienteC33';
 import { getBridgeSessionId } from '@network/andrewBridge';
-import { seismicPredictionEngine, type SeismicForecastResult } from '@services/seismic/seismicEngine';
+import { seismicPredictionEngine, type SeismicForecastResult } from '@/services/seismic/seismicEngine';
 import AndrewChat from './AndrewChat';
 import VideoGenerationPanel from './VideoGenerationPanel';
 import './styles.css';
