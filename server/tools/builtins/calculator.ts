@@ -1,5 +1,5 @@
-import { assertToolInput, registerTool } from '../tool-registry.ts';
-import type { ToolDefinition } from '../tool-types.ts';
+import { assertToolInput, registerTool } from '../tool-registry';
+import type { ToolDefinition } from '../tool-types';
 
 type CalculatorInput = Readonly<{ expression: string }>;
 
