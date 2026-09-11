@@ -59,16 +59,16 @@ p, li { overflow-wrap: anywhere; word-break: break-word; }
 }
 
 .mode-bar {
-  display: flex;
-  align-items: center;
-  justify-content: stretch;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
   gap: 8px;
   padding: 8px;
   margin-bottom: 14px;
   overflow: hidden;
 }
 .mode-button {
-  flex: 1 1 0;
+  width: 100%;
   min-width: 0;
   min-height: 44px;
   border: 1px solid #1d2b3e;
@@ -78,6 +78,7 @@ p, li { overflow-wrap: anywhere; word-break: break-word; }
   cursor: pointer;
   touch-action: manipulation;
   font-weight: 600;
+  padding: 10px 12px;
 }
 .mode-button.is-active, .ui-button.is-selected {
   border-color: #315d83;
@@ -99,8 +100,8 @@ p, li { overflow-wrap: anywhere; word-break: break-word; }
 
 .button-row {
   display: flex;
-  align-items: center;
-  justify-content: flex-start;
+  align-items: stretch;
+  justify-content: stretch;
   gap: 8px;
   flex-wrap: wrap;
   min-width: 0;
@@ -133,14 +134,24 @@ p, li { overflow-wrap: anywhere; word-break: break-word; }
 .text-input:focus, .chat-input:focus { border-color: #3b6c96; box-shadow: 0 0 0 2px rgba(59,108,150,.16); }
 .c33-action { margin-top: 9px; }
 
-.chat-root { display: grid; gap: 12px; min-width: 0; width: 100%; overflow: hidden; }
+.chat-root {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto auto;
+  gap: 12px;
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+}
 .chat-messages {
   min-width: 0;
   width: 100%;
-  height: clamp(360px, 52vh, 620px);
+  height: min(58vh, 620px);
+  min-height: 320px;
+  max-height: 620px;
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -149,7 +160,8 @@ p, li { overflow-wrap: anywhere; word-break: break-word; }
   border: 1px solid #121d2c;
   border-radius: 14px;
   background: #050a12;
-  scroll-behavior: smooth;
+  scroll-behavior: auto;
+  scroll-padding-block: 12px;
   scrollbar-gutter: stable;
 }
 .chat-empty { display: grid; place-items: center; min-height: 280px; padding: 20px; color: #77879b; text-align: center; }
@@ -183,17 +195,16 @@ p, li { overflow-wrap: anywhere; word-break: break-word; }
   overflow-wrap: anywhere;
 }
 .chat-composer {
-  display: flex;
-  align-items: center;
-  justify-content: stretch;
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) 92px;
+  align-items: stretch;
   gap: 8px;
   min-width: 0;
   width: 100%;
-  overflow: hidden;
 }
-.attach-button { flex: 0 0 48px; display: grid; place-items: center; padding: 0; background: #0d1723; }
-.chat-input { flex: 1 1 auto; width: 0; min-height: 44px; padding: 11px 13px; font-size: 16px; }
-.send-button { flex: 0 0 92px; white-space: nowrap; background: #16304a; }
+.attach-button { width: 100%; display: grid; place-items: center; padding: 0; background: #0d1723; }
+.chat-input { width: 100%; min-height: 44px; padding: 11px 13px; font-size: 16px; }
+.send-button { width: 100%; white-space: nowrap; background: #16304a; }
 .bridge-status { min-width: 0; color: #718298; font-size: 11px; overflow-wrap: anywhere; word-break: break-word; }
 
 @media (max-width: 560px) {
@@ -202,8 +213,9 @@ p, li { overflow-wrap: anywhere; word-break: break-word; }
   .workspace-panel { padding: 10px; }
   .mode-bar { gap: 6px; }
   .mode-button { font-size: 13px; }
-  .chat-composer { gap: 6px; }
-  .send-button { flex-basis: 82px; padding-left: 8px; padding-right: 8px; }
+  .chat-messages { height: min(60vh, 560px); min-height: 300px; }
+  .chat-composer { grid-template-columns: 46px minmax(0, 1fr) 82px; gap: 6px; }
+  .send-button { padding-left: 8px; padding-right: 8px; }
   .chat-message { max-width: 94%; }
   .button-row .ui-button { flex: 1 1 140px; }
 }
@@ -212,6 +224,6 @@ p, li { overflow-wrap: anywhere; word-break: break-word; }
   .app-header-main { align-items: stretch; }
   .status-pill { width: 100%; }
   .mode-button { min-height: 42px; padding: 8px 6px; }
-  .attach-button { flex-basis: 44px; }
-  .send-button { flex-basis: 76px; }
+  .chat-messages { height: min(58vh, 500px); min-height: 280px; }
+  .chat-composer { grid-template-columns: 44px minmax(0, 1fr) 76px; }
 }
