@@ -27,6 +27,14 @@ app.addHook('onRequest', async (request, reply) => { if (request.method !== 'POS
 
 const resolveUserId = (request) => { const header = request.headers['x-andrew-user-id']; const conversationId = request.body?.conversationId; return typeof header === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(header) ? header : typeof conversationId === 'string' ? `conversation:${conversationId}` : null; };
 const shouldLearn = (message) => typeof message === 'string' && /\b(recuerda|recuérdame|recordar|mi nombre es|me llamo|prefiero|quiero que recuerdes|guarda esto|guárdalo)\b/i.test(message);
+const extractIdentity = (message) => {
+  if (typeof message !== 'string') return null;
+  const match = message.match(/\b(?:mi nombre es|me llamo|soy)\s+([A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ' -]{1,80})/i);
+  if (!match) return null;
+  const name = match[1].trim().replace(/[.,!?;:]+$/, '').replace(/\s+/g, ' ');
+  if (!name || name.length > 80) return null;
+  return `El usuario se llama ${name}.`;
+};
 
 app.addHook('preValidation', async (request) => {
   if (request.method !== 'POST' || request.url !== '/api/chat' || !request.body?.message || !request.body?.conversationId) return;
@@ -46,8 +54,14 @@ app.addHook('onSend', async (request, reply, payload) => {
   const userId = resolveUserId(request);
   if (!userId) return payload;
   if (!shouldLearn(message)) return payload;
-  try { await createMemory({ userId, conversationId: request.body.conversationId, kind: 'user_fact', text: String(message).trim().slice(0, 4000), tags: ['learning', 'explicit'], importance: 5, source: 'explicit-user-instruction' }); }
-  catch (error) { request.log.error({ error }, 'persistent learning write failed'); }
+  try {
+    const identity = extractIdentity(message);
+    if (identity) {
+      await createMemory({ userId, conversationId: request.body.conversationId, kind: 'identity', text: identity, tags: ['identity', 'name', 'explicit'], importance: 5, source: 'explicit-user-instruction' });
+    } else {
+      await createMemory({ userId, conversationId: request.body.conversationId, kind: 'user_fact', text: String(message).trim().slice(0, 4000), tags: ['learning', 'explicit'], importance: 5, source: 'explicit-user-instruction' });
+    }
+  } catch (error) { request.log.error({ error }, 'persistent learning write failed'); }
   return payload;
 });
 
