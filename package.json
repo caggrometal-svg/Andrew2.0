@@ -24,6 +24,7 @@
     "test:phase13": "vitest run tests/phase13-tool-router-2.test.ts",
     "test:phase14": "vitest run tests/phase14-android-bridge-v2.test.ts",
     "test:phase15": "vitest run tests/phase15-observability-hardening.test.ts",
+    "test:phase16": "vitest run tests/phase16-tool-gateway.test.mjs",
     "test:bridge-hardening": "vitest run tests/android-bridge-v3.test.ts",
     "backend": "node --import tsx server/server.mjs",
     "backend:dev": "node --import tsx --watch server/server.mjs"
