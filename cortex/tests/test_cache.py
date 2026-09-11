@@ -62,7 +62,11 @@ async def test_exact_cache_uses_sha256_key(key):
 async def test_semantic_cache_is_metadata_scoped(monkeypatch, key):
     redis = FakeRedis()
     cache = SemanticCache(redis)
-    monkeypatch.setattr("app.cache.dense_embedding", lambda prompt: _embedding(prompt))
+
+    async def embedding(prompt):
+        return [1.0, 0.0, 0.0]
+
+    monkeypatch.setattr("app.cache.dense_embedding", embedding)
     result = await cache.get(key, "consulta similar")
     assert result == "semantic"
     query = redis.commands[-1][2]
@@ -75,12 +79,12 @@ async def test_semantic_cache_is_metadata_scoped(monkeypatch, key):
 async def test_put_writes_exact_hash_and_ttl(monkeypatch, key):
     redis = FakeRedis()
     cache = SemanticCache(redis)
-    monkeypatch.setattr("app.cache.dense_embedding", lambda prompt: _embedding(prompt))
+
+    async def embedding(prompt):
+        return [1.0, 0.0, 0.0]
+
+    monkeypatch.setattr("app.cache.dense_embedding", embedding)
     await cache.put(key, "hola", "respuesta")
     assert cache._exact_key(key, "hola") in redis.exact
     assert cache._hash_key(key, "hola") in redis.hashes
     assert redis.ttls[cache._hash_key(key, "hola")] > 0
-
-
-def _embedding(prompt):
-    return [1.0, 0.0, 0.0]
