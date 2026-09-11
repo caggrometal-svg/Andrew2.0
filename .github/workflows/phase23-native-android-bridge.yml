@@ -1,0 +1,33 @@
+name: Phase 23 Native Android Bridge
+
+on:
+  push:
+    branches: [iac33-integration-next]
+    paths:
+      - 'scripts/install-android-bridge.mjs'
+      - 'tests/phase23-native-android-bridge.test.ts'
+      - 'package.json'
+      - '.github/workflows/phase23-native-android-bridge.yml'
+      - '.github/workflows/android-apk.yml'
+  workflow_dispatch:
+
+jobs:
+  phase23:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm run test:phase23
+      - run: npm run test:phase22
+      - run: npm run test:phase21
+      - run: npm run test:phase20
+      - run: npm run test:phase19
+      - run: npm run test:phase18
+      - run: npm run test:phase17
+      - run: npm run test:phase16
+      - run: echo PHASE_23_CONTRACT_GREEN_GATE
