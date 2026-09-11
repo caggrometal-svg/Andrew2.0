@@ -29,6 +29,8 @@ services:
 
   qdrant:
     image: qdrant/qdrant:v1.15.4
+    ports:
+      - "127.0.0.1:6333:6333"
     volumes:
       - qdrant-data:/qdrant/storage
     restart: unless-stopped
@@ -37,6 +39,8 @@ services:
     image: ghcr.io/berriai/litellm:v1.75.5
     command: ["--config", "/app/config.yaml", "--port", "4000", "--num_workers", "2"]
     env_file: .env
+    ports:
+      - "127.0.0.1:4000:4000"
     volumes:
       - ./litellm.yaml:/app/config.yaml:ro
     restart: unless-stopped
