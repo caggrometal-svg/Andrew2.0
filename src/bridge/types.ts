@@ -26,6 +26,20 @@ export type BridgeMessage<TPayload = unknown> =
   | BridgeEvent<TPayload>
   | BridgeResponse<TPayload>;
 
+export interface RuntimeParams {
+  readonly model: string;
+  readonly timeoutMs: number;
+  readonly pollIntervalMs: number;
+  readonly syncEnabled: boolean;
+}
+
+export type RuntimeParameterKey = keyof RuntimeParams;
+export type RuntimeParameterValue = RuntimeParams[RuntimeParameterKey];
+
+export interface RuntimeStatusPayload extends Partial<RuntimeParams> {
+  readonly runtime?: Partial<RuntimeParams> | string;
+}
+
 export interface AndrewBridgeNative {
   send?: (message: BridgeMessage) => void | Promise<void>;
   request?: (message: BridgeCommand) => BridgeResponse | Promise<BridgeResponse>;
