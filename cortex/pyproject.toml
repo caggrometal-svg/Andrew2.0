@@ -1,6 +1,6 @@
 [project]
 name = "andrew-cortex"
-version = "0.1.0"
+version = "0.2.0"
 description = "Andrew 2.0 Cortex: async AI orchestration, semantic cache, RAG and resilient model routing"
 requires-python = ">=3.11"
 dependencies = [
@@ -17,10 +17,17 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest>=8.3,<9", "pytest-asyncio>=0.24,<1", "anyio>=4.6,<5"]
+test = [
+  "pytest>=8.3,<9",
+  "pytest-asyncio>=0.24,<1",
+  "anyio>=4.6,<5",
+  "pytest-cov>=5,<7",
+  "ruff>=0.6,<1",
+]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 100
