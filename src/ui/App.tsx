@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { assessEvidence, type Evidence } from '@analysis/critical';
 import { defaultCapabilities } from '@assistant/autonomy';
 import { createC33Brief } from '@assistant/expedienteC33';
-import { getRecentEarthquakes } from '@network/publicWeb';
 import { getBridgeSessionId } from '@network/andrewBridge';
+import { seismicPredictionEngine, type SeismicForecastResult } from '@services/seismic/seismicEngine';
 import AndrewChat from './AndrewChat';
 import VideoGenerationPanel from './VideoGenerationPanel';
 import './styles.css';
@@ -27,7 +27,7 @@ export default function App() {
   });
   const [topic, setTopic] = useState('señales extrañas en el cielo');
   const [brief, setBrief] = useState(createC33Brief(topic));
-  const [quakeCount, setQuakeCount] = useState<number | null>(null);
+  const [forecast, setForecast] = useState<SeismicForecastResult | null>(null);
   const [networkBusy, setNetworkBusy] = useState(false);
   const [status, setStatus] = useState('Sistema preparado');
   const [conversationId] = useState(() => getBridgeSessionId());
@@ -38,17 +38,19 @@ export default function App() {
     try { localStorage.setItem('andrew:theme', next); } catch { /* best effort */ }
   }
 
-  async function updateNetwork() {
+  async function updateSeismicData() {
     if (networkBusy) return;
     setNetworkBusy(true);
-    setStatus('Sincronizando datos públicos…');
+    setStatus('Consultando USGS y calculando ventana de 30 días…');
     try {
-      const data = await getRecentEarthquakes();
-      setQuakeCount(data.features.length);
-      setStatus('Red pública actualizada');
-    } catch {
-      setStatus('Fuente pública no disponible; no se muestran datos inventados');
-    } finally { setNetworkBusy(false); }
+      const result = await seismicPredictionEngine.fetchAndComputeForecast(4.0);
+      setForecast(result);
+      setStatus('USGS actualizado · análisis estadístico completado');
+    } catch (error) {
+      setStatus(error instanceof Error ? `USGS no disponible: ${error.message}` : 'USGS no disponible');
+    } finally {
+      setNetworkBusy(false);
+    }
   }
 
   return (
@@ -68,8 +70,8 @@ export default function App() {
         <section className="surface workspace-panel" role="tabpanel">
           {tab === 'andrew' && <AndrewChat conversationId={conversationId} />}
           {tab === 'multimedia' && <VideoGenerationPanel conversationId={conversationId} contextText="Andrew 2.0 multimedia workspace" onStatus={setStatus} />}
-          {tab === 'network' && <div className="tab-panel"><h2>Red</h2><p className="muted">Las fuentes públicas solo se consultan cuando se solicita actualización.</p><button className="ui-button" type="button" disabled={networkBusy} onClick={() => void updateNetwork()}>{networkBusy ? 'Consultando…' : 'Actualizar datos públicos'}</button><div className="metric-list"><div><span>Acceso web</span><strong>Disponible</strong></div><div><span>Eventos sísmicos recibidos</span><strong>{quakeCount ?? '—'}</strong></div></div></div>}
-          {tab === 'seismic' && <div className="tab-panel"><h2>Estimación Experimental</h2><div className="notice">No existe actualmente un motor predictivo sísmico validado conectado al backend. Andrew no presentará porcentajes de predicción como hechos.</div><div className="metric-list"><div><span>Datos sísmicos públicos</span><strong>{quakeCount === null ? 'No consultados' : `${quakeCount} eventos`}</strong></div><div><span>Horizonte predictivo</span><strong>No disponible</strong></div><div><span>Probabilidad de terremoto</span><strong>No calculada</strong></div><div><span>Estado científico</span><strong>Experimental</strong></div></div><p className="muted">Trazabilidad requerida: fuente → ingestión → normalización → características → modelo → calibración → incertidumbre.</p><button className="ui-button" type="button" disabled={networkBusy} onClick={() => void updateNetwork()}>{networkBusy ? 'Actualizando…' : 'Actualizar datos de entrada'}</button></div>}
+          {tab === 'network' && <div className="tab-panel"><h2>Red</h2><p className="muted">Las fuentes públicas se consultan bajo demanda.</p><button className="ui-button" type="button" disabled={networkBusy} onClick={() => void updateSeismicData()}>{networkBusy ? 'Consultando…' : 'Actualizar datos sísmicos USGS'}</button><div className="metric-list"><div><span>Fuente</span><strong>USGS GeoJSON</strong></div><div><span>Eventos ≥ M4.0 / 30 días</span><strong>{forecast?.totalEventsAnalyzed ?? '—'}</strong></div></div></div>}
+          {tab === 'seismic' && <div className="tab-panel"><h2>Motor de Pronóstico Sísmico</h2><div className="notice">Modelo estadístico dinámico: frecuencia observada de los últimos 30 días + proceso de Poisson para la probabilidad de al menos un evento ≥ M4.0 + relación Gutenberg-Richter para estimar la mediana del máximo esperado. No constituye predicción determinista ni alerta oficial.</div><div className="metric-list"><div><span>Eventos analizados</span><strong>{forecast?.totalEventsAnalyzed ?? '—'}</strong></div><div><span>Probabilidad ≥ M4.0 próximos 14 días</span><strong>{forecast ? `${forecast.probabilityNext14Days}%` : '—'}</strong></div><div><span>Probabilidad ≥ M4.0 próximos 30 días</span><strong>{forecast ? `${forecast.probabilityNext30Days}%` : '—'}</strong></div><div><span>Mediana del máximo esperado</span><strong>{forecast ? `M${forecast.highestRiskMagnitudeExpected.toFixed(1)}` : '—'}</strong></div><div><span>Anomalía de tasa 7d vs 23d</span><strong>{forecast ? (forecast.activeAnomaliesDetected ? 'Detectada' : 'No detectada') : '—'}</strong></div><div><span>Última actualización</span><strong>{forecast ? new Date(forecast.lastUpdated).toLocaleString() : '—'}</strong></div></div><p className="muted">Fuente: {forecast?.dataSource ?? 'USGS Earthquake Hazards Program · all_month.geojson'}</p><button className="ui-button" type="button" disabled={networkBusy} onClick={() => void updateSeismicData()}>{networkBusy ? 'Analizando…' : 'Actualizar y recalcular'}</button></div>}
           {tab === 'metrics' && <div className="tab-panel"><h2>Métricas</h2><div className="metric-list"><div><span>Hechos evaluados</span><strong>{critical.facts.length}</strong></div><div><span>Contradicciones</span><strong>{critical.contradictions.length}</strong></div><div><span>Hipótesis</span><strong>{critical.hypotheses.length}</strong></div><div><span>Confianza global</span><strong>{critical.overallConfidence}</strong></div></div><p className="muted">Estas métricas proceden del motor local de evaluación; no se presentan como telemetría externa.</p></div>}
           {tab === 'settings' && <div className="tab-panel"><h2>Configuración</h2><div className="metric-list"><div><span>Persistencia</span><strong>Local + backend</strong></div><div><span>Bridge Android</span><strong>Disponible según runtime</strong></div><div><span>Multimedia</span><strong>Cola asíncrona de proveedor</strong></div><div><span>Autonomía</span><strong>ASSISTED</strong></div></div><h3>Tema</h3><div className="button-row"><button className={`ui-button${theme === 'dark' ? ' is-selected' : ''}`} type="button" onClick={() => changeTheme('dark')}>Oscuro</button><button className={`ui-button${theme === 'light' ? ' is-selected' : ''}`} type="button" onClick={() => changeTheme('light')}>Claro</button></div><h3>Capacidades declaradas</h3><ul>{defaultCapabilities.map(c => <li key={c.id}>{c.name}</li>)}</ul></div>}
         </section>
