@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import re
 import time
 from dataclasses import dataclass
@@ -8,6 +9,8 @@ from redis.exceptions import RedisError
 
 from .config import settings
 from .embeddings import dense_embedding
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -51,8 +54,8 @@ class SemanticCache:
         try:
             await self.redis.execute_command("FT.INFO", self.INDEX)
             return
-        except RedisError:
-            pass
+        except RedisError as exc:
+            logger.debug("cache index probe unavailable: %s", exc)
         schema = [
             "FT.CREATE", self.INDEX, "ON", "HASH", "PREFIX", "1", self.HASH_PREFIX,
             "SCHEMA", "tenant", "TAG", "user", "TAG", "locale", "TAG",
