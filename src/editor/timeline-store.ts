@@ -31,6 +31,10 @@ export interface TimelineState {
 
 const STORAGE_KEY = 'andrew:editor:timeline:v1';
 
+function storage(): Storage | null {
+  try { return typeof window !== 'undefined' ? window.localStorage : null; } catch { return null; }
+}
+
 const emptyState = (): TimelineState => ({
   version: 1,
   duration: 0,
@@ -46,30 +50,31 @@ const emptyState = (): TimelineState => ({
 
 function load(): TimelineState {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = storage()?.getItem(STORAGE_KEY);
     if (!raw) return emptyState();
     const value = JSON.parse(raw) as TimelineState;
     if (value?.version !== 1 || !Array.isArray(value.tracks)) return emptyState();
     return value;
-  } catch {
-    return emptyState();
-  }
+  } catch { return emptyState(); }
 }
 
 function save(state: TimelineState): TimelineState {
   const next = { ...state, updatedAt: Date.now() };
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch { /* best effort */ }
+  try { storage()?.setItem(STORAGE_KEY, JSON.stringify(next)); } catch { /* best effort */ }
   return next;
 }
 
-function clipId(): string {
-  return `clip-${crypto.randomUUID()}`;
-}
+function clipId(): string { return `clip-${crypto.randomUUID()}`; }
 
 export class TimelineStore {
   private state = load();
 
   snapshot(): TimelineState { return structuredClone(this.state); }
+
+  reset(): TimelineState {
+    this.state = save(emptyState());
+    return this.snapshot();
+  }
 
   private commit(next: TimelineState): TimelineState {
     this.state = save(next);
@@ -77,9 +82,7 @@ export class TimelineStore {
   }
 
   addClip(input: Omit<TimelineClip, 'id'>): TimelineState {
-    if (input.duration <= 0 || input.sourceDuration <= 0 || input.start < 0 || input.sourceStart < 0) {
-      throw new Error('Invalid timeline clip bounds');
-    }
+    if (input.duration <= 0 || input.sourceDuration <= 0 || input.start < 0 || input.sourceStart < 0) throw new Error('Invalid timeline clip bounds');
     const track = this.state.tracks.find((item) => item.id === input.trackId);
     if (!track || track.locked) throw new Error('Track unavailable');
     const clip = { ...input, id: clipId() };
@@ -101,13 +104,12 @@ export class TimelineStore {
     if (sourceStart < 0 || duration <= 0) throw new Error('Invalid trim bounds');
     for (const track of this.state.tracks) {
       const clip = track.clips.find((item) => item.id === id);
-      if (clip) {
-        if (track.locked || sourceStart + duration > clip.sourceStart + clip.sourceDuration) throw new Error('Trim exceeds source bounds');
-        clip.sourceStart = sourceStart;
-        clip.sourceDuration = duration;
-        clip.duration = duration;
-        return this.commit({ ...this.state, duration: Math.max(0, ...this.state.tracks.flatMap((t) => t.clips.map((c) => c.start + c.duration))) });
-      }
+      if (!clip) continue;
+      if (track.locked || sourceStart + duration > clip.sourceStart + clip.sourceDuration) throw new Error('Trim exceeds source bounds');
+      clip.sourceStart = sourceStart;
+      clip.sourceDuration = duration;
+      clip.duration = duration;
+      return this.commit({ ...this.state, duration: Math.max(0, ...this.state.tracks.flatMap((t) => t.clips.map((c) => c.start + c.duration))) });
     }
     return this.snapshot();
   }
@@ -131,10 +133,9 @@ export class TimelineStore {
   removeClip(id: string): TimelineState {
     for (const track of this.state.tracks) {
       if (track.locked) continue;
-      const next = track.clips.filter((clip) => clip.id !== id);
-      if (next.length !== track.clips.length) track.clips = next;
+      track.clips = track.clips.filter((clip) => clip.id !== id);
     }
-    return this.commit({ ...this.state, selectedClipId: null });
+    return this.commit({ ...this.state, selectedClipId: null, duration: Math.max(0, ...this.state.tracks.flatMap((t) => t.clips.map((c) => c.start + c.duration))) });
   }
 
   setPlayhead(time: number): TimelineState {
