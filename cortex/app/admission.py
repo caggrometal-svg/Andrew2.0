@@ -1,6 +1,6 @@
-from enum import IntEnum
-from dataclasses import dataclass
 import asyncio
+from dataclasses import dataclass
+from enum import IntEnum
 from typing import Awaitable, Callable, TypeVar
 
 T = TypeVar("T")
@@ -29,13 +29,14 @@ class AdmissionController:
         self._queues = {
             p: asyncio.PriorityQueue(maxsize=queue_sizes[p]) for p in Priority
         }
+        self._concurrency = concurrency
         self._semaphore = asyncio.Semaphore(concurrency)
         self._sequence = 0
         self._closed = False
         self._workers: list[asyncio.Task[None]] = []
 
     async def start(self, workers: int | None = None) -> None:
-        count = workers or max(1, self._semaphore._value)
+        count = workers or self._concurrency
         self._workers = [asyncio.create_task(self._worker()) for _ in range(count)]
 
     async def submit(self, priority: Priority, work: Callable[[], Awaitable[T]]) -> T:
