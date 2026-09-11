@@ -14,6 +14,7 @@ import { createMemory, initializeMemoryStore, searchMemories } from './memory/me
 import { initializeLearningStore, listAcceptedPatterns } from './learning/learning-store.mjs';
 import { initializeSessionStore } from './session/session-store.mjs';
 import { snapshotMetrics } from './observability/runtime-metrics.mjs';
+import { registerBuiltinTools } from './tools/builtins/index.ts';
 
 const app = Fastify({ logger: true, bodyLimit: config.maxBodyBytes, trustProxy: true });
 app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer' }, (_request, body, done) => done(null, body));
@@ -23,7 +24,7 @@ await app.register(rateLimit, { global: false, max: 20, timeWindow: '1 minute', 
 const chatRateLimit = app.createRateLimit({ max: 20, timeWindow: '1 minute' });
 const telemetryRateLimit = app.createRateLimit({ max: 60, timeWindow: '1 minute' });
 const gatewayRateLimit = app.createRateLimit({ max: 30, timeWindow: '1 minute' });
-app.addHook('onRequest', async (request, reply) => { if (request.method !== 'POST') return; const limiter = request.url === '/api/chat' ? chatRateLimit : request.url === '/api/telemetry' ? telemetryRateLimit : request.url.startsWith('/api/v1/sessions') ? gatewayRateLimit : undefined; if (!limiter) return; const result = await limiter(request); if (!result.isExceeded) return; return reply.code(429).send({ ok: false, error: 'RATE_LIMITED', message: `Demasiadas solicitudes. Intenta nuevamente en ${Math.ceil(result.ttl / 1000)} segundos.` }); });
+app.addHook('onRequest', async (request, reply) => { if (request.method !== 'POST') return; const limiter = request.url === '/api/chat' ? chatRateLimit : request.url === '/api/telemetry' ? telemetryRateLimit : (request.url.startsWith('/api/v1/sessions') || request.url.startsWith('/api/v1/tools')) ? gatewayRateLimit : undefined; if (!limiter) return; const result = await limiter(request); if (!result.isExceeded) return; return reply.code(429).send({ ok: false, error: 'RATE_LIMITED', message: `Demasiadas solicitudes. Intenta nuevamente en ${Math.ceil(result.ttl / 1000)} segundos.` }); });
 
 const resolveUserId = (request) => { const header = request.headers['x-andrew-user-id']; const conversationId = request.body?.conversationId; return typeof header === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(header) ? header : typeof conversationId === 'string' ? `conversation:${conversationId}` : null; };
 const shouldLearn = (message) => typeof message === 'string' && /\b(recuerda|recuérdame|recordar|mi nombre es|me llamo|prefiero|quiero que recuerdes|guarda esto|guárdalo)\b/i.test(message);
@@ -71,6 +72,7 @@ app.get('/health', async () => { const startedAt = process.hrtime.bigint(); cons
 await initializeMemoryStore();
 await initializeLearningStore();
 await initializeSessionStore();
+registerBuiltinTools();
 await registerGatewayRoutes(app);
 await registerChatRoutes(app);
 await registerTelemetryRoutes(app);
