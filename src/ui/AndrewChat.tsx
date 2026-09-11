@@ -14,28 +14,27 @@ export default function AndrewChat({ conversationId }: Props) {
   const [attachment, setAttachment] = useState<AndrewAttachment | undefined>();
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
-  const bottomRef = useRef<HTMLDivElement | null>(null);
+  const wasAtBottomRef = useRef(true);
 
   useEffect(() => saveChatHistory(chatMessages), [chatMessages]);
 
   useEffect(() => {
     const container = chatScrollRef.current;
+    if (!container || !wasAtBottomRef.current) return;
+
+    const frame = requestAnimationFrame(() => {
+      container.scrollTo({ top: container.scrollHeight, behavior: 'auto' });
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [chatMessages]);
+
+  function handleChatScroll() {
+    const container = chatScrollRef.current;
     if (!container) return;
-
-    const scrollToLatest = () => {
-      container.scrollTop = container.scrollHeight;
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-    };
-
-    const frame = requestAnimationFrame(scrollToLatest);
-    const resizeObserver = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(scrollToLatest) : null;
-    resizeObserver?.observe(container);
-
-    return () => {
-      cancelAnimationFrame(frame);
-      resizeObserver?.disconnect();
-    };
-  }, [chatMessages, chatBusy]);
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    wasAtBottomRef.current = distanceFromBottom <= 48;
+  }
 
   async function handleFile(file: File | undefined) {
     if (!file || (!file.type.startsWith('image/') && !file.type.startsWith('video/'))) return;
@@ -60,6 +59,7 @@ export default function AndrewChat({ conversationId }: Props) {
   async function sendChat() {
     const message = text.trim() || (attachment ? 'Analiza el archivo adjunto.' : '');
     if (!message || chatBusy) return;
+    wasAtBottomRef.current = true;
     setChatBusy(true);
     try {
       let preparedAttachment = attachment;
@@ -85,7 +85,14 @@ export default function AndrewChat({ conversationId }: Props) {
 
   return (
     <section className="chat-root" aria-label="Andrew Chat">
-      <div ref={chatScrollRef} className="chat-messages" role="log" aria-live="polite" aria-relevant="additions text">
+      <div
+        ref={chatScrollRef}
+        className="chat-messages"
+        role="log"
+        aria-live="polite"
+        aria-relevant="additions text"
+        onScroll={handleChatScroll}
+      >
         {chatMessages.length === 0 && <div className="chat-empty">Escribe a Andrew o adjunta una imagen/video para comenzar.</div>}
         {chatMessages.map((item, index) => (
           <article key={`${item.role}-${index}`} className={`chat-message ${item.role === 'user' ? 'is-user' : 'is-assistant'}`}>
@@ -95,7 +102,6 @@ export default function AndrewChat({ conversationId }: Props) {
           </article>
         ))}
         {chatBusy && <article className="chat-message is-assistant chat-processing">Procesando…</article>}
-        <div ref={bottomRef} aria-hidden="true" />
       </div>
 
       {attachment && <div className="attachment-preview">{attachment.name} · {attachment.mimeType}{uploadProgress !== null ? ` · ${uploadProgress}%` : ''}</div>}
