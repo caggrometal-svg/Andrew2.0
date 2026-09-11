@@ -1,8 +1,17 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { AndroidBridgeV2 } from '../src/network/androidBridgeV2';
 
+const storage = new Map<string, string>();
+const localStorageMock = {
+  getItem: (key: string) => storage.get(key) ?? null,
+  setItem: (key: string, value: string) => storage.set(key, value),
+  removeItem: (key: string) => storage.delete(key),
+  clear: () => storage.clear(),
+};
+Object.defineProperty(globalThis, 'localStorage', { value: localStorageMock, configurable: true });
+
 describe('Phase 14 Android Bridge V2', () => {
-  beforeEach(() => localStorage.clear());
+  beforeEach(() => localStorageMock.clear());
 
   it('queues events offline and drains them after reconnect', () => {
     const bridge = new AndroidBridgeV2();
