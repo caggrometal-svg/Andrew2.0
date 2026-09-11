@@ -7,6 +7,7 @@ import { getBridgeSessionId } from '@network/andrewBridge';
 import AndrewChat from './AndrewChat';
 import VideoGenerationPanel from './VideoGenerationPanel';
 import './styles.css';
+import './reengineering.css';
 
 const demoEvidence: Evidence[] = [
   { source: 'Fuente A', claim: 'Señal observada', reliability: 0.82 },
@@ -65,14 +66,7 @@ export default function App() {
 
         <nav className="surface mode-bar" aria-label="Secciones de Andrew 2.0" role="tablist">
           {tabs.map(item => (
-            <button
-              key={item.id}
-              className={`mode-button${tab === item.id ? ' is-active' : ''}`}
-              type="button"
-              role="tab"
-              aria-selected={tab === item.id}
-              onClick={() => setTab(item.id)}
-            >
+            <button key={item.id} className={`mode-button${tab === item.id ? ' is-active' : ''}`} type="button" role="tab" aria-selected={tab === item.id} onClick={() => setTab(item.id)}>
               {item.label}
             </button>
           ))}
@@ -80,18 +74,13 @@ export default function App() {
 
         <section className="surface workspace-panel" role="tabpanel">
           {tab === 'andrew' && <AndrewChat conversationId={conversationId} />}
-
-          {tab === 'multimedia' && (
-            <VideoGenerationPanel conversationId={conversationId} contextText="Andrew 2.0 multimedia workspace" onStatus={setStatus} />
-          )}
+          {tab === 'multimedia' && <VideoGenerationPanel conversationId={conversationId} contextText="Andrew 2.0 multimedia workspace" onStatus={setStatus} />}
 
           {tab === 'network' && (
             <div className="tab-panel">
               <h2>Red</h2>
-              <p className="muted">Fuentes públicas consultadas únicamente cuando se solicita actualización.</p>
-              <button className="ui-button" type="button" disabled={networkBusy} onClick={() => void updateNetwork()}>
-                {networkBusy ? 'Consultando…' : 'Actualizar datos públicos'}
-              </button>
+              <p className="muted">Las fuentes públicas solo se consultan cuando se solicita actualización.</p>
+              <button className="ui-button" type="button" disabled={networkBusy} onClick={() => void updateNetwork()}>{networkBusy ? 'Consultando…' : 'Actualizar datos públicos'}</button>
               <div className="metric-list">
                 <div><span>Acceso web</span><strong>Disponible</strong></div>
                 <div><span>Eventos sísmicos recibidos</span><strong>{quakeCount ?? '—'}</strong></div>
@@ -102,19 +91,15 @@ export default function App() {
           {tab === 'seismic' && (
             <div className="tab-panel">
               <h2>Estimación Experimental</h2>
-              <div className="notice notice-warning">
-                No existe actualmente un motor predictivo sísmico validado conectado al backend. Andrew no presentará porcentajes de predicción como hechos.
-              </div>
+              <div className="notice">No existe actualmente un motor predictivo sísmico validado conectado al backend. Andrew no presentará porcentajes de predicción como hechos.</div>
               <div className="metric-list">
                 <div><span>Datos sísmicos públicos</span><strong>{quakeCount === null ? 'No consultados' : `${quakeCount} eventos`}</strong></div>
                 <div><span>Horizonte predictivo</span><strong>No disponible</strong></div>
                 <div><span>Probabilidad de terremoto</span><strong>No calculada</strong></div>
                 <div><span>Estado científico</span><strong>Experimental</strong></div>
               </div>
-              <p className="muted">Trazabilidad requerida para activar predicción: fuente → ingestión → normalización → características → modelo → calibración → incertidumbre.</p>
-              <button className="ui-button" type="button" disabled={networkBusy} onClick={() => void updateNetwork()}>
-                {networkBusy ? 'Actualizando…' : 'Actualizar datos de entrada'}
-              </button>
+              <p className="muted">Trazabilidad requerida: fuente → ingestión → normalización → características → modelo → calibración → incertidumbre.</p>
+              <button className="ui-button" type="button" disabled={networkBusy} onClick={() => void updateNetwork()}>{networkBusy ? 'Actualizando…' : 'Actualizar datos de entrada'}</button>
             </div>
           )}
 
@@ -127,7 +112,7 @@ export default function App() {
                 <div><span>Hipótesis</span><strong>{critical.hypotheses.length}</strong></div>
                 <div><span>Confianza global</span><strong>{critical.overallConfidence}</strong></div>
               </div>
-              <p className="muted">Las métricas mostradas proceden del motor local de evaluación; no se presentan como telemetría externa si no existe una fuente real.</p>
+              <p className="muted">Estas métricas proceden del motor local de evaluación; no se presentan como telemetría externa.</p>
             </div>
           )}
 
