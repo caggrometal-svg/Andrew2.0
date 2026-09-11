@@ -7,10 +7,12 @@ import {
   listSessions,
   setSessionResponseId,
 } from '../session/session-store.mjs';
+import { searchMemories } from '../memory/memory-store.mjs';
 
 const USER_ID = /^[A-Za-z0-9._:-]{1,128}$/;
 const SESSION_ID = /^[A-Za-z0-9._:-]{1,128}$/;
 const MAX_HISTORY = 40;
+const MAX_MEMORY = 8;
 
 function resolveUserId(request) {
   const value = request.headers['x-andrew-user-id'];
@@ -94,10 +96,15 @@ export async function registerGatewayRoutes(app) {
       const userMessage = await appendSessionMessage(userId, sessionId, 'user', message);
       if (!userMessage) return reply.code(404).send({ ok: false, error: 'SESSION_NOT_FOUND' });
 
-      const result = await createResponse({ message, memory: [], history: history || [] });
+      const memories = await searchMemories(userId, message, MAX_MEMORY);
+      const memoryContext = memories.map((memory) => {
+        const kind = memory.kind ? `[${memory.kind}] ` : '';
+        return `${kind}${memory.text}`;
+      });
+      const result = await createResponse({ message, memory: memoryContext, history: history || [] });
       const assistantMessage = await appendSessionMessage(userId, sessionId, 'assistant', result.text);
       await setSessionResponseId(userId, sessionId, result.responseId);
-      return reply.send({ ok: true, sessionId, message: assistantMessage, responseId: result.responseId, model: result.model });
+      return reply.send({ ok: true, sessionId, message: assistantMessage, responseId: result.responseId, model: result.model, memoryUsed: memories.length });
     } catch (error) { return routeError(error, reply); }
   });
 }
