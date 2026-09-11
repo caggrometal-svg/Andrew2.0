@@ -25,8 +25,8 @@
     "test:phase14": "vitest run tests/phase14-android-bridge-v2.test.ts",
     "test:phase15": "vitest run tests/phase15-observability-hardening.test.ts",
     "test:bridge-hardening": "vitest run tests/android-bridge-v3.test.ts",
-    "backend": "node server/server.mjs",
-    "backend:dev": "node --watch server/server.mjs"
+    "backend": "node --import tsx server/server.mjs",
+    "backend:dev": "node --import tsx --watch server/server.mjs"
   },
   "dependencies": {
     "@fastify/cors": "^11.0.0",
@@ -37,7 +37,8 @@
     "fastify": "^5.4.0",
     "pg": "^8.16.3",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "tsx": "^4.20.5"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
