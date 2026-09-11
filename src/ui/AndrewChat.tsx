@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createAndrewBridgeClient, type AndrewBridgeClient } from '../bridge/client';
 import { sendAndrewMessage, uploadVideoInChunks, type AndrewAttachment } from '../network/andrewBackend';
 import { sendThroughBridge } from '../network/andrewBridge';
 import { loadChatHistory, saveChatHistory, type PersistedChatMessage } from '../storage/chatPersistence';
@@ -13,8 +14,30 @@ export default function AndrewChat({ conversationId }: Props) {
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [attachment, setAttachment] = useState<AndrewAttachment | undefined>();
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [bridgeAvailable, setBridgeAvailable] = useState(false);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const wasAtBottomRef = useRef(true);
+  const bridgeClientRef = useRef<AndrewBridgeClient | null>(null);
+
+  if (bridgeClientRef.current === null && typeof window !== 'undefined' && window.AndrewBridge) {
+    bridgeClientRef.current = createAndrewBridgeClient(window.AndrewBridge);
+  }
+
+  useEffect(() => {
+    const client = bridgeClientRef.current;
+    if (!client) return;
+
+    let active = true;
+    setBridgeAvailable(true);
+
+    void client.requestStatus().catch(() => {
+      if (active) setBridgeAvailable(false);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => saveChatHistory(chatMessages), [chatMessages]);
 
@@ -62,6 +85,9 @@ export default function AndrewChat({ conversationId }: Props) {
     wasAtBottomRef.current = true;
     setChatBusy(true);
     try {
+      const bridgeClient = bridgeClientRef.current;
+      if (bridgeClient) await bridgeClient.syncNow();
+
       let preparedAttachment = attachment;
       if (attachment?.type === 'video' && attachmentFile) preparedAttachment = await uploadVideoInChunks(attachmentFile, setUploadProgress);
       const userMessage: ChatMessage = { role: 'user', text: message, attachment: preparedAttachment };
@@ -115,7 +141,9 @@ export default function AndrewChat({ conversationId }: Props) {
         <button className="send-button" type="submit" disabled={chatBusy || (!text.trim() && !attachment)}>{chatBusy ? 'Procesando' : 'Enviar'}</button>
       </form>
 
-      <div className="bridge-status" aria-live="polite">Bridge: persistent gateway · Backend: andrew2-api.onrender.com</div>
+      <div className="bridge-status" aria-live="polite">
+        Bridge: {bridgeAvailable ? 'native client activo' : 'gateway persistente'} · Backend: andrew2-api.onrender.com
+      </div>
     </section>
   );
 }
