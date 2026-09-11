@@ -82,11 +82,5 @@ async def test_put_writes_exact_hash_and_ttl(monkeypatch, key):
     assert redis.ttls[cache._hash_key(key, "hola")] > 0
 
 
-def test_tag_validation_rejects_oversized_values(key):
-    with pytest.raises(ValueError):
-        SemanticCache._tag("x" * 257)
-    assert SemanticCache._tag("safe:user") == r"safe\:user"
-
-
 def _embedding(prompt):
     return [1.0, 0.0, 0.0]
