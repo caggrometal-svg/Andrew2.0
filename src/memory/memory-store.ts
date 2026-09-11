@@ -13,18 +13,31 @@ export class MemoryStore {
 
   remember(memory: MemoryItem): MemoryItem {
     const memories = this.list();
-    memories.push(memory);
+    const existingIndex = memories.findIndex((item) => item.id === memory.id);
+    if (existingIndex >= 0) memories[existingIndex] = memory;
+    else memories.push(memory);
     this.storage.set(MEMORY_KEY, memories);
     return memory;
   }
 
   search(query: string): MemoryItem[] {
     const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
-    return this.list()
-      .filter((memory) => terms.every((term) =>
-        `${memory.content} ${memory.tags.join(' ')}`.toLowerCase().includes(term),
-      ))
-      .map((memory) => ({ ...memory, accessCount: memory.accessCount + 1, updatedAt: new Date().toISOString() }));
+    if (!terms.length) return [];
+
+    const memories = this.list();
+    const now = new Date().toISOString();
+    const found = memories.filter((memory) => terms.every((term) =>
+      `${memory.content} ${memory.tags.join(' ')}`.toLowerCase().includes(term),
+    ));
+
+    if (!found.length) return [];
+
+    const foundIds = new Set(found.map((memory) => memory.id));
+    const updated = memories.map((memory) => foundIds.has(memory.id)
+      ? { ...memory, accessCount: memory.accessCount + 1, updatedAt: now }
+      : memory);
+    this.storage.set(MEMORY_KEY, updated);
+    return updated.filter((memory) => foundIds.has(memory.id));
   }
 
   learn(event: LearningEvent): void {
