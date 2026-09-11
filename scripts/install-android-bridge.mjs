@@ -6,8 +6,10 @@ const gradlePath = path.join(androidRoot, 'app', 'build.gradle');
 if (!fs.existsSync(gradlePath)) throw new Error('android/app/build.gradle not found');
 
 const gradle = fs.readFileSync(gradlePath, 'utf8');
-const namespace = gradle.match(/namespace\\s*[=:]\\s*['\"]([^'\"]+)['\"]/)?.[1]
-  ?? gradle.match(/applicationId\\s*[=:]\\s*['\"]([^'\"]+)['\"]/)?.[1];
+const namespace = gradle.match(/\bnamespace\s*(?:=\s*)?['\"]([^'\"]+)['\"]/)?.[1]
+  ?? gradle.match(/\bapplicationId\s*(?:=\s*)?['\"]([^'\"]+)['\"]/)?.[1]
+  ?? fs.readFileSync(path.join(androidRoot, 'app', 'src', 'main', 'AndroidManifest.xml'), 'utf8')
+    .match(/\bpackage\s*=\s*['\"]([^'\"]+)['\"]/)?.[1];
 if (!namespace) throw new Error('Unable to determine Android namespace');
 
 const packagePath = namespace.split('.').join(path.sep);
@@ -50,11 +52,8 @@ public final class AndrewBridge {
 
     @JavascriptInterface
     public void setRuntimeParameter(String key, String value) {
-        if (key == null || value == null || key.length() > 64 || value.length() > 256 || !ALLOWED_PARAMETERS.contains(key)) {
-            return;
-        }
-        SharedPreferences.Editor editor = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit();
-        editor.putString(key, value).apply();
+        if (key == null || value == null || key.length() > 64 || value.length() > 256 || !ALLOWED_PARAMETERS.contains(key)) return;
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(key, value).apply();
     }
 
     @JavascriptInterface
@@ -67,14 +66,13 @@ public final class AndrewBridge {
             result.put("runtime", new JSONObject(prefs.getAll()).toString());
             return result.toString();
         } catch (Exception ignored) {
-            return "{\\"bridge\\":\\"android-v23\\",\\"native\\":true}";
+            return "{\"bridge\":\"android-v23\",\"native\":true}";
         }
     }
 
     @JavascriptInterface
     public void syncNow() {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putLong("lastSyncAt", System.currentTimeMillis()).apply();
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putLong("lastSyncAt", System.currentTimeMillis()).apply();
     }
 }
 `;
