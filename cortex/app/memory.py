@@ -6,6 +6,8 @@ from typing import Any
 
 from redis.asyncio import Redis
 
+from .config import settings
+
 
 class MemoryKind(StrEnum):
     WORKING = "working"
@@ -62,12 +64,12 @@ class MemoryManager:
         return value or {"kind": "project", "text": "", "metadata": {}}
 
     async def context_snapshot(self, user_id: str) -> list[dict[str, Any]]:
-        """Return only bounded, high-value memory; never dump the full store."""
+        """Return bounded high-value memory without dumping the full store."""
         pattern = f"{self.PREFIX}*:{user_id}:*"
         keys: list[str] = []
         async for key in self.redis.scan_iter(match=pattern, count=100):
             keys.append(key.decode() if isinstance(key, bytes) else key)
-            if len(keys) >= 32:
+            if len(keys) >= settings.memory_max_scan_keys:
                 break
         if not keys:
             return []
