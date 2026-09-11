@@ -1,8 +1,4 @@
-.mode-bar {
-  grid-template-columns: repeat(6, minmax(92px, 1fr));
-  overflow-x: auto;
-  scrollbar-width: thin;
-}
+.mode-bar { grid-template-columns: repeat(6, minmax(92px, 1fr)); overflow-x: auto; scrollbar-width: thin; }
 .mode-button { white-space: nowrap; }
 .tab-panel { min-width: 0; display: grid; gap: 14px; }
 .tab-panel h2, .tab-panel h3 { margin: 0; }
@@ -25,5 +21,17 @@
 .media-progress-bar { height: 7px; background: #162333; border-radius: 99px; overflow: hidden; }
 .media-progress-bar > div { height: 100%; background: #4e86b5; transition: width .4s ease; }
 .media-result video { width: 100%; max-height: 520px; border-radius: 12px; background: #05070a; }
+.app-page[data-theme='light'] { background: #eef2f6; color: #16202b; }
+.app-page[data-theme='light'] .surface { background: #ffffff; border-color: #d5dde6; box-shadow: 0 8px 24px rgba(15, 23, 42, .08); }
+.app-page[data-theme='light'] .brand-block p, .app-page[data-theme='light'] .muted { color: #5b6877; }
+.app-page[data-theme='light'] .mode-button { background: #f7f9fb; border-color: #d4dce5; color: #465466; }
+.app-page[data-theme='light'] .mode-button.is-active, .app-page[data-theme='light'] .ui-button.is-selected { background: #e3edf7; border-color: #9ebbd7; color: #16202b; }
+.app-page[data-theme='light'] .ui-button { background: #f7f9fb; border-color: #cdd7e2; color: #263342; }
+.app-page[data-theme='light'] .text-input, .app-page[data-theme='light'] .chat-input, .app-page[data-theme='light'] .media-prompt { background: #ffffff; color: #16202b; border-color: #cbd5e1; }
+.app-page[data-theme='light'] .chat-messages { background: #f7f9fb; border-color: #d8e0e8; }
+.app-page[data-theme='light'] .chat-message { background: #ffffff; border-color: #d7e0e8; color: #1f2937; }
+.app-page[data-theme='light'] .chat-message.is-user { background: #eaf2fa; border-color: #c8d9e9; }
+.app-page[data-theme='light'] .metric-list > div { background: #f8fafc; border-color: #d9e1e9; }
+.app-page[data-theme='light'] .notice { background: #fff8e7; border-color: #e5cf9c; color: #66521f; }
 @media (max-width: 720px) { .mode-bar { grid-template-columns: repeat(6, minmax(104px, 1fr)); } .c33-input-row { grid-template-columns: 1fr; } }
 @media (prefers-color-scheme: light) { :root { color-scheme: light; } }
