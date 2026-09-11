@@ -12,7 +12,7 @@ function extractText(data) {
   const parts = [];
   for (const item of data?.output || []) {
     for (const content of item?.content || []) {
-      if (typeof content?.text === 'string') parts.push(content.text);
+      if (content?.type === 'output_text' && typeof content?.text === 'string') parts.push(content.text);
     }
   }
   return parts.join('\n').trim();
@@ -57,15 +57,10 @@ function historyInput(history) {
   return history
     .filter((item) => item && (item.role === 'user' || item.role === 'assistant') && typeof item.content === 'string')
     .slice(-MAX_HISTORY)
-    .map((item) => item.role === 'assistant'
-      ? {
-          role: 'assistant',
-          content: [{ type: 'output_text', text: item.content.slice(0, 12000) }],
-        }
-      : {
-          role: 'user',
-          content: [{ type: 'input_text', text: item.content.slice(0, 12000) }],
-        });
+    .map((item) => ({
+      role: item.role,
+      content: item.content.slice(0, 12000),
+    }));
 }
 
 export async function createResponse({ message, memory = [], attachment, history = [] }) {
@@ -80,17 +75,24 @@ export async function createResponse({ message, memory = [], attachment, history
 
   const current = `Eres Andrew 2.0, asistente personal conectado al runtime IAC33.\nUsa el contexto de memoria solo como información de apoyo. No inventes recuerdos.\nResponde en el idioma del usuario y de forma clara.${memoryBlock}${mediaBlock}\n\nMensaje del usuario:\n${message}`;
   const input = historyInput(history);
-  input.push({ role: 'user', content: [{ type: 'input_text', text: current }] });
+  input.push({ role: 'user', content: current });
 
   const content = input[input.length - 1].content;
   if (attachment?.type === 'image' && attachment.dataUrl) {
-    content.push({ type: 'input_image', image_url: attachment.dataUrl, detail: 'auto' });
+    input[input.length - 1].content = [
+      { type: 'input_text', text: current },
+      { type: 'input_image', image_url: attachment.dataUrl, detail: 'auto' },
+    ];
   }
   if (hasVideoFrames) {
-    for (const frame of attachment.frames.slice(0, MAX_VIDEO_FRAMES)) {
-      content.push({ type: 'input_text', text: `Fotograma ${frame.index} — timestamp exacto ${Number(frame.timestamp).toFixed(3)} s.` });
-      content.push({ type: 'input_image', image_url: frame.dataUrl, detail: 'auto' });
-    }
+    const visualContent = [
+      { type: 'input_text', text: current },
+      ...attachment.frames.slice(0, MAX_VIDEO_FRAMES).flatMap((frame) => [
+        { type: 'input_text', text: `Fotograma ${frame.index} — timestamp exacto ${Number(frame.timestamp).toFixed(3)} s.` },
+        { type: 'input_image', image_url: frame.dataUrl, detail: 'auto' },
+      ]),
+    ];
+    input[input.length - 1].content = visualContent;
   }
 
   const data = await requestOpenAI({ model: config.openaiModel, input, store: false });
