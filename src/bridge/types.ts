@@ -27,7 +27,7 @@ export type BridgeMessage<TPayload = unknown> =
   | BridgeResponse<TPayload>;
 
 export interface AndrewBridgeNative {
-  send: (message: BridgeMessage) => void | Promise<void>;
+  send?: (message: BridgeMessage) => void | Promise<void>;
   request?: (message: BridgeCommand) => BridgeResponse | Promise<BridgeResponse>;
   openSettings?: () => void | Promise<void>;
   setRuntimeParameter?: (key: string, value: string) => void | Promise<void>;
