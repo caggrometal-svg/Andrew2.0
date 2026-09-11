@@ -29,21 +29,30 @@ class Circuit:
     opened_at: float = 0.0
     threshold: int = 3
     cooldown: float = 20.0
+    probe_in_flight: bool = False
 
     def allow(self) -> bool:
         if self.state == CircuitState.CLOSED:
             return True
         if self.state == CircuitState.OPEN and time.monotonic() - self.opened_at >= self.cooldown:
+            if self.probe_in_flight:
+                return False
             self.state = CircuitState.HALF_OPEN
+            self.probe_in_flight = True
             return True
-        return self.state == CircuitState.HALF_OPEN
+        if self.state == CircuitState.HALF_OPEN and not self.probe_in_flight:
+            self.probe_in_flight = True
+            return True
+        return False
 
     def success(self) -> None:
         self.failures = 0
         self.state = CircuitState.CLOSED
+        self.probe_in_flight = False
 
     def failure(self) -> None:
         self.failures += 1
+        self.probe_in_flight = False
         if self.failures >= self.threshold:
             self.state = CircuitState.OPEN
             self.opened_at = time.monotonic()
@@ -70,8 +79,11 @@ class ModelGateway:
 
     async def chat(self, messages: list[dict[str, Any]], routes: list[str], user: str) -> dict[str, Any]:
         last_error: Exception | None = None
-        previous_model: str | None = None
+        failed_model: str | None = None
         for model in routes:
+            if failed_model is not None and failed_model != model:
+                GATEWAY_FALLBACKS.labels(failed_model, model).inc()
+                failed_model = None
             circuit = await self._circuit(model)
             if not circuit.allow():
                 GATEWAY_REQUESTS.labels(model, "circuit_open").inc()
@@ -92,9 +104,7 @@ class ModelGateway:
                         GATEWAY_PROVIDER_ERRORS.labels(model, str(response.status_code)).inc()
                         GATEWAY_REQUESTS.labels(model, "retryable_error").inc()
                         last_error = RuntimeError(f"{model}: HTTP {response.status_code}")
-                        if previous_model is not None:
-                            GATEWAY_FALLBACKS.labels(previous_model, model).inc()
-                        previous_model = model
+                        failed_model = model
                         continue
                     GATEWAY_REQUESTS.labels(model, "non_retryable_error").inc()
                     response.raise_for_status()
@@ -117,9 +127,7 @@ class ModelGateway:
                 CIRCUIT_STATE.labels(model).set(self._state_number(circuit.state))
                 GATEWAY_REQUESTS.labels(model, "exception").inc()
                 last_error = exc
-                if previous_model is not None:
-                    GATEWAY_FALLBACKS.labels(previous_model, model).inc()
-                previous_model = model
+                failed_model = model
                 continue
         raise RuntimeError(f"all model routes unavailable: {last_error}")
 
