@@ -8,18 +8,50 @@ import { loadChatHistory, saveChatHistory, type PersistedChatMessage } from '../
 type ChatMessage = PersistedChatMessage & { attachment?: AndrewAttachment };
 type Props = { conversationId: string };
 
+type MutableRuntimePatch = {
+  model?: string;
+  timeoutMs?: number;
+  pollIntervalMs?: number;
+  syncEnabled?: boolean;
+};
+
 const DEFAULT_RUNTIME: RuntimeParams = { model: 'default', timeoutMs: 30000, pollIntervalMs: 5000, syncEnabled: true };
 const STATUS_POLL_MS = 5000;
 
 function normalizeRuntime(value: unknown): Partial<RuntimeParams> {
   if (!value || typeof value !== 'object') return {};
+
   const source = value as Record<string, unknown>;
-  const runtime = typeof source.runtime === 'object' && source.runtime ? source.runtime as Record<string, unknown> : source;
-  const result: Partial<RuntimeParams> = {};
-  if (typeof runtime.model === 'string') result.model = runtime.model;
-  if (typeof runtime.timeoutMs === 'number' && Number.isFinite(runtime.timeoutMs)) result.timeoutMs = runtime.timeoutMs;
-  if (typeof runtime.pollIntervalMs === 'number' && Number.isFinite(runtime.pollIntervalMs)) result.pollIntervalMs = runtime.pollIntervalMs;
-  if (typeof runtime.syncEnabled === 'boolean') result.syncEnabled = runtime.syncEnabled;
+
+  const runtime =
+    typeof source.runtime === 'object' && source.runtime
+      ? (source.runtime as Record<string, unknown>)
+      : source;
+
+  const result: MutableRuntimePatch = {};
+
+  if (typeof runtime.model === 'string') {
+    result.model = runtime.model;
+  }
+
+  if (
+    typeof runtime.timeoutMs === 'number' &&
+    Number.isFinite(runtime.timeoutMs)
+  ) {
+    result.timeoutMs = runtime.timeoutMs;
+  }
+
+  if (
+    typeof runtime.pollIntervalMs === 'number' &&
+    Number.isFinite(runtime.pollIntervalMs)
+  ) {
+    result.pollIntervalMs = runtime.pollIntervalMs;
+  }
+
+  if (typeof runtime.syncEnabled === 'boolean') {
+    result.syncEnabled = runtime.syncEnabled;
+  }
+
   return result;
 }
 
