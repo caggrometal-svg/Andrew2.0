@@ -36,6 +36,26 @@ function createCommand<TPayload>(method: string, payload: TPayload): BridgeComma
   };
 }
 
+function parseNativeStatus(status: unknown): unknown {
+  if (typeof status !== 'string') return status;
+
+  try {
+    const parsed = JSON.parse(status) as Record<string, unknown>;
+
+    if (typeof parsed.runtime === 'string') {
+      try {
+        parsed.runtime = JSON.parse(parsed.runtime);
+      } catch {
+        // Preserve the raw runtime value when the native payload is not JSON.
+      }
+    }
+
+    return parsed;
+  } catch {
+    return status;
+  }
+}
+
 export class AndrewBridgeClient {
   private readonly listeners = new Map<string, Set<BridgeEventHandler>>();
   private readonly responseListeners = new Map<string, (response: BridgeResponse) => void>();
@@ -44,6 +64,9 @@ export class AndrewBridgeClient {
 
   async send<TPayload = unknown>(method: string, payload: TPayload = {} as TPayload): Promise<void> {
     const command = createCommand(method, payload);
+    if (!this.nativeBridge.send) {
+      throw new Error(`AndrewBridge no expone el canal genérico send() para ${method}.`);
+    }
     await this.nativeBridge.send(command);
   }
 
@@ -59,8 +82,17 @@ export class AndrewBridgeClient {
       return await requestMethod(command) as BridgeResponse<TResponse>;
     }
 
+    if (!this.nativeBridge.send) {
+      throw new Error(`AndrewBridge no expone request() ni send() para ${method}.`);
+    }
+
+    const responsePromise = this.waitForResponse<TResponse>(
+      command.id,
+      options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    );
+
     await this.nativeBridge.send(command);
-    return await this.waitForResponse<TResponse>(command.id, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+    return await responsePromise;
   }
 
   on<TPayload = unknown>(method: string, handler: BridgeEventHandler<TPayload>): () => void {
@@ -101,9 +133,12 @@ export class AndrewBridgeClient {
   }
 
   async requestStatus(): Promise<unknown> {
-    if (this.nativeBridge.requestStatus) return await this.nativeBridge.requestStatus();
+    if (this.nativeBridge.requestStatus) {
+      return parseNativeStatus(await this.nativeBridge.requestStatus());
+    }
+
     const response = await this.request('requestStatus', {});
-    return response.payload;
+    return parseNativeStatus(response.payload);
   }
 
   async syncNow(): Promise<void> {
