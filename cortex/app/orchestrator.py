@@ -7,6 +7,7 @@ from redis.asyncio import Redis
 
 from .admission import AdmissionController, Priority
 from .cache import CacheKey, SemanticCache
+from .config import settings
 from .gateway import ModelGateway
 from .memory import MemoryManager
 from .rag import PrecisionRAG
@@ -45,6 +46,8 @@ class AndrewOrchestrator:
         text = message.lower()
         if any(x in text for x in ("recuerda", "memoria", "guarda", "olvida")):
             return Intent.MEMORY
+        if any(x in text for x in ("proyecto", "andrew 2.0", "cortex")):
+            return Intent.PROJECT
         if any(x in text for x in ("github", "rama", "commit", "repositorio", "código", "codigo")):
             return Intent.CODE
         if any(x in text for x in ("video", "imagen", "audio", "multimedia")):
@@ -87,8 +90,8 @@ class AndrewOrchestrator:
                 tenant=request.tenant,
                 user=request.user_id,
                 locale=request.locale,
-                model_version="routing-v1",
-                system_prompt_version="v1",
+                model_version=settings.model_version_routing,
+                system_prompt_version=settings.system_prompt_version,
             )
             cached = await self.cache.get(key, request.message)
             if cached is not None:
@@ -111,13 +114,16 @@ class AndrewOrchestrator:
             )
             response = result["content"]
             await self.cache.put(key, request.message, response)
-            return {
+            result_payload: dict[str, Any] = {
                 "response": response,
                 "source": "llm",
                 "model": result["model"],
                 "intent": intent.value,
                 "latency_ms": round((time.perf_counter() - started) * 1000, 2),
             }
+            if "tokens_per_second" in result:
+                result_payload["tokens_per_second"] = result["tokens_per_second"]
+            return result_payload
 
         return await self.admission.submit(priority, work)
 
