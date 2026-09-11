@@ -66,7 +66,7 @@ public final class AndrewBridge {
             result.put("runtime", new JSONObject(prefs.getAll()).toString());
             return result.toString();
         } catch (Exception ignored) {
-            return "{\"bridge\":\"android-v23\",\"native\":true}";
+            return "{}";
         }
     }
 
