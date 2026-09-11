@@ -12,6 +12,12 @@ permissions:
 jobs:
   cortex-unit-static:
     runs-on: ubuntu-latest
+    env:
+      CORTEX_SHARED_TOKEN: test-token
+      REDIS_URL: redis://localhost:6379/0
+      QDRANT_URL: http://localhost:6333
+      LITELLM_BASE_URL: http://localhost:4000
+      LITELLM_MASTER_KEY: test-key
     defaults:
       run:
         working-directory: cortex
