@@ -1,8 +1,10 @@
-import { FormEvent, useMemo, useState } from 'react';
-import { historicalSummary, SEISMIC_SOURCE, SeismicEvent } from './app/seismic-config';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { filterChileEvents, historicalSummary, SEISMIC_SOURCE, SeismicEvent } from './app/seismic-config';
 import './styles.css';
 
 type View = 'seismic' | 'chat' | 'c33' | 'settings';
+
+type ChatMessage = { role: 'user' | 'assistant'; text: string };
 
 const SAMPLE_EVENTS: SeismicEvent[] = [
   { id: 'sample-1', occurredAt: '2026-09-10T15:58:55-03:00', latitude: -23.101, longitude: -67.322, depthKm: 223, magnitude: 3.4, magnitudeType: 'Mlv', place: '69 km al SE de Socaire' },
@@ -24,30 +26,43 @@ function formatTime(value: string) {
 
 export default function App() {
   const [view, setView] = useState<View>('seismic');
-  const [events, setEvents] = useState<SeismicEvent[]>(SAMPLE_EVENTS);
+  const [events] = useState<SeismicEvent[]>(SAMPLE_EVENTS);
   const [magnitudeFilter, setMagnitudeFilter] = useState(0);
   const [input, setInput] = useState('');
-  const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant'; text: string }>>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [compactMode, setCompactMode] = useState(true);
   const [historicalWindow, setHistoricalWindow] = useState('30d');
   const [notifications, setNotifications] = useState(true);
+  const chatRef = useRef<HTMLDivElement>(null);
+  const endRef = useRef<HTMLDivElement>(null);
 
-  const chileEvents = useMemo(() => events.filter((event) => event.latitude >= -56 && event.latitude <= -17 && event.longitude >= -76 && event.longitude <= -66), [events]);
-  const filteredEvents = useMemo(() => chileEvents.filter((event) => event.magnitude >= magnitudeFilter).sort((a, b) => +new Date(b.occurredAt) - +new Date(a.occurredAt)), [chileEvents, magnitudeFilter]);
+  const chileEvents = useMemo(() => filterChileEvents(events), [events]);
+  const filteredEvents = useMemo(
+    () => chileEvents.filter((event) => event.magnitude >= magnitudeFilter).sort((a, b) => +new Date(b.occurredAt) - +new Date(a.occurredAt)),
+    [chileEvents, magnitudeFilter],
+  );
   const summary = useMemo(() => historicalSummary(chileEvents), [chileEvents]);
 
-  function refresh() {
-    // The UI is ready for the backend proxy configured in VITE_SEISMIC_ENDPOINT.
-    // Until it is available, retain the last verified CSN-derived sample state.
-    setEvents((current) => [...current]);
-  }
+  useEffect(() => {
+    const container = chatRef.current;
+    if (!container) return;
+    const frame = requestAnimationFrame(() => {
+      container.scrollTop = container.scrollHeight;
+      endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [messages]);
 
   function sendMessage(event: FormEvent) {
     event.preventDefault();
     const value = input.trim();
     if (!value) return;
-    setMessages((current) => [...current, { role: 'user', text: value }, { role: 'assistant', text: 'Análisis preparado. Conecta el gateway de IA para ejecutar la consulta.' }]);
+    setMessages((current) => [
+      ...current,
+      { role: 'user', text: value },
+      { role: 'assistant', text: 'Consulta recibida. El gateway de IA queda conectado cuando el endpoint de conversación esté disponible.' },
+    ]);
     setInput('');
   }
 
@@ -61,12 +76,12 @@ export default function App() {
             <h1>Andrew 2.0</h1>
           </div>
         </div>
-        <div className="live-indicator"><span /> {autoRefresh ? 'Monitoreo activo' : 'Pausa'}</div>
+        <div className="live-indicator"><span /> {autoRefresh ? 'Monitor configurado' : 'Pausa'}</div>
       </header>
 
       <nav className="top-tabs" aria-label="Módulos principales">
         <button className={`top-tab ${view === 'seismic' ? 'active' : ''}`} onClick={() => setView('seismic')} type="button">
-          <span>Sismos Chile</span><small>CSN · tiempo real</small>
+          <span>Sismos Chile</span><small>CSN · fuente configurable</small>
         </button>
         <button className={`c33-card ${view === 'c33' ? 'active' : ''}`} onClick={() => setView('c33')} type="button">
           <strong>EXPEDIENTE C33</strong><span>Investigación · evidencia</span>
@@ -77,11 +92,11 @@ export default function App() {
         <section className="workspace" aria-label="Monitoreo sísmico de Chile">
           <div className="section-head">
             <div><span className="section-kicker">FUENTE OFICIAL</span><h2>Actividad sísmica en Chile</h2><p>{SEISMIC_SOURCE.name} · {SEISMIC_SOURCE.institution}</p></div>
-            <button className="ghost-button" type="button" onClick={refresh}>Actualizar</button>
+            <a className="ghost-button" href={SEISMIC_SOURCE.officialUrl} target="_blank" rel="noreferrer">Ver CSN</a>
           </div>
 
           <div className="stats-grid">
-            <div className="stat-card"><span>Eventos en alcance</span><strong>{summary.count}</strong><small>Filtro geográfico Chile</small></div>
+            <div className="stat-card"><span>Eventos en alcance</span><strong>{summary.count}</strong><small>Filtro geográfico configurado</small></div>
             <div className="stat-card"><span>Magnitud media</span><strong>{summary.meanMagnitude.toFixed(1)}</strong><small>Ventana {historicalWindow}</small></div>
             <div className="stat-card"><span>Máxima observada</span><strong>{summary.maxMagnitude.toFixed(1)}</strong><small>Registro disponible</small></div>
           </div>
@@ -90,7 +105,7 @@ export default function App() {
             <div className="filter-group" aria-label="Filtro de magnitud">
               {[0, 3, 4, 5].map((value) => <button key={value} className={magnitudeFilter === value ? 'selected' : ''} type="button" onClick={() => setMagnitudeFilter(value)}>M{value === 0 ? 'all' : `≥${value}`}</button>)}
             </div>
-            <span className="source-badge">CSN · Chile only</span>
+            <span className="source-badge">CSN · Chile</span>
           </div>
 
           <div className="event-list">
@@ -115,7 +130,10 @@ export default function App() {
       {view === 'chat' && (
         <section className="workspace chat-workspace">
           <div className="section-head"><div><span className="section-kicker">ANÁLISIS</span><h2>Andrew</h2><p>Consulta los datos sísmicos sin abandonar el monitor.</p></div></div>
-          <div className="chat-messages">{messages.length === 0 ? <div className="empty-state">Escribe una consulta para analizar la actividad observada.</div> : messages.map((message, index) => <article key={index} className={`chat-message ${message.role}`}><span>{message.role === 'user' ? 'Tú' : 'Andrew'}</span><p>{message.text}</p></article>)}</div>
+          <div ref={chatRef} className="chat-messages" role="log" aria-live="polite" aria-relevant="additions text">
+            {messages.length === 0 ? <div className="empty-state">Escribe una consulta para analizar la actividad observada.</div> : messages.map((message, index) => <article key={`${message.role}-${index}`} className={`chat-message ${message.role}`}><span>{message.role === 'user' ? 'Tú' : 'Andrew'}</span><p>{message.text}</p></article>)}
+            <div ref={endRef} aria-hidden="true" />
+          </div>
           <form className="chat-composer" onSubmit={sendMessage}><input value={input} onChange={(event) => setInput(event.target.value)} placeholder="Consulta actividad, magnitud, profundidad…" aria-label="Consulta" /><button type="submit" disabled={!input.trim()}>Enviar</button></form>
         </section>
       )}
@@ -131,7 +149,7 @@ export default function App() {
             <label><span>Notificaciones sísmicas</span><input type="checkbox" checked={notifications} onChange={(event) => setNotifications(event.target.checked)} /></label>
             <label><span>Fuente de datos</span><strong>CSN · Chile</strong></label>
             <label><span>Endpoint de datos</span><strong>{SEISMIC_SOURCE.endpoint}</strong></label>
-            <label><span>Alcance geográfico</span><strong>Territorio de Chile</strong></label>
+            <label><span>Alcance geográfico</span><strong>Chile continental según el filtro actual</strong></label>
             <label><span>Ventana histórica</span><select value={historicalWindow} onChange={(event) => setHistoricalWindow(event.target.value)}><option value="7d">7 días</option><option value="30d">30 días</option><option value="90d">90 días</option><option value="1y">1 año</option></select></label>
             <a className="settings-link" href={SEISMIC_SOURCE.officialUrl} target="_blank" rel="noreferrer">Abrir sitio oficial del CSN ↗</a>
           </div>
