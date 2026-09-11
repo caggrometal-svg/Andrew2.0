@@ -37,6 +37,8 @@
     "backend:dev": "node --import tsx --watch server/server.mjs"
   },
   "dependencies": {
+    "@capacitor/android": "7.4.4",
+    "@capacitor/core": "7.4.4",
     "@fastify/cors": "^11.0.0",
     "@fastify/rate-limit": "^11.2.0",
     "@ffprobe-installer/ffprobe": "2.1.2",
@@ -49,6 +51,7 @@
     "tsx": "^4.20.5"
   },
   "devDependencies": {
+    "@capacitor/cli": "7.4.4",
     "@types/node": "^20.10.0",
     "@types/pg": "^8.15.5",
     "@types/react": "^18.3.0",
