@@ -1,5 +1,5 @@
-import { assertToolInput, registerTool } from '../tool-registry.ts';
-import type { ToolDefinition, ToolInput } from '../tool-types.ts';
+import { assertToolInput, registerTool } from '../tool-registry';
+import type { ToolDefinition, ToolInput } from '../tool-types';
 
 const media: ToolDefinition = {
   name: 'media',
