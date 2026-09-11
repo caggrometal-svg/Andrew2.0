@@ -172,7 +172,7 @@ jobs:
           test -x "$AAPT2"
           echo "Using AAPT2: $AAPT2"
           "$AAPT2" dump badging "$APK" | tee /tmp/andrew-apk-badging.txt
-          "$AAPT2" dump xmltree "$APK" AndroidManifest.xml | tee /tmp/andrew-apk-manifest-tree.txt >/dev/null
+          "$AAPT2" dump xmltree --file AndroidManifest.xml "$APK" | tee /tmp/andrew-apk-manifest-tree.txt >/dev/null
 
           grep -q "package:" /tmp/andrew-apk-badging.txt
           grep -q "application:" /tmp/andrew-apk-badging.txt
