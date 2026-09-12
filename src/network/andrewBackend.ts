@@ -1,4 +1,4 @@
-import { FetchNetworkAdapter } from './network-adapter';
+import { FetchNetworkAdapter, type NetworkRequestInput } from './network-adapter';
 
 export type AndrewMemoryContext = string;
 
@@ -45,7 +45,7 @@ const VIDEO_CHUNK_RETRIES = 4;
 const USER_ID_STORAGE_KEY = 'andrew:user-id';
 const BACKEND_NETWORK_CAPABILITY = 'public-web' as const;
 
-const networkAdapter = new FetchNetworkAdapter({ fetchImpl: (input, init) => fetch(input, init) });
+const networkAdapter = new FetchNetworkAdapter({ fetchImpl: (input: NetworkRequestInput, init) => fetch(input, init) });
 
 function getBackendUrl(): string {
   const configured = (import.meta.env['VITE_ANDREW_BACKEND_URL'] || 'https://andrew2-api.onrender.com').trim();
@@ -81,7 +81,7 @@ function isRetryableError(error: unknown): boolean {
   return false;
 }
 
-async function fetchWithRetry(input: RequestInfo | URL, init: RequestInit, timeoutMs: number, listener?: NetworkStatusListener, attempts = MAX_RETRIES): Promise<Response> {
+async function fetchWithRetry(input: NetworkRequestInput, init: RequestInit, timeoutMs: number, listener?: NetworkStatusListener, attempts = MAX_RETRIES): Promise<Response> {
   let lastError: unknown;
   for (let attempt = 0; attempt <= attempts; attempt += 1) {
     if (attempt === 0) notify(listener, 'connecting');
