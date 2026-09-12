@@ -15,7 +15,7 @@ describe('IAC33Runtime integration', () => {
 
     expect(allowed).toBe(false);
     expect(runtime.activity.all()).toHaveLength(1);
-    expect(runtime.activity.all()[0].result).toBe('denied');
+    expect(runtime.activity.all()[0]?.result).toBe('denied');
   });
 
   it('persists projects and activity through the storage provider', () => {
