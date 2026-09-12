@@ -233,3 +233,75 @@ jobs:
             release/SHA256SUMS.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify direct GitHub Release asset
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          URL="https://github.com/caggrometal-svg/Andrew2.0/releases/download/andrew-latest/andrew-latest.apk"
+          curl -fL --retry 5 --retry-delay 2 --max-time 120 -o /tmp/github-latest.apk "$URL"
+          test -s /tmp/github-latest.apk
+          unzip -t /tmp/github-latest.apk >/dev/null
+          echo 'GitHub Release APK download: PASS'
+          sha256sum /tmp/github-latest.apk
+
+      - name: Verify production health endpoint
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          curl -fsS --retry 6 --retry-delay 5 --max-time 45 \
+            -D /tmp/health.headers \
+            -o /tmp/health.json \
+            https://andrew2-api.onrender.com/health
+          grep -Eq '^HTTP/.* 200 ' /tmp/health.headers
+          echo '=== /health headers ==='
+          cat /tmp/health.headers
+          echo '=== /health body ==='
+          cat /tmp/health.json
+          grep -q '"ok":true' /tmp/health.json
+          echo 'Render /health: PASS'
+
+      - name: Verify production APK download endpoint
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          URL="https://andrew2-api.onrender.com/download/andrew-latest.apk"
+          curl -fL --retry 6 --retry-delay 5 --max-time 180 \
+            -D /tmp/apk.headers \
+            -o /tmp/andrew-latest.apk \
+            "$URL"
+          grep -Eq '^HTTP/.* 200 ' /tmp/apk.headers
+          grep -qi '^content-type: application/vnd.android.package-archive' /tmp/apk.headers
+          test -s /tmp/andrew-latest.apk
+          unzip -t /tmp/andrew-latest.apk >/dev/null
+          echo '=== production APK headers ==='
+          cat /tmp/apk.headers
+          echo '=== production APK checksum ==='
+          sha256sum /tmp/andrew-latest.apk
+          echo 'Render direct APK download: PASS'
+
+      - name: Publish production verification evidence
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "commit=$GITHUB_SHA"
+            echo "branch=$GITHUB_REF_NAME"
+            echo "timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo '--- health headers ---'
+            cat /tmp/health.headers 2>/dev/null || true
+            echo '--- health body ---'
+            cat /tmp/health.json 2>/dev/null || true
+            echo '--- apk headers ---'
+            cat /tmp/apk.headers 2>/dev/null || true
+            echo '--- apk sha256 ---'
+            sha256sum /tmp/andrew-latest.apk 2>/dev/null || true
+          } | tee production-verification.txt
+
+      - name: Upload production verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-verification-${{ github.sha }}
+          path: production-verification.txt
+          if-no-files-found: warn
