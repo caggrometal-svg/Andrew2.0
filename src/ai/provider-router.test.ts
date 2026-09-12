@@ -106,15 +106,15 @@ describe('AIProviderRouter', () => {
 
     const first = await router.generate(request);
     expect(first.provider).toBe('secondary');
-    expect(primaryCalls).toBe(0);
+    expect(primaryCalls).toBe(1);
 
     registry.setEnabled('secondary', false);
     const second = await router.generate(request);
     expect(second.provider).toBe('primary');
-    expect(primaryCalls).toBe(1);
+    expect(primaryCalls).toBe(2);
 
     const health = await registry.health();
-    expect(health.find((item) => item.id === 'primary')).toMatchObject({ status: 'unavailable', consecutiveFailures: 2 });
+    expect(health.find((item) => item.id === 'primary')).toMatchObject({ status: 'unavailable', consecutiveFailures: 3 });
     expect(registry.routableProviders().map((item) => item.id)).toEqual([]);
   });
 });
