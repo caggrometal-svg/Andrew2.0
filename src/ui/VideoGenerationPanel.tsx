@@ -25,7 +25,7 @@ export default function VideoGenerationPanel({ conversationId, referenceImageDat
       try {
         const next = await getAndrewVideoJob(job.jobId);
         setJob(next);
-        if (localJob) queue.update(localJob.id, { status: next.status === 'completed' ? 'completed' : next.status === 'failed' ? 'failed' : 'processing', progress: next.progress, error: next.error || undefined });
+        if (localJob) queue.update(localJob.id, { status: next.status === 'completed' ? 'completed' : next.status === 'failed' ? 'failed' : 'processing', progress: next.progress, ...(next.error ? { error: next.error } : {}) });
         onStatus?.(`Generación de video · ${next.progress}%`);
         if (['completed', 'failed', 'cancelled'].includes(next.status)) window.clearInterval(timer);
       } catch (error) {
@@ -44,7 +44,14 @@ export default function VideoGenerationPanel({ conversationId, referenceImageDat
     onStatus?.('Video en cola local…');
     queue.update(queued.id, { status: 'processing', progress: 0 });
     try {
-      const created = await generateAndrewVideo({ prompt: prompt.trim(), conversationId, model: 'sora-2', seconds: '8', size: '720x1280', referenceImageDataUrl });
+      const created = await generateAndrewVideo({
+        prompt: prompt.trim(),
+        conversationId,
+        model: 'sora-2',
+        seconds: '8',
+        size: '720x1280',
+        ...(referenceImageDataUrl ? { referenceImageDataUrl } : {}),
+      });
       setJob(created);
       queue.update(queued.id, { status: 'processing', progress: created.progress });
       onStatus?.('Video aceptado por el proveedor; seguimiento asíncrono activo.');
@@ -71,7 +78,7 @@ export default function VideoGenerationPanel({ conversationId, referenceImageDat
     {job && <div className="media-result">
       <div className="media-progress"><span>{job.status}</span><strong>{job.progress}%</strong></div>
       <div className="media-progress-bar"><div style={{ width: `${Math.max(0, Math.min(100, job.progress))}%` }} /></div>
-      {job.status === 'completed' && job.videoUrl && <video src={`${(import.meta.env.VITE_ANDREW_BACKEND_URL || 'https://andrew2-api.onrender.com').replace(/\/$/, '')}${job.videoUrl}`} controls playsInline preload="metadata" />}
+      {job.status === 'completed' && job.videoUrl && <video src={`${(import.meta.env['VITE_ANDREW_BACKEND_URL'] || 'https://andrew2-api.onrender.com').replace(/\/$/, '')}${job.videoUrl}`} controls playsInline preload="metadata" />}
       {job.status === 'failed' && <div className="notice">{job.error || 'La generación falló.'}</div>}
     </div>}
   </section>;
