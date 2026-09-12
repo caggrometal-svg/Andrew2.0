@@ -1,8 +1,11 @@
 import { IAC33_NETWORK_POLICY, type NetworkCapability } from './access-policy';
 
+export type NetworkRequestInput = string | URL;
+export type NetworkFetchImplementation = (input: NetworkRequestInput, init?: RequestInit) => Promise<Response>;
+
 export interface NetworkAdapterRequest {
   capability: NetworkCapability;
-  input: RequestInfo | URL;
+  input: NetworkRequestInput;
   init?: RequestInit;
   timeoutMs?: number;
 }
@@ -29,18 +32,18 @@ export class NetworkAccessDeniedError extends Error {
 
 export interface FetchNetworkAdapterOptions {
   defaultTimeoutMs?: number;
-  fetchImpl?: typeof fetch;
+  fetchImpl?: NetworkFetchImplementation;
   now?: () => number;
 }
 
 export class FetchNetworkAdapter implements NetworkAdapter {
   private readonly defaultTimeoutMs: number;
-  private readonly fetchImpl: typeof fetch;
+  private readonly fetchImpl: NetworkFetchImplementation;
   private readonly now: () => number;
 
   constructor(options: FetchNetworkAdapterOptions = {}) {
     this.defaultTimeoutMs = options.defaultTimeoutMs ?? 30000;
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.fetchImpl = options.fetchImpl ?? ((input, init) => globalThis.fetch(input, init));
     this.now = options.now ?? (() => Date.now());
   }
 
