@@ -1,16 +1,16 @@
-name: IAC33 CI
+name: Andrew 3.0 CI
 
 on:
   push:
     branches:
+      - andrew-3.0
       - iac33-integration-next
       - iac33-dev
-      - andrew-backend-openai-v1
   pull_request:
     branches:
+      - andrew-3.0
       - iac33-integration-next
       - iac33-dev
-      - andrew-backend-openai-v1
 
 permissions:
   contents: read
@@ -26,12 +26,16 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
 
-      - name: Install dependencies
-        run: npm install
+      - name: Install locked dependencies
+        run: npm ci
 
       - name: Typecheck
         run: npm run typecheck
+
+      - name: Unit and integration tests
+        run: npm test
 
       - name: Build frontend
         run: npm run build
@@ -41,4 +45,5 @@ jobs:
           node --check server/config.mjs
           node --check server/openai.mjs
           node --check server/routes/chat.mjs
+          node --check server/routes/telemetry.mjs
           node --check server/server.mjs
