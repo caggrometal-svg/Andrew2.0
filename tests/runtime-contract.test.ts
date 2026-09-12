@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { runtimeFailure } from '../src/core/runtime-contract';
+import { isValidRuntimeCommand, runtimeFailure } from '../src/core/runtime-contract';
 
 describe('runtime contract', () => {
   it('classifies retryable execution failures', () => {
@@ -16,5 +16,28 @@ describe('runtime contract', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.retryable).toBe(false);
+  });
+
+  it('accepts a complete command with a supported capability', () => {
+    expect(isValidRuntimeCommand({
+      id: 'cmd-3',
+      action: 'memory.read',
+      capability: 'memory.read',
+      input: {},
+      requestedAt: '2026-09-12T00:00:00.000Z',
+      requiresConfirmation: false,
+    })).toBe(true);
+  });
+
+  it('rejects malformed or unknown capabilities at runtime', () => {
+    const base = {
+      id: 'cmd-4',
+      action: 'memory.read',
+      input: {},
+      requestedAt: '2026-09-12T00:00:00.000Z',
+    };
+    expect(isValidRuntimeCommand({ ...base, capability: 'unknown.capability' })).toBe(false);
+    expect(isValidRuntimeCommand({ ...base, capability: 'memory.read', requestedAt: 'not-a-date' })).toBe(false);
+    expect(isValidRuntimeCommand(null)).toBe(false);
   });
 });
