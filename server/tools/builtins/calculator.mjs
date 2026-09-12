@@ -1,8 +1,16 @@
 import { assertToolInput, registerTool } from '../tool-registry.mjs';
 
+function assertAllowedExpression(expression) {
+  const normalized = expression.replace(/\s+/g, '');
+  const tokens = normalized.match(/\d+(?:\.\d+)?|[()+\-*/%]/g);
+  if (tokens === null || tokens.join('') !== normalized) throw new Error('CALCULATOR_EXPRESSION_NOT_ALLOWED');
+  return normalized;
+}
+
 function evaluate(expression) {
-  const tokens = expression.match(/\d+(?:\.\d+)?|[()+\-*/%]/g);
-  if (tokens === null || tokens.join('') !== expression.replace(/\s+/g, '')) throw new Error('CALCULATOR_EXPRESSION_NOT_ALLOWED');
+  const normalized = assertAllowedExpression(expression);
+  const tokens = normalized.match(/\d+(?:\.\d+)?|[()+\-*/%]/g);
+  if (tokens === null) throw new Error('CALCULATOR_EXPRESSION_NOT_ALLOWED');
   const values = [];
   const operators = [];
   const precedence = { '+': 1, '-': 1, '*': 2, '/': 2, '%': 2 };
@@ -46,8 +54,8 @@ const calculator = {
   name: 'calculator',
   description: 'Evaluates restricted arithmetic without dynamic code execution.',
   risk: 'read',
-  validate: (input) => { assertToolInput(input); if (typeof input.expression !== 'string' || input.expression.trim().length === 0) throw new Error('CALCULATOR_INVALID_EXPRESSION'); },
-  execute: async (input) => ({ ok: true, data: { value: evaluate(input.expression.replace(/\s+/g, '')) } }),
+  validate: (input) => { assertToolInput(input); if (typeof input.expression !== 'string' || input.expression.trim().length === 0) throw new Error('CALCULATOR_INVALID_EXPRESSION'); assertAllowedExpression(input.expression); },
+  execute: async (input) => ({ ok: true, data: { value: evaluate(input.expression) } }),
 };
 
 export function registerCalculatorTool() { registerTool(calculator); }
