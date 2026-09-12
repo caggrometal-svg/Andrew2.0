@@ -21,14 +21,15 @@ const STATUS_POLL_MS = 5000;
 function normalizeRuntime(value: unknown): Partial<RuntimeParams> {
   if (!value || typeof value !== 'object') return {};
   const source = value as Record<string, unknown>;
-  const runtime = typeof source.runtime === 'object' && source.runtime
-    ? (source.runtime as Record<string, unknown>)
+  const runtimeValue = source['runtime'];
+  const runtime = typeof runtimeValue === 'object' && runtimeValue
+    ? (runtimeValue as Record<string, unknown>)
     : source;
   const result: MutableRuntimePatch = {};
-  if (typeof runtime.model === 'string') result.model = runtime.model;
-  if (typeof runtime.timeoutMs === 'number' && Number.isFinite(runtime.timeoutMs)) result.timeoutMs = runtime.timeoutMs;
-  if (typeof runtime.pollIntervalMs === 'number' && Number.isFinite(runtime.pollIntervalMs)) result.pollIntervalMs = runtime.pollIntervalMs;
-  if (typeof runtime.syncEnabled === 'boolean') result.syncEnabled = runtime.syncEnabled;
+  if (typeof runtime['model'] === 'string') result.model = runtime['model'];
+  if (typeof runtime['timeoutMs'] === 'number' && Number.isFinite(runtime['timeoutMs'])) result.timeoutMs = runtime['timeoutMs'];
+  if (typeof runtime['pollIntervalMs'] === 'number' && Number.isFinite(runtime['pollIntervalMs'])) result.pollIntervalMs = runtime['pollIntervalMs'];
+  if (typeof runtime['syncEnabled'] === 'boolean') result.syncEnabled = runtime['syncEnabled'];
   return result;
 }
 
@@ -141,7 +142,11 @@ export default function AndrewChat({ conversationId }: Props) {
       }
       let preparedAttachment = attachment;
       if (attachment?.type === 'video' && attachmentFile) preparedAttachment = await uploadVideoInChunks(attachmentFile, setUploadProgress);
-      const userMessage: ChatMessage = { role: 'user', text: message, attachment: preparedAttachment };
+      const userMessage: ChatMessage = {
+        role: 'user',
+        text: message,
+        ...(preparedAttachment !== undefined ? { attachment: preparedAttachment } : {}),
+      };
       const nextMessages = [...chatMessages, userMessage];
       setChatMessages(nextMessages);
       setText(''); setAttachment(undefined); setAttachmentFile(null); setUploadProgress(null);
