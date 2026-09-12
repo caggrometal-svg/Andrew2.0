@@ -94,7 +94,8 @@ export class TimelineStore {
     if (start < 0) throw new Error('Invalid clip start');
     const track = this.state.tracks.find((item) => item.clips.some((clip) => clip.id === id));
     if (!track || track.locked) throw new Error('Track unavailable');
-    const clip = track.clips.find((item) => item.id === id)!;
+    const clip = track.clips.find((item) => item.id === id);
+    if (!clip) throw new Error('Clip not found');
     clip.start = start;
     track.clips.sort((a, b) => a.start - b.start);
     return this.commit({ ...this.state, duration: Math.max(0, ...this.state.tracks.flatMap((t) => t.clips.map((c) => c.start + c.duration))) });
@@ -121,6 +122,7 @@ export class TimelineStore {
       if (index < 0) continue;
       if (track.locked) throw new Error('Track unavailable');
       const original = track.clips[index];
+      if (!original) throw new Error('Clip not found');
       if (at >= original.duration) throw new Error('Split outside clip');
       const first: TimelineClip = { ...original, id: clipId(), duration: at, sourceDuration: at };
       const second: TimelineClip = { ...original, id: clipId(), start: original.start + at, sourceStart: original.sourceStart + at, duration: original.duration - at, sourceDuration: original.sourceDuration - at };
