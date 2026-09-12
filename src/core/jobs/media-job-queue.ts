@@ -43,10 +43,12 @@ export class MediaJobQueue<TPayload = unknown> {
     const jobs = readJobs();
     const index = jobs.findIndex(job => job.id === id);
     if (index < 0) return null;
-    const next = { ...jobs[index], ...patch, updatedAt: Date.now() };
+    const current = jobs[index];
+    if (!current) return null;
+    const next = { ...current, ...patch, updatedAt: Date.now() } as MediaJob<TPayload>;
     jobs[index] = next;
     writeJobs(jobs);
-    return next as MediaJob<TPayload>;
+    return next;
   }
 
   list(): MediaJob<TPayload>[] {
