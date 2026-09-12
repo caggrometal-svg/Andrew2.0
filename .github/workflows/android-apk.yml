@@ -24,7 +24,22 @@ jobs:
     name: Build Andrew 2.0 APK
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
       GRADLE_OPTS: >-
         -Xmx4g
         -XX:MaxMetaspaceSize=512m
@@ -36,62 +51,47 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-
       - name: Bootstrap lockfile
         shell: bash
         run: |
           set -Eeuo pipefail
-          if [ ! -f package-lock.json ]; then
-            npm install --package-lock-only --ignore-scripts --no-audit --no-fund
-          fi
+          if [ ! -f package-lock.json ]; then npm install --package-lock-only --ignore-scripts --no-audit --no-fund; fi
           test -s package-lock.json
-
       - name: Install dependencies
         run: npm ci
-
       - name: Assert pinned Capacitor toolchain
         shell: bash
         run: |
           set -Eeuo pipefail
           node -e "const p=require('./package.json'); if(p.dependencies['@capacitor/core']!=='${CAPACITOR_VERSION}' || p.dependencies['@capacitor/android']!=='${CAPACITOR_VERSION}' || p.devDependencies['@capacitor/cli']!=='${CAPACITOR_VERSION}') process.exit(1)"
           npm ls @capacitor/cli @capacitor/core @capacitor/android --depth=0
-
       - name: Build web application
         run: npm run build
-
-      - name: Run unit tests
+      - name: Run unit and integration tests
         run: npm test
-
       - name: Setup Java 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
-
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
-
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
-
       - name: Initialize Android platform if missing
         shell: bash
         run: |
           set -Eeuo pipefail
           test -f capacitor.config.ts
           if [ ! -d "android" ]; then npx cap add android; fi
-
       - name: Sync Capacitor Android
         run: npx cap sync android
-
       - name: Install Phase 23 native Android bridge
         run: node scripts/install-android-bridge.mjs
-
       - name: Configure deterministic Gradle build
         shell: bash
         run: |
@@ -102,17 +102,13 @@ jobs:
           org.gradle.daemon=false
           org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=512m -Dfile.encoding=UTF-8
           org.gradle.workers.max=2
-
           android.useAndroidX=true
           android.enableJetifier=true
           android.nonTransitiveRClass=true
           EOF
-          echo '=== android/gradle.properties ==='
           cat android/gradle.properties
-
       - name: Grant Gradle execute permission
         run: chmod +x android/gradlew
-
       - name: Validate Gradle environment
         working-directory: ./android
         shell: bash
@@ -120,39 +116,24 @@ jobs:
           set -Eeuo pipefail
           java -version
           ./gradlew --version --no-daemon
-
       - name: Build Debug APK
         working-directory: ./android
         shell: bash
-        run: |
-          set -Eeuo pipefail
-          ./gradlew clean assembleDebug \
-            --no-daemon \
-            --stacktrace \
-            --info \
-            --console=plain \
-            --warning-mode=all
-
+        run: ./gradlew clean assembleDebug --no-daemon --stacktrace --info --console=plain --warning-mode=all
       - name: Verify APK output and checksum
         shell: bash
         run: |
           set -Eeuo pipefail
           APK="android/app/build/outputs/apk/debug/app-debug.apk"
-          test -f "$APK"
-          test -s "$APK"
-          echo '=== APK size ==='
+          test -f "$APK" && test -s "$APK"
           stat -c '%n %s bytes' "$APK"
-          echo '=== APK SHA-256 ==='
           sha256sum "$APK" | tee /tmp/apk.sha256
-          echo '=== APK ZIP integrity ==='
           unzip -t "$APK" >/tmp/apk-zip-test.txt
-          echo '=== Required APK entries ==='
           unzip -Z1 "$APK" >/tmp/apk-files.txt
           grep -Fxq 'AndroidManifest.xml' /tmp/apk-files.txt
           grep -Fxq 'classes.dex' /tmp/apk-files.txt
           grep -Fxq 'resources.arsc' /tmp/apk-files.txt
           echo 'APK structural verification: PASS'
-
       - name: Deep inspect APK Manifest and Android bridge
         shell: bash
         run: |
@@ -180,7 +161,6 @@ jobs:
           test "$BRIDGE_DEX_MATCHES" -ge 1
           test "$MAIN_ACTIVITY_DEX_MATCHES" -ge 1
           echo 'Native bridge verification: PASS'
-
       - name: Prepare release files
         shell: bash
         run: |
@@ -190,7 +170,6 @@ jobs:
           cp android/app/build/outputs/apk/debug/app-debug.apk release/andrew-latest.apk
           (cd release && sha256sum *.apk > SHA256SUMS.txt)
           cat release/SHA256SUMS.txt
-
       - name: Upload Debug APK artifact
         uses: actions/upload-artifact@v4
         with:
@@ -200,7 +179,6 @@ jobs:
             release/andrew-latest.apk
             release/SHA256SUMS.txt
           if-no-files-found: error
-
       - name: Publish immutable GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -216,7 +194,6 @@ jobs:
             release/SHA256SUMS.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Publish verified latest APK
         uses: softprops/action-gh-release@v2
         with:
@@ -233,7 +210,6 @@ jobs:
             release/SHA256SUMS.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Verify direct GitHub Release asset
         shell: bash
         run: |
@@ -244,42 +220,29 @@ jobs:
           unzip -t /tmp/github-latest.apk >/dev/null
           echo 'GitHub Release APK download: PASS'
           sha256sum /tmp/github-latest.apk
-
       - name: Verify production health endpoint
         shell: bash
         run: |
           set -Eeuo pipefail
-          curl -fsS --retry 6 --retry-delay 5 --max-time 45 \
-            -D /tmp/health.headers \
-            -o /tmp/health.json \
-            https://andrew2-api.onrender.com/health
+          curl -fsS --retry 6 --retry-delay 5 --max-time 45 -D /tmp/health.headers -o /tmp/health.json https://andrew2-api.onrender.com/health
           grep -Eq '^HTTP/.* 200 ' /tmp/health.headers
-          echo '=== /health headers ==='
           cat /tmp/health.headers
-          echo '=== /health body ==='
           cat /tmp/health.json
           grep -q '"ok":true' /tmp/health.json
           echo 'Render /health: PASS'
-
       - name: Verify production APK download endpoint
         shell: bash
         run: |
           set -Eeuo pipefail
           URL="https://andrew2-api.onrender.com/download/andrew-latest.apk"
-          curl -fL --retry 6 --retry-delay 5 --max-time 180 \
-            -D /tmp/apk.headers \
-            -o /tmp/andrew-latest.apk \
-            "$URL"
+          curl -fL --retry 6 --retry-delay 5 --max-time 180 -D /tmp/apk.headers -o /tmp/andrew-latest.apk "$URL"
           grep -Eq '^HTTP/.* 200 ' /tmp/apk.headers
           grep -qi '^content-type: application/vnd.android.package-archive' /tmp/apk.headers
           test -s /tmp/andrew-latest.apk
           unzip -t /tmp/andrew-latest.apk >/dev/null
-          echo '=== production APK headers ==='
           cat /tmp/apk.headers
-          echo '=== production APK checksum ==='
           sha256sum /tmp/andrew-latest.apk
           echo 'Render direct APK download: PASS'
-
       - name: Publish production verification evidence
         if: always()
         shell: bash
@@ -297,7 +260,6 @@ jobs:
             echo '--- apk sha256 ---'
             sha256sum /tmp/andrew-latest.apk 2>/dev/null || true
           } | tee production-verification.txt
-
       - name: Upload production verification evidence
         if: always()
         uses: actions/upload-artifact@v4
