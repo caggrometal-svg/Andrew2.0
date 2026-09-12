@@ -1,5 +1,6 @@
 import type { AIProvider, AIRequest, AIResponse, AIProviderError } from './provider-contract';
 import { AIProviderCircuitBreaker, type AICircuitBreakerOptions } from './provider-circuit-breaker';
+import { AIProviderRegistry } from './provider-registry';
 
 export interface AIRouteAttempt {
   provider: string;
@@ -90,6 +91,7 @@ export class AIProviderRouter {
   constructor(
     private readonly providers: readonly AIProvider[],
     private readonly options: AIRouterOptions = {},
+    private readonly registry?: AIProviderRegistry,
   ) {}
 
   private breakerFor(providerId: string): AIProviderCircuitBreaker {
@@ -133,7 +135,9 @@ export class AIProviderRouter {
       throw new DOMException('The AI request was aborted.', 'AbortError');
     }
 
-    for (const provider of this.providers) {
+    const providers = this.registry?.routableProviders() ?? this.providers;
+
+    for (const provider of providers) {
       const breaker = this.breakerFor(provider.id);
       if (!breaker.allowRequest()) {
         attempts.push({ provider: provider.id, ok: false, errorCode: 'UNAVAILABLE' });
@@ -144,6 +148,7 @@ export class AIProviderRouter {
       try {
         if (!(await provider.isAvailable())) {
           breaker.recordFailure();
+          this.registry?.recordFailure(provider.id, 'UNAVAILABLE');
           attempts.push({ provider: provider.id, ok: false, errorCode: 'UNAVAILABLE' });
           lastError = new Error(`AI provider ${provider.id} is unavailable.`);
           continue;
@@ -151,19 +156,18 @@ export class AIProviderRouter {
 
         const response = await this.generateForProvider(provider, request);
         breaker.recordSuccess();
+        this.registry?.recordSuccess(provider.id);
         attempts.push({ provider: provider.id, ok: true });
         return { ...response, attempts };
       } catch (error) {
         if (isAbortError(error) && request.signal?.aborted) throw error;
         lastError = error;
-        attempts.push({
-          provider: provider.id,
-          ok: false,
-          errorCode: isProviderError(error) ? error.code : 'EXECUTION_FAILED',
-        });
+        const errorCode = isProviderError(error) ? error.code : 'EXECUTION_FAILED';
+        attempts.push({ provider: provider.id, ok: false, errorCode });
 
         if (isInvalidRequest(error)) throw error;
         breaker.recordFailure();
+        this.registry?.recordFailure(provider.id, errorCode);
       }
     }
 
