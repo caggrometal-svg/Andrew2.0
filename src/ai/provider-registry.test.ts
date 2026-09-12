@@ -66,7 +66,7 @@ describe('AIProviderRegistry', () => {
     await registry.health();
     expect((await registry.health())[0]).toMatchObject({ status: 'unavailable', consecutiveFailures: 3 });
     registry.recordSuccess('unstable');
-    expect((await registry.health())[0]).toMatchObject({ status: 'unavailable', consecutiveFailures: 1 });
+    expect((await registry.health())[0]).toMatchObject({ status: 'degraded', consecutiveFailures: 1 });
   });
 
   it('supports enabling and disabling registered providers', () => {
