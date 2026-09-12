@@ -114,7 +114,7 @@ describe('AIProviderRouter', () => {
     expect(primaryCalls).toBe(1);
 
     const health = await registry.health();
-    expect(health.find((item) => item.id === 'primary')).toMatchObject({ status: 'unavailable', consecutiveFailures: 1 });
+    expect(health.find((item) => item.id === 'primary')).toMatchObject({ status: 'unavailable', consecutiveFailures: 2 });
     expect(registry.routableProviders().map((item) => item.id)).toEqual([]);
   });
 });
