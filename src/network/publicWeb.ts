@@ -17,7 +17,9 @@ export async function fetchJson<T>(url: string, timeoutMs = 10000): Promise<T> {
 }
 
 export async function getRecentEarthquakes() {
-  return fetchJson<{ features: Array<{ id: string; properties: { mag: number; place: string; time: number }; geometry: { coordinates: number[] } }> }>(PUBLIC_SOURCES[0].url);
+  const source = PUBLIC_SOURCES[0];
+  if (!source) throw new Error('No hay una fuente sísmica configurada.');
+  return fetchJson<{ features: Array<{ id: string; properties: { mag: number; place: string; time: number }; geometry: { coordinates: number[] } }> }>(source.url);
 }
 
 export const SATELLITE_DATA_POLICY = 'Public satellite data only; no spacecraft command or restricted-network access.';
