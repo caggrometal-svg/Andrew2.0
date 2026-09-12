@@ -35,6 +35,6 @@ describe('LearningLoop', () => {
     })!;
     loop.applyFeedback(lesson.id, 'confirmation', 'Confirmed by user.');
     expect(memory.history()).toHaveLength(1);
-    expect(memory.recall('multiple signals')[0].confidence).toBeGreaterThan(0.5);
+    expect(memory.recall('multiple signals')[0]?.confidence).toBeGreaterThan(0.5);
   });
 });
