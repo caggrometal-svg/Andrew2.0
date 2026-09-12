@@ -40,11 +40,11 @@ const CAPABILITIES = new Set<Capability>([
 export function isValidRuntimeCommand(command: unknown): command is RuntimeCommand {
   if (!command || typeof command !== 'object') return false;
   const value = command as Record<string, unknown>;
-  if (typeof value.id !== 'string' || !value.id.trim()) return false;
-  if (typeof value.action !== 'string' || !value.action.trim()) return false;
-  if (typeof value.requestedAt !== 'string' || Number.isNaN(Date.parse(value.requestedAt))) return false;
-  if (typeof value.requiresConfirmation !== 'undefined' && typeof value.requiresConfirmation !== 'boolean') return false;
-  return typeof value.capability === 'string' && CAPABILITIES.has(value.capability as Capability);
+  if (typeof value['id'] !== 'string' || !value['id'].trim()) return false;
+  if (typeof value['action'] !== 'string' || !value['action'].trim()) return false;
+  if (typeof value['requestedAt'] !== 'string' || Number.isNaN(Date.parse(value['requestedAt']))) return false;
+  if (typeof value['requiresConfirmation'] !== 'undefined' && typeof value['requiresConfirmation'] !== 'boolean') return false;
+  return typeof value['capability'] === 'string' && CAPABILITIES.has(value['capability'] as Capability);
 }
 
 export function runtimeFailure(
