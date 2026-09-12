@@ -8,7 +8,7 @@ function validName(name) {
   return typeof name === 'string' && METRIC_NAME.test(name);
 }
 
-function addCounter(name, value) {
+export function incrementMetric(name, value = 1) {
   if (!validName(name)) return;
   const amount = Math.max(0, Number(value) || 0);
   counters.set(name, (counters.get(name) || 0) + amount);
@@ -27,14 +27,14 @@ function observeLatency(name, durationMs) {
 
 export function recordToolExecution({ toolName, durationMs, ok, errorCode, phase = 'executor' }) {
   const prefix = `tool.${phase}`;
-  addCounter(`${prefix}.throughput`, 1);
-  addCounter(`${prefix}.success`, ok ? 1 : 0);
-  addCounter(`${prefix}.error`, ok ? 0 : 1);
-  if (errorCode) addCounter(`${prefix}.error.${errorCode.toLowerCase()}`, 1);
+  incrementMetric(`${prefix}.throughput`, 1);
+  incrementMetric(`${prefix}.success`, ok ? 1 : 0);
+  incrementMetric(`${prefix}.error`, ok ? 0 : 1);
+  if (errorCode) incrementMetric(`${prefix}.error.${errorCode.toLowerCase()}`, 1);
   observeLatency(`${prefix}.latency`, durationMs);
   if (toolName && validName(toolName)) {
-    addCounter(`${prefix}.tool.${toolName}.throughput`, 1);
-    addCounter(`${prefix}.tool.${toolName}.${ok ? 'success' : 'error'}`, 1);
+    incrementMetric(`${prefix}.tool.${toolName}.throughput`, 1);
+    incrementMetric(`${prefix}.tool.${toolName}.${ok ? 'success' : 'error'}`, 1);
     observeLatency(`${prefix}.tool.${toolName}.latency`, durationMs);
   }
 }
