@@ -23,7 +23,7 @@ jobs:
   build-apk:
     name: Build Andrew 2.0 APK
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 31
     services:
       postgres:
         image: postgres:16
