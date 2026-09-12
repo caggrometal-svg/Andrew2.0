@@ -1,0 +1,75 @@
+name: Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - iac33-integration-next
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Bridge and foundation tests
+        run: |
+          npm run test:phase19
+          npm run test:phase20
+          npm run test:phase21
+          npm run test:phase22
+          npm run test:phase23
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Add Android platform
+        run: npx cap add android
+
+      - name: Sync Capacitor Android
+        run: npx cap sync android
+
+      - name: Install native Andrew bridge
+        run: node scripts/install-android-bridge.mjs
+
+      - name: Verify Java and Gradle
+        working-directory: android
+        run: |
+          java -version
+          chmod +x gradlew
+          ./gradlew --version
+
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Andrew2.0-debug-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
