@@ -24,11 +24,11 @@ export function createCapacitorBridgePluginFromGlobal(globalObject: unknown): Ca
   if (!plugin || typeof plugin !== 'object') return {};
 
   const hooks: CapacitorBridgePlugin = {};
-  if (typeof plugin.openSettings === 'function') hooks.openSettings = () => (plugin.openSettings as () => void)();
-  if (typeof plugin.setRuntimeParameter === 'function') {
-    hooks.setRuntimeParameter = (payload) => (plugin.setRuntimeParameter as (payload: Record<string, unknown>) => void)(payload);
+  if (typeof plugin['openSettings'] === 'function') hooks.openSettings = () => (plugin['openSettings'] as () => void)();
+  if (typeof plugin['setRuntimeParameter'] === 'function') {
+    hooks.setRuntimeParameter = (payload) => (plugin['setRuntimeParameter'] as (payload: Record<string, unknown>) => void)(payload);
   }
-  if (typeof plugin.requestStatus === 'function') hooks.requestStatus = () => (plugin.requestStatus as () => void)();
-  if (typeof plugin.syncNow === 'function') hooks.syncNow = () => (plugin.syncNow as () => void)();
+  if (typeof plugin['requestStatus'] === 'function') hooks.requestStatus = () => (plugin['requestStatus'] as () => void)();
+  if (typeof plugin['syncNow'] === 'function') hooks.syncNow = () => (plugin['syncNow'] as () => void)();
   return hooks;
 }
