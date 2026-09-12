@@ -41,7 +41,15 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: npm
+
+      - name: Bootstrap lockfile
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if [ ! -f package-lock.json ]; then
+            npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          fi
+          test -s package-lock.json
 
       - name: Install dependencies
         run: npm ci
