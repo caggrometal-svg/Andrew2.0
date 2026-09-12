@@ -27,7 +27,8 @@ describe('Phase 13 Tool Router 2', () => {
     const policy = { allowed: ['system.status'], capabilities: ['memory.read'] as const };
     const result = await routeTool('system.status', {}, context, policy);
     expect(result.ok).toBe(false);
-    expect(result.error).toContain('TOOL_CAPABILITY_DENIED');
+    expect(result.errorCode).toBe('CAPABILITY_DENIED');
+    expect(result.retryable).toBe(false);
   });
 
   it('allows a tool only when its explicit capability is granted', async () => {
