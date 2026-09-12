@@ -43,7 +43,7 @@ const VIDEO_CHUNK_RETRIES = 4;
 const USER_ID_STORAGE_KEY = 'andrew:user-id';
 
 function getBackendUrl(): string {
-  const configured = (import.meta.env.VITE_ANDREW_BACKEND_URL || 'https://andrew2-api.onrender.com').trim();
+  const configured = (import.meta.env['VITE_ANDREW_BACKEND_URL'] || 'https://andrew2-api.onrender.com').trim();
   return configured.replace(/\/$/, '');
 }
 
