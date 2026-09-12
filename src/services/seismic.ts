@@ -23,7 +23,7 @@ function parseEvents(html: string): SeismicEvent[] {
   const rows = html.split(/<tr\b/i).slice(1).map((part) => part.split(/<\/tr>/i)[0]);
   const events: SeismicEvent[] = [];
   for (const row of rows) {
-    const cells = [...row.matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/gi)].map((m) => clean(m[1]));
+    const cells = [...row.matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/gi)].map((m) => clean(m[1] ?? ''));
     if (cells.length < 3) continue;
     const date = cells.find((c) => /\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}/.test(c))?.match(/\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}/)?.[0];
     const depthText = cells.find((c) => /\d+(?:\.\d+)?\s*km/i.test(c));
@@ -50,7 +50,12 @@ function parseEvents(html: string): SeismicEvent[] {
 }
 
 export async function fetchChileSeismicity(signal?: AbortSignal): Promise<SeismicEvent[]> {
-  const response = await fetch(CSN_URL, { signal, headers: { Accept: 'text/html' } });
+  const response = await fetch(
+    CSN_URL,
+    signal
+      ? { signal, headers: { Accept: 'text/html' } }
+      : { headers: { Accept: 'text/html' } },
+  );
   if (!response.ok) throw new Error(`CSN respondió HTTP ${response.status}`);
   return parseEvents(await response.text());
 }
