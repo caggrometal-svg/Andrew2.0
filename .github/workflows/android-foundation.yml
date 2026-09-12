@@ -38,6 +38,7 @@ env:
   NODE_VERSION: '20'
   JAVA_VERSION: '17'
   DATABASE_URL: 'postgresql://andrew:andrew@127.0.0.1:5432/andrew_test'
+  DATABASE_SSL: 'disable'
 
 jobs:
   android-foundation:
