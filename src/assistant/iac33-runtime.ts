@@ -1,8 +1,10 @@
 import type { ActivityRecord, AssistantContext, PlannedAction } from '../core/types';
+import type { RuntimeCommand, RuntimeResult } from '../core/runtime-contract';
+import { executeCommand } from './runtime-executor';
 import { authorize } from '../permissions/authorize';
 import { ActivityLog } from '../activity/activity-log';
 import { PersistentActivityStore } from '../storage/activity-store';
-import { LocalStorageProvider } from '../storage/storage-provider';
+import { LocalStorageProvider, type StorageProvider } from '../storage/storage-provider';
 import { ProjectManager } from '../projects/project-manager';
 import { PersistentProjectStore } from '../state/persistent-project-store';
 import { MemoryStore } from '../memory/memory-store';
@@ -10,13 +12,19 @@ import { MemoryService } from '../memory/memory-service';
 import { LearningLoop } from '../memory/learning-loop';
 
 export class IAC33Runtime {
-  readonly storage = new LocalStorageProvider();
   readonly projects = new ProjectManager();
   readonly activity = new ActivityLog();
-  readonly activityStore = new PersistentActivityStore(this.storage);
-  readonly projectStore = new PersistentProjectStore(this.storage);
-  readonly memory = new MemoryService(new MemoryStore(this.storage));
-  readonly learning = new LearningLoop(this.memory);
+  readonly activityStore: PersistentActivityStore;
+  readonly projectStore: PersistentProjectStore;
+  readonly memory: MemoryService;
+  readonly learning: LearningLoop;
+
+  constructor(readonly storage: StorageProvider = new LocalStorageProvider()) {
+    this.activityStore = new PersistentActivityStore(storage);
+    this.projectStore = new PersistentProjectStore(storage);
+    this.memory = new MemoryService(new MemoryStore(storage));
+    this.learning = new LearningLoop(this.memory);
+  }
 
   restore(): void {
     const storedActivity = this.activityStore.load();
@@ -51,6 +59,14 @@ export class IAC33Runtime {
       details: { projectId: context.project.projectId, reason: result.reason },
     });
     return result.allowed;
+  }
+
+  execute<TInput, TOutput>(
+    context: AssistantContext,
+    command: RuntimeCommand<TInput>,
+    handler: (input: TInput) => TOutput | Promise<TOutput>,
+  ): Promise<RuntimeResult<TOutput>> {
+    return executeCommand(context, command, handler);
   }
 
   learnFromActivity(record: ActivityRecord): void {
