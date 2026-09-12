@@ -10,7 +10,10 @@ on:
       - package-lock.json
       - capacitor.config.ts
       - capacitor.config.json
+      - tsconfig.json
+      - vite.config.ts
       - scripts/install-android-bridge.mjs
+      - scripts/verify-foundation.mjs
       - .github/workflows/android-foundation.yml
   pull_request:
     branches:
@@ -20,7 +23,10 @@ on:
       - package-lock.json
       - capacitor.config.ts
       - capacitor.config.json
+      - tsconfig.json
+      - vite.config.ts
       - scripts/install-android-bridge.mjs
+      - scripts/verify-foundation.mjs
       - .github/workflows/android-foundation.yml
 
 permissions:
@@ -53,6 +59,9 @@ jobs:
 
       - name: Install locked dependencies
         run: npm ci
+
+      - name: Foundation invariants
+        run: npm run verify:foundation
 
       - name: Typecheck
         run: npm run typecheck
