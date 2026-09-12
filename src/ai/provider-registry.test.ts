@@ -35,6 +35,7 @@ describe('AIProviderRegistry', () => {
       { provider: provider('enabled', true), priority: 2 },
     ]);
     expect(registry.enabledProviders().map((item) => item.id)).toEqual(['enabled']);
+    expect(registry.routableProviders().map((item) => item.id)).toEqual(['enabled']);
     const health = await registry.health();
     expect(health[0]).toMatchObject({ id: 'disabled', priority: 1, enabled: false, available: false, status: 'unavailable', consecutiveFailures: 0 });
     expect(health[1]).toMatchObject({ id: 'enabled', priority: 2, enabled: true, available: true, status: 'healthy', consecutiveFailures: 0 });
@@ -48,6 +49,7 @@ describe('AIProviderRegistry', () => {
     const health = await registry.health();
     expect(health[0]).toMatchObject({ id: 'offline', priority: 2, enabled: true, available: false, status: 'degraded', consecutiveFailures: 1, lastErrorCode: 'UNAVAILABLE' });
     expect(health[1]).toMatchObject({ id: 'stuck', priority: 3, enabled: true, available: false, status: 'degraded', consecutiveFailures: 1, lastErrorCode: 'AVAILABILITY_TIMEOUT' });
+    expect(registry.routableProviders().map((item) => item.id)).toEqual(['offline', 'stuck']);
   });
 
   it('recovers health after successful availability check', async () => {
@@ -65,6 +67,7 @@ describe('AIProviderRegistry', () => {
     await registry.health();
     await registry.health();
     expect((await registry.health())[0]).toMatchObject({ status: 'unavailable', consecutiveFailures: 3 });
+    expect(registry.routableProviders()).toHaveLength(0);
     registry.recordSuccess('unstable');
     expect((await registry.health())[0]).toMatchObject({ status: 'degraded', consecutiveFailures: 1 });
   });
@@ -73,8 +76,10 @@ describe('AIProviderRegistry', () => {
     const registry = new AIProviderRegistry([{ provider: provider('primary', true), priority: 1 }]);
     registry.setEnabled('primary', false);
     expect(registry.enabledProviders()).toHaveLength(0);
+    expect(registry.routableProviders()).toHaveLength(0);
     registry.setEnabled('primary', true);
     expect(registry.enabledProviders()).toHaveLength(1);
+    expect(registry.routableProviders()).toHaveLength(1);
     expect(registry.unregister('primary')).toBe(true);
     expect(registry.unregister('primary')).toBe(false);
   });
