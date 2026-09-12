@@ -19,10 +19,23 @@ export class PersistentProjectStore {
     const projects = this.load();
     const index = projects.findIndex((project) => project.projectId === state.projectId);
     if (index < 0) {
-      projects.push({ ...state, name: state.projectId });
-    } else {
-      projects[index] = { ...projects[index], ...state };
+      projects.push({ ...state, name: state.name ?? state.projectId });
+      this.save(projects);
+      return;
     }
+
+    const current = projects[index];
+    if (!current) {
+      projects.push({ ...state, name: state.name ?? state.projectId });
+      this.save(projects);
+      return;
+    }
+
+    projects[index] = {
+      ...current,
+      ...state,
+      name: state.name ?? current.name,
+    };
     this.save(projects);
   }
 }
