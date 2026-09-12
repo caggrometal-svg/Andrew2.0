@@ -11,7 +11,6 @@ permissions:
   contents: write
   actions: write
 
-# Keep every Android build independently executable and observable.
 concurrency:
   group: android-apk-${{ github.ref }}
   cancel-in-progress: false
@@ -37,6 +36,7 @@ jobs:
           --health-retries 12
     env:
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      DATABASE_SSL: disable
       NODE_ENV: test
       CI: true
       CAPACITOR_ANDROID_VERSION: 7.4.4
@@ -93,14 +93,11 @@ jobs:
       - name: Publish immutable GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release create "andrew-${GITHUB_SHA}" release/andrew-2.0-${GITHUB_SHA}.apk release/SHA256SUMS.txt --title "Andrew 2.0 ${GITHUB_SHA}" --notes "Automated APK build from ${GITHUB_SHA}."
+        run: gh release create "andrew-${GITHUB_SHA}" release/andrew-2.0-${GITHUB_SHA}.apk release/SHA256SUMS.txt --title "Andrew 2.0 ${GITHUB_SHA}" --notes "Automated APK build from ${GITHUB_SHA}."
       - name: Publish andrew-latest release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release view andrew-latest >/dev/null 2>&1 && gh release delete andrew-latest --yes || true
-          gh release create andrew-latest release/andrew-latest.apk release/SHA256SUMS.txt --title "Andrew 2.0 latest" --notes "Automated latest APK from ${GITHUB_SHA}."
+        run: gh release view andrew-latest >/dev/null 2>&1 && gh release delete andrew-latest --yes || true; gh release create andrew-latest release/andrew-latest.apk release/SHA256SUMS.txt --title "Andrew 2.0 latest" --notes "Automated latest APK from ${GITHUB_SHA}."
       - name: Verify GitHub release asset
         run: |
           curl -fL --retry 3 -o /tmp/andrew-latest.apk https://github.com/caggrometal-svg/Andrew2.0/releases/download/andrew-latest/andrew-latest.apk
@@ -108,8 +105,7 @@ jobs:
           unzip -t /tmp/andrew-latest.apk >/dev/null
           sha256sum /tmp/andrew-latest.apk
       - name: Verify Render health
-        run: |
-          curl -fsS --retry 5 --retry-delay 5 https://andrew2-api.onrender.com/health
+        run: curl -fsS --retry 5 --retry-delay 5 https://andrew2-api.onrender.com/health
       - name: Verify Render APK proxy
         run: |
           curl -fsS --retry 5 --retry-delay 5 -D /tmp/render.headers -o /tmp/render.apk https://andrew2-api.onrender.com/download/andrew-latest.apk
