@@ -18,9 +18,9 @@ describe('Phase 16 final certification gate', () => {
     }
   });
 
-  it('contains the production backend and Android build workflow', () => {
+  it('contains the production backend and Android foundation workflow', () => {
     expect(existsSync(resolve(root, 'server/server.mjs'))).toBe(true);
-    expect(existsSync(resolve(root, '.github/workflows/android-apk.yml'))).toBe(true);
+    expect(existsSync(resolve(root, '.github/workflows/android-foundation.yml'))).toBe(true);
     expect(existsSync(resolve(root, '.github/workflows/iac33-ci.yml'))).toBe(true);
   });
 
