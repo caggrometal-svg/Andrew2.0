@@ -32,7 +32,8 @@ function parseNativeStatus(status: unknown): RuntimeStatusPayload {
   const parsed = typeof status === 'string' ? parseJson(status) : status;
   if (!parsed || typeof parsed !== 'object') return {};
   const record = parsed as Record<string, unknown>;
-  const runtime = typeof record.runtime === 'string' ? parseJson(record.runtime) : record.runtime;
+  const runtimeValue = record['runtime'];
+  const runtime = typeof runtimeValue === 'string' ? parseJson(runtimeValue) : runtimeValue;
   if (runtime && typeof runtime === 'object') {
     return { ...(record as RuntimeStatusPayload), ...(runtime as Partial<RuntimeStatusPayload>) };
   }
