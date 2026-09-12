@@ -15,12 +15,13 @@ export async function executeCommand<TInput, TOutput>(
   const completedAt = (): string => new Date().toISOString();
 
   if (!isValidRuntimeCommand(command)) {
-    return runtimeFailure(
-      typeof command?.id === 'string' ? command.id : 'unknown',
-      'INVALID_COMMAND',
-      'Command contract is invalid.',
-      completedAt(),
-    );
+    const rawCommand = command as unknown;
+    const commandId =
+      typeof rawCommand === 'object' && rawCommand !== null &&
+      typeof (rawCommand as Record<string, unknown>)['id'] === 'string'
+        ? (rawCommand as Record<string, unknown>)['id'] as string
+        : 'unknown';
+    return runtimeFailure(commandId, 'INVALID_COMMAND', 'Command contract is invalid.', completedAt());
   }
 
   const authorization = authorize({
