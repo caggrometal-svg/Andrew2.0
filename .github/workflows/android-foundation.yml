@@ -1,0 +1,97 @@
+name: Android Foundation Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - andrew-3.0
+    paths:
+      - package.json
+      - package-lock.json
+      - capacitor.config.ts
+      - capacitor.config.json
+      - scripts/install-android-bridge.mjs
+      - .github/workflows/android-foundation.yml
+  pull_request:
+    branches:
+      - andrew-3.0
+    paths:
+      - package.json
+      - package-lock.json
+      - capacitor.config.ts
+      - capacitor.config.json
+      - scripts/install-android-bridge.mjs
+      - .github/workflows/android-foundation.yml
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '20'
+  JAVA_VERSION: '17'
+
+jobs:
+  android-foundation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: gradle
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test suite
+        run: npm test
+
+      - name: Build web
+        run: npm run build
+
+      - name: Create Capacitor Android project when absent
+        run: |
+          if [ ! -d android ]; then
+            npx cap add android
+          fi
+
+      - name: Sync Capacitor
+        run: npx cap sync android
+
+      - name: Install native Andrew bridge
+        run: node scripts/install-android-bridge.mjs
+
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Verify APK structure
+        run: |
+          set -euo pipefail
+          APK='android/app/build/outputs/apk/debug/app-debug.apk'
+          test -s "$APK"
+          unzip -t "$APK" >/dev/null
+          sha256sum "$APK" | tee android/app/build/outputs/apk/debug/SHA256SUMS.txt
+
+      - name: Upload verified debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: andrew-3.0-debug-apk
+          path: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            android/app/build/outputs/apk/debug/SHA256SUMS.txt
+          if-no-files-found: error
