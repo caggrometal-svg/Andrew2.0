@@ -11,9 +11,10 @@ permissions:
   contents: write
   actions: write
 
+# Keep every Android build independently executable and observable.
 concurrency:
   group: android-apk-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build-apk:
