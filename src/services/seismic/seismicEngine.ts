@@ -33,13 +33,6 @@ interface USGSFeed {
   features?: USGSFeature[];
 }
 
-/**
- * Statistical seismic activity engine.
- *
- * Global activity is retained for the statistical baseline, while a Chile
- * geographic filter exposes the local events that matter to the operator.
- * This is not an earthquake prediction model or an official warning system.
- */
 export class SeismicPredictionEngine {
   private readonly USGS_ENDPOINT = 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_month.geojson';
   private readonly WINDOW_DAYS = 30;
@@ -61,12 +54,16 @@ export class SeismicPredictionEngine {
         if (!feature.id || magnitude === null || magnitude === undefined || time === null || time === undefined) return null;
         if (!Number.isFinite(magnitude) || !Number.isFinite(time) || time < windowStart || time > now) return null;
         if (coordinates.length < 3 || !coordinates.every(Number.isFinite)) return null;
+        const longitude = coordinates[0];
+        const latitude = coordinates[1];
+        const depth = coordinates[2];
+        if (longitude === undefined || latitude === undefined || depth === undefined) return null;
         return {
           id: feature.id,
           magnitude,
           place: feature.properties.place ?? 'Ubicación no informada',
           time,
-          coordinates: [coordinates[0], coordinates[1], coordinates[2]],
+          coordinates: [longitude, latitude, depth],
         };
       })
       .filter((event): event is SeismicEvent => event !== null && event.magnitude >= minMagnitudeFilter);
@@ -114,13 +111,11 @@ export class SeismicPredictionEngine {
 
   private estimateMedianMaximumMagnitude(events: SeismicEvent[], minMagnitude: number): number {
     if (events.length === 0) return minMagnitude;
-
     const meanMagnitude = events.reduce((sum, event) => sum + event.magnitude, 0) / events.length;
     const bValue = Math.log10(Math.E) / Math.max(meanMagnitude - minMagnitude, 0.05);
     const thirtyDayRateAtMin = events.length / this.WINDOW_DAYS;
     const targetRate = Math.log(2) / 30;
     const magnitude = minMagnitude + Math.log10(Math.max(thirtyDayRateAtMin / targetRate, 1)) / Math.max(bValue, 0.05);
-
     return Number(Math.max(minMagnitude, magnitude).toFixed(1));
   }
 
@@ -130,7 +125,6 @@ export class SeismicPredictionEngine {
     const recent = events.filter((event) => event.time >= now - sevenDays).length;
     const prior = events.length - recent;
     if (prior <= 0) return false;
-
     const recentDailyRate = recent / 7;
     const priorDailyRate = prior / 23;
     return recentDailyRate >= priorDailyRate * 2 && recent - (prior * 7 / 23) >= 3;
