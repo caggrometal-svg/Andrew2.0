@@ -45,7 +45,6 @@ export function forecast(domain: ForecastDomain, signals: Signal[], horizon = '7
   const signalStrength = Math.min(1, Math.abs(raw));
   const primary = 0.34 + signalStrength * 0.42;
   const secondary = (1 - primary) * 0.62;
-  const tertiary = Math.max(0, 1 - primary - secondary);
   const roundedPrimary = Math.round(primary * 1000) / 1000;
   const roundedSecondary = Math.round(secondary * 1000) / 1000;
   const roundedTertiary = Math.max(0, Math.round((1 - roundedPrimary - roundedSecondary) * 1000) / 1000);
