@@ -1,6 +1,6 @@
 import type { AssistantContext } from '../core/types';
 import type { RuntimeCommand, RuntimeResult } from '../core/runtime-contract';
-import { runtimeFailure } from '../core/runtime-contract';
+import { isValidRuntimeCommand, runtimeFailure } from '../core/runtime-contract';
 import { authorize } from '../permissions/authorize';
 
 export type RuntimeHandler<TInput, TOutput> = (
@@ -14,8 +14,13 @@ export async function executeCommand<TInput, TOutput>(
 ): Promise<RuntimeResult<TOutput>> {
   const completedAt = (): string => new Date().toISOString();
 
-  if (!command.id.trim() || !command.action.trim()) {
-    return runtimeFailure(command.id, 'INVALID_COMMAND', 'Command id and action are required.', completedAt());
+  if (!isValidRuntimeCommand(command)) {
+    return runtimeFailure(
+      typeof command?.id === 'string' ? command.id : 'unknown',
+      'INVALID_COMMAND',
+      'Command contract is invalid.',
+      completedAt(),
+    );
   }
 
   const authorization = authorize({
