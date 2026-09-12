@@ -4,7 +4,7 @@ import { routeTool } from '../server/tools/tool-router.mjs';
 import { snapshotMetrics, resetMetricsForTests } from '../server/observability/runtime-metrics.mjs';
 
 const context = { userId: 'qa', conversationId: 'obs', requestId: 'req-1' };
-const policy = { allowed: ['read', 'write', 'external'], capabilities: ['system.status', 'system.diagnostics'], allowWrite: true, allowExternal: true };
+const policy = { allowed: ['read', 'write', 'external', 'explode', 'slow'], capabilities: ['system.status', 'system.diagnostics'], allowWrite: true, allowExternal: true };
 
 function tool(name, risk = 'read', capability = 'system.status', execute = async () => ({ ok: true, data: { value: 1 } })) {
   registerTool({ name, description: name, risk, capability, validate: () => undefined, execute });
