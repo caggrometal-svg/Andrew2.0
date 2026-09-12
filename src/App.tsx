@@ -57,7 +57,14 @@ export default function App() {
     setView('chat');
   }
 
-  function addClip() { apply(() => store.addClip({ assetId: `asset-${Date.now()}`, trackId: 'video-1', start: timeline.duration, duration: 5, sourceStart: 0, sourceDuration: 5, title: `Clip ${timeline.tracks[0].clips.length + 1}` })); }
+  function addClip() {
+    const videoTrack = timeline.tracks.find((track) => track.id === 'video-1');
+    if (!videoTrack) {
+      setError('No existe la pista de video principal.');
+      return;
+    }
+    apply(() => store.addClip({ assetId: `asset-${Date.now()}`, trackId: videoTrack.id, start: timeline.duration, duration: 5, sourceStart: 0, sourceDuration: 5, title: `Clip ${videoTrack.clips.length + 1}` }));
+  }
 
   async function updateSetting<K extends keyof AppSettings>(key: K, value: AppSettings[K]) {
     if (key === 'notifications' && value === true && typeof Notification !== 'undefined' && Notification.permission === 'default') {
