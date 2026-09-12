@@ -12,7 +12,7 @@ export class IAC33AnalysisEngine implements AnalysisEngine<ForecastResult> {
     const signals: Signal[] = request.signals.map((signal) => ({
       name: signal.name,
       value: signal.value,
-      weight: signal.weight,
+      ...(signal.weight !== undefined ? { weight: signal.weight } : {}),
     }));
     return forecast(toDomain(request.domain), signals, request.horizon);
   }
