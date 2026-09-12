@@ -87,17 +87,17 @@ export class AIProviderRegistry {
 
   recordSuccess(id: string): void {
     const state = this.requireHealthState(id);
-    const now = new Date().toISOString();
     state.consecutiveFailures = 0;
-    state.lastSuccessAt = now;
-    state.lastErrorCode = undefined;
+    state.lastSuccessAt = new Date().toISOString();
+    delete state.lastErrorCode;
   }
 
   recordFailure(id: string, errorCode?: string): void {
     const state = this.requireHealthState(id);
     state.consecutiveFailures += 1;
     state.lastFailureAt = new Date().toISOString();
-    state.lastErrorCode = errorCode;
+    if (errorCode !== undefined) state.lastErrorCode = errorCode;
+    else delete state.lastErrorCode;
   }
 
   async health(): Promise<readonly AIProviderHealth[]> {
@@ -134,18 +134,19 @@ export class AIProviderRegistry {
             ? 'degraded'
             : 'healthy';
 
-      return {
+      const health: AIProviderHealth = {
         id,
         priority: registration.priority,
         enabled,
         available: status === 'healthy',
         status,
         consecutiveFailures: state.consecutiveFailures,
-        lastCheckedAt: state.lastCheckedAt,
-        lastSuccessAt: state.lastSuccessAt,
-        lastFailureAt: state.lastFailureAt,
-        lastErrorCode: state.lastErrorCode,
       };
+      if (state.lastCheckedAt !== undefined) health.lastCheckedAt = state.lastCheckedAt;
+      if (state.lastSuccessAt !== undefined) health.lastSuccessAt = state.lastSuccessAt;
+      if (state.lastFailureAt !== undefined) health.lastFailureAt = state.lastFailureAt;
+      if (state.lastErrorCode !== undefined) health.lastErrorCode = state.lastErrorCode;
+      return health;
     });
   }
 
