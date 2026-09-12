@@ -24,6 +24,6 @@ describe('MemoryStore', () => {
     store.remember(memory());
     const found = store.search('Chile geography');
     expect(found).toHaveLength(1);
-    expect(found[0].accessCount).toBe(1);
+    expect(found[0]?.accessCount).toBe(1);
   });
 });
