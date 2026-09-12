@@ -1,0 +1,77 @@
+services:
+  cortex:
+    build:
+      context: ..
+      dockerfile: cortex/Dockerfile
+    env_file: .env
+    depends_on:
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      litellm:
+        condition: service_started
+    ports:
+      - "127.0.0.1:8080:8080"
+    restart: unless-stopped
+
+  redis:
+    image: redis/redis-stack-server:7.4.0-v2
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:v1.15.4
+    ports:
+      - "127.0.0.1:6333:6333"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    restart: unless-stopped
+
+  litellm:
+    image: ghcr.io/berriai/litellm:v1.75.5
+    command: ["--config", "/app/config.yaml", "--port", "4000", "--num_workers", "2"]
+    env_file: .env
+    ports:
+      - "127.0.0.1:4000:4000"
+    volumes:
+      - ./litellm.yaml:/app/config.yaml:ro
+    restart: unless-stopped
+
+  vllm:
+    image: vllm/vllm-openai:v0.10.2
+    profiles: ["gpu"]
+    environment:
+      HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN}
+    command:
+      - "--model"
+      - "${LOCAL_MODEL}"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
+      - "--enable-prefix-caching"
+      - "--gpu-memory-utilization"
+      - "0.90"
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+
+volumes:
+  redis-data:
+  qdrant-data:
+  hf-cache:
