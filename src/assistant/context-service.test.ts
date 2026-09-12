@@ -33,8 +33,9 @@ function context(permissions: PermissionGrant[]): AssistantContext {
 
 describe('ContextService', () => {
   it('retrieves memory only with an explicit memory.read grant', () => {
-    const service = new ContextService(new MemoryService(new MemoryStore(new LocalStorageProvider())));
-    service['memory'].remember(memory);
+    const memoryService = new MemoryService(new MemoryStore(new LocalStorageProvider()));
+    memoryService.remember(memory);
+    const service = new ContextService(memoryService);
 
     const result = service.build(context([{
       capability: 'memory.read',
@@ -47,8 +48,9 @@ describe('ContextService', () => {
   });
 
   it('returns no memory when memory.read is denied', () => {
-    const service = new ContextService(new MemoryService(new MemoryStore(new LocalStorageProvider())));
-    service['memory'].remember(memory);
+    const memoryService = new MemoryService(new MemoryStore(new LocalStorageProvider()));
+    memoryService.remember(memory);
+    const service = new ContextService(memoryService);
 
     const result = service.build(context([{
       capability: 'memory.read',
