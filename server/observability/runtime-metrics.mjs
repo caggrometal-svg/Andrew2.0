@@ -32,7 +32,7 @@ export function recordToolExecution({ toolName, durationMs, ok, errorCode, phase
   addCounter(`${prefix}.error`, ok ? 0 : 1);
   if (errorCode) addCounter(`${prefix}.error.${errorCode.toLowerCase()}`, 1);
   observeLatency(`${prefix}.latency`, durationMs);
-  if (toolName) {
+  if (toolName && validName(toolName)) {
     addCounter(`${prefix}.tool.${toolName}.throughput`, 1);
     addCounter(`${prefix}.tool.${toolName}.${ok ? 'success' : 'error'}`, 1);
     observeLatency(`${prefix}.tool.${toolName}.latency`, durationMs);
@@ -54,10 +54,16 @@ export function snapshotMetrics() {
       avgMs: value.count ? value.totalMs / value.count : 0,
     };
   }
+  const rate = (prefix) => {
+    const throughput = counters.get(`${prefix}.throughput`) || 0;
+    const errors = counters.get(`${prefix}.error`) || 0;
+    return { throughput, errors, errorRate: throughput ? errors / throughput : 0 };
+  };
   return {
     uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000),
     counters: Object.fromEntries(counters),
     latency: latencySnapshot,
+    rates: { router: rate('tool.router'), executor: rate('tool.executor'), verifier: rate('tool.verifier') },
   };
 }
 
