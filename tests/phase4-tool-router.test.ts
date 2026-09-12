@@ -19,7 +19,7 @@ describe('Phase 4 Tool Router', () => {
   it('TOOL_UNKNOWN_REJECTED', async () => {
     const result = await executeTool('missing', {}, context);
     expect(result.ok).toBe(false);
-    expect(result.error).toContain('TOOL_NOT_ALLOWED');
+    expect(result.errorCode).toBe('NOT_FOUND');
   });
 
   it('INPUT_VALIDATION', async () => {
@@ -27,6 +27,7 @@ describe('Phase 4 Tool Router', () => {
     const result = await executeTool('calculator', { expression: 'process.exit()' }, context);
     expect(result.ok).toBe(false);
     expect(result.error).toBe('CALCULATOR_EXPRESSION_NOT_ALLOWED');
+    expect(result.errorCode).toBe('INVALID_INPUT');
   });
 
   it('READ_TOOL', async () => {
@@ -52,7 +53,7 @@ describe('Phase 4 Tool Router', () => {
     registerBuiltinTools();
     const result = await routeTool('memory', { operation: 'write', key: 'x', value: 1 }, context, { allowed: ['memory'] });
     expect(result.ok).toBe(false);
-    expect(result.error).toContain('TOOL_WRITE_NOT_ALLOWED');
+    expect(result.errorCode).toBe('WRITE_NOT_ALLOWED');
   });
 
   it('EXECUTION_FAILURE_ISOLATED', async () => {
@@ -60,6 +61,7 @@ describe('Phase 4 Tool Router', () => {
     const result = await executeTool('failing', {}, context);
     expect(result.ok).toBe(false);
     expect(result.error).toBe('BOOM');
+    expect(result.errorCode).toBe('EXECUTION_FAILED');
   });
 
   it('VERIFICATION_FAILURE', () => {
@@ -70,13 +72,14 @@ describe('Phase 4 Tool Router', () => {
     registerTool({ name: 'slow', description: 'test', risk: 'read', validate: () => undefined, execute: async () => new Promise((resolve) => setTimeout(() => resolve({ ok: true }), 50)) });
     const result = await executeTool('slow', {}, context, 5);
     expect(result.ok).toBe(false);
-    expect(result.error).toBe('TOOL_TIMEOUT');
+    expect(result.errorCode).toBe('TIMEOUT');
+    expect(result.retryable).toBe(true);
   });
 
   it('EXTERNAL_PERMISSION', async () => {
     registerBuiltinTools();
     const result = await routeTool('media', {}, context, { allowed: ['media'] });
     expect(result.ok).toBe(false);
-    expect(result.error).toContain('TOOL_EXTERNAL_NOT_ALLOWED');
+    expect(result.errorCode).toBe('EXTERNAL_NOT_ALLOWED');
   });
 });
