@@ -56,4 +56,17 @@ describe('FetchNetworkAdapter', () => {
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
+
+  it('cleans up a caller signal listener after completion', async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(okResponse());
+    const adapter = new FetchNetworkAdapter({ fetchImpl });
+    const controller = new AbortController();
+    const addSpy = vi.spyOn(controller.signal, 'addEventListener');
+    const removeSpy = vi.spyOn(controller.signal, 'removeEventListener');
+
+    await adapter.request({ capability: 'public-web', input: 'https://example.com', init: { signal: controller.signal } });
+
+    expect(addSpy).toHaveBeenCalledWith('abort', expect.any(Function), { once: true });
+    expect(removeSpy).toHaveBeenCalledWith('abort', expect.any(Function));
+  });
 });
