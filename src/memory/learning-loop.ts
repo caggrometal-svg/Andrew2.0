@@ -6,13 +6,14 @@ export class LearningLoop {
   constructor(private readonly memory: MemoryService) {}
 
   learnFromActivity(activity: ActivityRecord): MemoryItem | undefined {
-    if (activity.result === 'denied' || !activity.details?.lesson || !activity.capability) return undefined;
+    const lesson = activity.details?.['lesson'];
+    if (activity.result === 'denied' || lesson === undefined || !activity.capability) return undefined;
 
     const now = new Date().toISOString();
     const memory: MemoryItem = {
       id: crypto.randomUUID(),
       kind: 'lesson',
-      content: String(activity.details.lesson),
+      content: String(lesson),
       source: 'system',
       importance: 0.5,
       confidence: 0.5,
