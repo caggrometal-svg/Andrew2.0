@@ -27,14 +27,16 @@ export async function executeTool(name, input, context, timeoutMs = DEFAULT_TIME
   const safeTimeout = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : DEFAULT_TIMEOUT_MS;
   let timer;
   try {
-    const timeout = new Promise((resolve) => {
-      timer = setTimeout(() => resolve(failure(tool.name, tool.risk, Date.now() - startedAt, 'TIMEOUT', 'Tool execution timed out', true)), safeTimeout);
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(Object.assign(new Error('Tool execution timed out'), { code: 'TIMEOUT' })), safeTimeout);
     });
     const result = await Promise.race([tool.execute(input, context), timeout]);
     const durationMs = Date.now() - startedAt;
     recordToolExecution({ toolName: tool.name, durationMs, ok: result.ok === true, errorCode: result.errorCode, phase: 'executor' });
     return { ...result, metadata: { toolName: tool.name, risk: tool.risk, durationMs } };
   } catch (error) {
-    return failure(tool.name, tool.risk, Date.now() - startedAt, 'EXECUTION_FAILED', normalizeError(error), true);
+    const durationMs = Date.now() - startedAt;
+    if (error && typeof error === 'object' && error.code === 'TIMEOUT') return failure(tool.name, tool.risk, durationMs, 'TIMEOUT', 'Tool execution timed out', true);
+    return failure(tool.name, tool.risk, durationMs, 'EXECUTION_FAILED', normalizeError(error), true);
   } finally { if (timer !== undefined) clearTimeout(timer); }
 }
