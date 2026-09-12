@@ -12,7 +12,7 @@ export interface VideoGenerationJob {
 }
 
 function backendUrl(): string {
-  return (import.meta.env.VITE_ANDREW_BACKEND_URL || 'https://andrew2-api.onrender.com').replace(/\/$/, '');
+  return (import.meta.env['VITE_ANDREW_BACKEND_URL'] || 'https://andrew2-api.onrender.com').replace(/\/$/, '');
 }
 
 export async function generateAndrewVideo(input: {
