@@ -10,10 +10,6 @@ permissions:
   contents: write
   actions: read
 
-concurrency:
-  group: deploy-and-release-${{ github.ref }}
-  cancel-in-progress: true
-
 env:
   NODE_VERSION: '20'
   ANDROID_WORKFLOW: android-apk.yml
@@ -36,10 +32,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Run full test suite
         run: npm test
@@ -103,7 +98,7 @@ jobs:
           mkdir -p release-artifact
           gh run download "${{ steps.wait.outputs.run_id }}" \
             --repo "$GITHUB_REPOSITORY" \
-            --name "andrew-debug-apk-${GITHUB_SHA}" \
+            --name "Andrew2.0-debug-apk-${GITHUB_SHA}" \
             --dir release-artifact
 
           APK="$(find release-artifact -type f -name 'andrew-latest.apk' -print -quit)"
@@ -140,7 +135,7 @@ jobs:
           test -n "$RUN_ID"
           gh run download "$RUN_ID" \
             --repo "$GITHUB_REPOSITORY" \
-            --name "andrew-debug-apk-${GITHUB_SHA}" \
+            --name "Andrew2.0-debug-apk-${GITHUB_SHA}" \
             --dir release
 
           APK="$(find release -type f -name 'andrew-latest.apk' -print -quit)"
