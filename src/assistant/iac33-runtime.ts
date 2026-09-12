@@ -1,6 +1,7 @@
 import type { ActivityRecord, AssistantContext, PlannedAction } from '../core/types';
 import type { RuntimeCommand, RuntimeResult } from '../core/runtime-contract';
 import { executeCommand } from './runtime-executor';
+import { ContextService, type RetrievedAssistantContext } from './context-service';
 import { authorize } from '../permissions/authorize';
 import { ActivityLog } from '../activity/activity-log';
 import { PersistentActivityStore } from '../storage/activity-store';
@@ -18,12 +19,14 @@ export class IAC33Runtime {
   readonly projectStore: PersistentProjectStore;
   readonly memory: MemoryService;
   readonly learning: LearningLoop;
+  readonly contextService: ContextService;
 
   constructor(readonly storage: StorageProvider = new LocalStorageProvider()) {
     this.activityStore = new PersistentActivityStore(storage);
     this.projectStore = new PersistentProjectStore(storage);
     this.memory = new MemoryService(new MemoryStore(storage));
     this.learning = new LearningLoop(this.memory);
+    this.contextService = new ContextService(this.memory);
   }
 
   restore(): void {
@@ -42,6 +45,15 @@ export class IAC33Runtime {
     const project = this.projects.get(projectId);
     if (!project) throw new Error(`Project not found: ${projectId}`);
     return { project, permissions, recentActivity: this.activity.forProject(projectId) };
+  }
+
+  retrievedContext(
+    projectId: string,
+    permissions: AssistantContext['permissions'],
+    query: string,
+    activityLimit = 20,
+  ): RetrievedAssistantContext {
+    return this.contextService.build(this.context(projectId, permissions), query, activityLimit);
   }
 
   authorizeAction(context: AssistantContext, action: PlannedAction): boolean {
