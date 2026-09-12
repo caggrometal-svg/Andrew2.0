@@ -87,12 +87,7 @@ async function fetchWithRetry(input: RequestInfo | URL, init: RequestInit, timeo
     if (attempt === 0) notify(listener, 'connecting');
     else notify(listener, 'retrying', `Reintentando conexión (${attempt + 1}/${attempts + 1})`);
     try {
-      const { response } = await networkAdapter.request({
-        capability: BACKEND_NETWORK_CAPABILITY,
-        input,
-        init,
-        timeoutMs,
-      });
+      const { response } = await networkAdapter.request({ capability: BACKEND_NETWORK_CAPABILITY, input, init, timeoutMs });
       if (response.ok) notify(listener, 'connected');
       const retryableStatus = response.status === 408 || response.status === 429 || response.status >= 500;
       if (!retryableStatus || attempt === attempts) return response;
