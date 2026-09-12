@@ -32,7 +32,7 @@ describe('Phase 5 Agent Loop', () => {
     const planner: AgentPlanner = { plan: async () => ({ action: 'tool', toolName: 'unknown-tool', toolInput: {}, rationale: 'unknown' }) };
     const result = await runAgent(baseState, { planner, verifier: passingVerifier, stateStore: new InMemoryAgentStateStore() });
     expect(result.ok).toBe(false);
-    expect(result.error).toContain('TOOL_NOT_ALLOWED');
+    expect(result.state.toolOutput?.errorCode).toBe('NOT_FOUND');
   });
 
   it('enforces the iteration bound', async () => {
