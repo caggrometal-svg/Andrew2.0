@@ -20,7 +20,7 @@ function clean(value: string): string {
 }
 
 function parseEvents(html: string): SeismicEvent[] {
-  const rows = html.split(/<tr\b/i).slice(1).map((part) => part.split(/<\/tr>/i)[0]);
+  const rows = html.split(/<tr\b/i).slice(1).map((part) => part.split(/<\/tr>/i)[0] ?? '');
   const events: SeismicEvent[] = [];
   for (const row of rows) {
     const cells = [...row.matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/gi)].map((m) => clean(m[1] ?? ''));
