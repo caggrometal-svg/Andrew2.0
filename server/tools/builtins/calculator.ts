@@ -3,11 +3,19 @@ import type { ToolDefinition } from '../tool-types';
 
 type CalculatorInput = Readonly<{ expression: string }>;
 
-function evaluate(expression: string): number {
-  const tokens = expression.match(/\d+(?:\.\d+)?|[()+\-*/%]/g);
-  if (tokens === null || tokens.join('') !== expression.replace(/\s+/g, '')) {
+function assertAllowedExpression(expression: string): string {
+  const normalized = expression.replace(/\s+/g, '');
+  const tokens = normalized.match(/\d+(?:\.\d+)?|[()+\-*/%]/g);
+  if (tokens === null || tokens.join('') !== normalized) {
     throw new Error('CALCULATOR_EXPRESSION_NOT_ALLOWED');
   }
+  return normalized;
+}
+
+function evaluate(expression: string): number {
+  const normalized = assertAllowedExpression(expression);
+  const tokens = normalized.match(/\d+(?:\.\d+)?|[()+\-*/%]/g);
+  if (tokens === null) throw new Error('CALCULATOR_EXPRESSION_NOT_ALLOWED');
 
   const values: number[] = [];
   const operators: string[] = [];
@@ -69,8 +77,9 @@ const calculator: ToolDefinition<CalculatorInput> = {
   validate: (input) => {
     assertToolInput(input);
     if (typeof input.expression !== 'string' || input.expression.trim().length === 0) throw new Error('CALCULATOR_INVALID_EXPRESSION');
+    assertAllowedExpression(input.expression);
   },
-  execute: async (input) => ({ ok: true, data: { value: evaluate(input.expression.replace(/\s+/g, '')) } }),
+  execute: async (input) => ({ ok: true, data: { value: evaluate(input.expression) } }),
 };
 
 export function registerCalculatorTool(): void { registerTool(calculator); }
