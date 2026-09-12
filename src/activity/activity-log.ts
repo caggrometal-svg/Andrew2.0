@@ -8,11 +8,17 @@ export class ActivityLog {
   }
 
   all(): ActivityRecord[] {
-    return this.records.map((record) => ({ ...record, details: record.details ? { ...record.details } : undefined }));
+    return this.records.map((record) => {
+      const copy: ActivityRecord = { ...record };
+      if (record.details !== undefined) copy.details = { ...record.details };
+      return copy;
+    });
   }
 
   forProject(projectId: string): ActivityRecord[] {
-    return this.records.filter((record) => record.details?.projectId === projectId).map((record) => ({ ...record }));
+    return this.records
+      .filter((record) => record.details?.['projectId'] === projectId)
+      .map((record) => ({ ...record }));
   }
 
   clear(): void {
