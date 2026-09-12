@@ -40,9 +40,9 @@ function wait(ms: number, signal?: AbortSignal): Promise<void> {
   if (ms <= 0) return Promise.resolve();
   if (signal?.aborted) return Promise.reject(new DOMException('The AI request was aborted.', 'AbortError'));
   return new Promise((resolve, reject) => {
-    let timer: ReturnType<typeof setTimeout>;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const onAbort = (): void => {
-      clearTimeout(timer);
+      if (timer !== undefined) clearTimeout(timer);
       signal?.removeEventListener('abort', onAbort);
       reject(new DOMException('The AI request was aborted.', 'AbortError'));
     };
@@ -65,7 +65,7 @@ async function generateWithTimeout(
   const onAbort = (): void => controller.abort();
   request.signal?.addEventListener('abort', onAbort, { once: true });
 
-  let timer: ReturnType<typeof setTimeout>;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
       controller.abort();
@@ -79,7 +79,7 @@ async function generateWithTimeout(
       timeout,
     ]);
   } finally {
-    clearTimeout(timer);
+    if (timer !== undefined) clearTimeout(timer);
     request.signal?.removeEventListener('abort', onAbort);
   }
 }
