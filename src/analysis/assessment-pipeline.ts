@@ -9,10 +9,11 @@ export function runAssessment(input: AssessmentInput): AssessmentOutput {
   const forecastResult=forecast(input.domain,input.signals,input.horizon);
   const levels=['low','medium','high'] as const;
   const level=Math.min(levels.indexOf(critical.overallConfidence),levels.indexOf(forecastResult.confidence));
+  const overallConfidence = levels[level] ?? 'low';
   const notes=[
     'Las probabilidades son escenarios, no predicciones deterministas.',
     'La calidad del resultado depende de la cobertura, actualidad y confiabilidad de las fuentes.'
   ];
   if(critical.contradictions.length) notes.push('Existen evidencias contradictorias que deben revisarse.');
-  return {forecast:forecastResult,critical,overallConfidence:levels[level],notes};
+  return {forecast:forecastResult,critical,overallConfidence,notes};
 }
