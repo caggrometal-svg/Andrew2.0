@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AIProvider, AIProviderError, AIRequest } from './provider-contract';
+import { AIProviderRegistry } from './provider-registry';
 import { AIProviderRouter } from './provider-router';
 
 const request: AIRequest = { messages: [{ role: 'user', content: 'ping' }] };
@@ -88,5 +89,32 @@ describe('AIProviderRouter', () => {
     await router.generate(request);
 
     expect(calls).toBe(2);
+  });
+
+  it('uses registry priority and health to route and records provider outcomes', async () => {
+    let primaryCalls = 0;
+    const primary = provider('primary', async () => {
+      primaryCalls += 1;
+      throw failure('EXECUTION_FAILED', false);
+    });
+    const secondary = provider('secondary', async () => ({ provider: 'secondary', model: 'test', content: 'ok', completedAt: '2026-09-12T00:00:00.000Z' }));
+    const registry = new AIProviderRegistry([
+      { provider: secondary, priority: 20 },
+      { provider: primary, priority: 10 },
+    ], { failureThreshold: 1 });
+    const router = new AIProviderRouter([secondary, primary], {}, registry);
+
+    const first = await router.generate(request);
+    expect(first.provider).toBe('secondary');
+    expect(primaryCalls).toBe(0);
+
+    registry.setEnabled('secondary', false);
+    const second = await router.generate(request);
+    expect(second.provider).toBe('primary');
+    expect(primaryCalls).toBe(1);
+
+    const health = await registry.health();
+    expect(health.find((item) => item.id === 'primary')).toMatchObject({ status: 'unavailable', consecutiveFailures: 1 });
+    expect(registry.routableProviders().map((item) => item.id)).toEqual([]);
   });
 });
