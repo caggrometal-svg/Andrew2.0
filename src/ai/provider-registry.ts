@@ -85,6 +85,16 @@ export class AIProviderRegistry {
       .map((registration) => registration.provider);
   }
 
+  routableProviders(): readonly AIProvider[] {
+    return this.sortedRegistrations()
+      .filter((registration) => {
+        if (!registration.enabled) return false;
+        const state = this.requireHealthState(registration.provider.id);
+        return state.consecutiveFailures < this.options.failureThreshold;
+      })
+      .map((registration) => registration.provider);
+  }
+
   recordSuccess(id: string): void {
     const state = this.requireHealthState(id);
     state.consecutiveFailures = 0;
