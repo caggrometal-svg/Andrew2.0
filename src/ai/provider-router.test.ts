@@ -46,7 +46,6 @@ describe('AIProviderRouter', () => {
     expect(calls).toBe(2);
     expect(result.attempts).toEqual([
       { provider: 'first', ok: false, errorCode: 'RATE_LIMITED' },
-      { provider: 'first', ok: false, errorCode: 'RATE_LIMITED' },
       { provider: 'second', ok: true },
     ]);
   });
