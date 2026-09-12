@@ -15,6 +15,7 @@ on:
       - scripts/install-android-bridge.mjs
       - scripts/verify-foundation.mjs
       - .github/workflows/android-foundation.yml
+      - tests/**
   pull_request:
     branches:
       - andrew-3.0
@@ -28,6 +29,7 @@ on:
       - scripts/install-android-bridge.mjs
       - scripts/verify-foundation.mjs
       - .github/workflows/android-foundation.yml
+      - tests/**
 
 permissions:
   contents: read
@@ -35,11 +37,26 @@ permissions:
 env:
   NODE_VERSION: '20'
   JAVA_VERSION: '17'
+  DATABASE_URL: 'postgresql://andrew:andrew@127.0.0.1:5432/andrew_test'
 
 jobs:
   android-foundation:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: andrew
+          POSTGRES_PASSWORD: andrew
+          POSTGRES_DB: andrew_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U andrew -d andrew_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
