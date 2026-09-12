@@ -14,7 +14,7 @@ interface ChatResponse { ok: true; conversationId: string; reply: string; respon
 type GatewayError = { message?: unknown; error?: unknown };
 
 function backendUrl(): string {
-  return (import.meta.env.VITE_ANDREW_BACKEND_URL || DEFAULT_BACKEND).trim().replace(/\/$/, '');
+  return (import.meta.env['VITE_ANDREW_BACKEND_URL'] || DEFAULT_BACKEND).trim().replace(/\/$/, '');
 }
 
 function storage(): Storage | null {
