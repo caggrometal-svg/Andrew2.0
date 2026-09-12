@@ -3,6 +3,9 @@ node_modules/
 yarn.lock
 pnpm-lock.yaml
 
+# Capacitor generated native project
+android/
+
 # Build output
 dist/
 build/
