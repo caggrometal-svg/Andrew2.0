@@ -16,10 +16,10 @@ const COMMANDS = new Set<AndroidBridgeCommand>(['open_settings', 'set_runtime_pa
 function validEnvelope(value: unknown): value is AndroidBridgeCommandEnvelope {
   if (!value || typeof value !== 'object') return false;
   const item = value as Record<string, unknown>;
-  return typeof item.id === 'string' && item.id.length <= 64
-    && typeof item.command === 'string' && COMMANDS.has(item.command as AndroidBridgeCommand)
-    && typeof item.createdAt === 'number' && typeof item.expiresAt === 'number'
-    && item.expiresAt > item.createdAt;
+  return typeof item['id'] === 'string' && item['id'].length <= 64
+    && typeof item['command'] === 'string' && COMMANDS.has(item['command'] as AndroidBridgeCommand)
+    && typeof item['createdAt'] === 'number' && typeof item['expiresAt'] === 'number'
+    && item['expiresAt'] > item['createdAt'];
 }
 
 export class AndroidBridgeV3InboxClient {
@@ -56,7 +56,13 @@ export class AndroidBridgeV3InboxClient {
       });
       if (!ackResponse.ok) throw new Error(`HTTP ${ackResponse.status}`);
       const ack = await ackResponse.json() as AndroidBridgeAck & { id?: string; acknowledgedAt?: number };
-      acks.push({ id: ack.id ?? candidate.id, ok: result.ok, ...(result.ok ? {} : { error: result.error }), acknowledgedAt: ack.acknowledgedAt ?? Date.now() });
+      const ackRecord: AndroidBridgeAck = {
+        id: ack.id ?? candidate.id,
+        ok: result.ok,
+        acknowledgedAt: ack.acknowledgedAt ?? Date.now(),
+      };
+      if (!result.ok) ackRecord.error = result.error;
+      acks.push(ackRecord);
     }
     return acks;
   }
