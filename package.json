@@ -13,6 +13,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
+    "verify:foundation": "node scripts/verify-foundation.mjs",
     "test": "vitest run",
     "test:memory": "vitest run tests/memory.integration.test.mjs",
     "test:learning": "vitest run tests/learning-control.test.mjs",
