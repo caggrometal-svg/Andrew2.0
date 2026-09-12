@@ -14,8 +14,12 @@ function isProviderError(error: unknown): error is AIProviderError {
   return error instanceof Error && typeof (error as AIProviderError).code === 'string';
 }
 
+function isRetryable(error: unknown): boolean {
+  return isProviderError(error) ? error.retryable : true;
+}
+
 export class AIProviderRouter {
-  constructor(private readonly providers: AIProvider[]) {}
+  constructor(private readonly providers: readonly AIProvider[]) {}
 
   async generate(request: AIRequest): Promise<AIRouterResult> {
     const attempts: AIRouteAttempt[] = [];
@@ -39,7 +43,7 @@ export class AIProviderRouter {
           errorCode: isProviderError(error) ? error.code : 'EXECUTION_FAILED',
         });
 
-        if (isProviderError(error) && !error.retryable) throw error;
+        if (!isRetryable(error)) throw error;
       }
     }
 
