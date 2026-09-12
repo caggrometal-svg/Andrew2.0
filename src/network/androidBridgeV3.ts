@@ -54,13 +54,14 @@ function prune<T extends { createdAt: number }>(items: T[], max: number): T[] {
 export class AndroidBridgeV3 {
   createCommand(command: AndroidBridgeCommand, payload?: Record<string, unknown>): AndroidBridgeCommandEnvelope {
     if (!ALLOWED_COMMANDS.has(command)) throw new Error('unsupported');
-    return {
+    const envelope: AndroidBridgeCommandEnvelope = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
       command,
-      payload,
       createdAt: Date.now(),
       expiresAt: Date.now() + TTL_MS,
     };
+    if (payload !== undefined) envelope.payload = payload;
+    return envelope;
   }
 
   enqueue(command: AndroidBridgeCommand, payload?: Record<string, unknown>): AndroidBridgeCommandEnvelope {
@@ -77,7 +78,8 @@ export class AndroidBridgeV3 {
   }
 
   acknowledge(id: string, ok: boolean, error?: AndroidBridgeAck['error']): AndroidBridgeAck {
-    const ack: AndroidBridgeAck = { id, ok, error, acknowledgedAt: Date.now() };
+    const ack: AndroidBridgeAck = { id, ok, acknowledgedAt: Date.now() };
+    if (error !== undefined) ack.error = error;
     const existing = readJson<AndroidBridgeAck[]>(ACK_KEY, []);
     writeJson(ACK_KEY, [...existing, ack].slice(-MAX_ACKS));
     writeJson(QUEUE_KEY, this.pending().filter(command => command.id !== id));
