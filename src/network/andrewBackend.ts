@@ -1,3 +1,5 @@
+import { FetchNetworkAdapter } from './network-adapter';
+
 export type AndrewMemoryContext = string;
 
 export interface AndrewAttachment {
@@ -41,6 +43,9 @@ const BACKOFF_MS = 900;
 const VIDEO_CHUNK_BYTES = 2 * 1024 * 1024;
 const VIDEO_CHUNK_RETRIES = 4;
 const USER_ID_STORAGE_KEY = 'andrew:user-id';
+const BACKEND_NETWORK_CAPABILITY = 'public-web' as const;
+
+const networkAdapter = new FetchNetworkAdapter({ fetchImpl: (input, init) => fetch(input, init) });
 
 function getBackendUrl(): string {
   const configured = (import.meta.env['VITE_ANDREW_BACKEND_URL'] || 'https://andrew2-api.onrender.com').trim();
@@ -79,12 +84,15 @@ function isRetryableError(error: unknown): boolean {
 async function fetchWithRetry(input: RequestInfo | URL, init: RequestInit, timeoutMs: number, listener?: NetworkStatusListener, attempts = MAX_RETRIES): Promise<Response> {
   let lastError: unknown;
   for (let attempt = 0; attempt <= attempts; attempt += 1) {
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
     if (attempt === 0) notify(listener, 'connecting');
     else notify(listener, 'retrying', `Reintentando conexión (${attempt + 1}/${attempts + 1})`);
     try {
-      const response = await fetch(input, { ...init, signal: controller.signal });
+      const { response } = await networkAdapter.request({
+        capability: BACKEND_NETWORK_CAPABILITY,
+        input,
+        init,
+        timeoutMs,
+      });
       if (response.ok) notify(listener, 'connected');
       const retryableStatus = response.status === 408 || response.status === 429 || response.status >= 500;
       if (!retryableStatus || attempt === attempts) return response;
@@ -96,8 +104,6 @@ async function fetchWithRetry(input: RequestInfo | URL, init: RequestInit, timeo
         throw error;
       }
       await sleep(BACKOFF_MS * (2 ** attempt));
-    } finally {
-      window.clearTimeout(timeout);
     }
   }
   throw lastError instanceof Error ? lastError : new Error('No fue posible conectar con Andrew.');
