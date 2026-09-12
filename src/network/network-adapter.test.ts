@@ -42,4 +42,18 @@ describe('FetchNetworkAdapter', () => {
     await expect(adapter.request({ capability: 'public-web', input: 'https://example.com' }))
       .rejects.toMatchObject({ name: 'AbortError' });
   });
+
+  it('propagates a caller abort without waiting for the timeout', async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockImplementation((_input, init) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
+    }));
+    const adapter = new FetchNetworkAdapter({ fetchImpl, defaultTimeoutMs: 10000 });
+    const controller = new AbortController();
+
+    const pending = adapter.request({ capability: 'public-web', input: 'https://example.com', init: { signal: controller.signal } });
+    controller.abort();
+
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
 });
