@@ -27,17 +27,23 @@ jobs:
           node-version: 20
 
       - name: Generate lockfile
-        run: npm install --package-lock-only --ignore-scripts
+        run: |
+          set -euo pipefail
+          npm config set package-lock true
+          npm install --package-lock-only --ignore-scripts --package-lock=true
+          test -s package-lock.json
+          git status --short package-lock.json
 
       - name: Commit lockfile
         run: |
           set -euo pipefail
-          if git diff --quiet -- package-lock.json; then
+          test -s package-lock.json
+          git add package-lock.json
+          if git diff --cached --quiet -- package-lock.json; then
             echo 'package-lock.json already synchronized'
             exit 0
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add package-lock.json
           git commit -m 'chore: bootstrap package lock for Andrew 3.0'
           git push origin HEAD:andrew-3.0
