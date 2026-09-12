@@ -112,9 +112,10 @@ describe('AIProviderRouter', () => {
     const second = await router.generate(request);
     expect(second.provider).toBe('primary');
     expect(primaryCalls).toBe(2);
+    expect(registry.routableProviders()).toEqual([]);
 
     const health = await registry.health();
-    expect(health.find((item) => item.id === 'primary')).toMatchObject({ status: 'unavailable', consecutiveFailures: 3 });
-    expect(registry.routableProviders().map((item) => item.id)).toEqual([]);
+    expect(health.find((item) => item.id === 'primary')).toMatchObject({ status: 'healthy', available: true, consecutiveFailures: 0 });
+    expect(registry.routableProviders().map((item) => item.id)).toEqual(['primary']);
   });
 });
