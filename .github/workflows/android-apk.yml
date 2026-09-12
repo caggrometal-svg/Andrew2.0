@@ -5,9 +5,6 @@ on:
     branches:
       - andrew-backend-openai-v1
       - iac33-integration-next
-    paths:
-      - '**'
-      - '!README.md'
   workflow_dispatch:
 
 permissions:
