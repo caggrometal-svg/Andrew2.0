@@ -49,14 +49,22 @@ export class FetchNetworkAdapter implements NetworkAdapter {
     if (!policy.enabled) throw new NetworkAccessDeniedError(request.capability);
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), request.timeoutMs ?? this.defaultTimeoutMs);
-    const startedAt = this.now();
+    const timeout = window.setTimeout(() => controller.abort(), request.timeoutMs ?? this.defaultTimeoutMs);
+    const callerSignal = request.init?.signal;
+    const abortFromCaller = (): void => controller.abort();
 
+    if (callerSignal) {
+      if (callerSignal.aborted) controller.abort();
+      else callerSignal.addEventListener('abort', abortFromCaller, { once: true });
+    }
+
+    const startedAt = this.now();
     try {
       const response = await this.fetchImpl(request.input, { ...request.init, signal: controller.signal });
       return { response, elapsedMs: Math.max(0, this.now() - startedAt) };
     } finally {
-      clearTimeout(timeout);
+      window.clearTimeout(timeout);
+      callerSignal?.removeEventListener('abort', abortFromCaller);
     }
   }
 }
