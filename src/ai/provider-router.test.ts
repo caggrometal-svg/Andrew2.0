@@ -101,7 +101,7 @@ describe('AIProviderRouter', () => {
     const registry = new AIProviderRegistry([
       { provider: secondary, priority: 20 },
       { provider: primary, priority: 10 },
-    ], { failureThreshold: 1 });
+    ], { failureThreshold: 2 });
     const router = new AIProviderRouter([secondary, primary], {}, registry);
 
     const first = await router.generate(request);
