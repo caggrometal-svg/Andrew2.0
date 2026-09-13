@@ -13,6 +13,14 @@ type BridgeCommand = {
 
 type CommandResponse = { ok: true; commands: BridgeCommand[] };
 type ResultResponse = { ok: true; id: string; acknowledgedAt: number; result: unknown | null };
+type AIResponse = { ok: true; reply: string; provider?: string; model?: string; latencyMs?: number };
+
+type BridgeLoopResult = {
+  commandId: string;
+  command: BridgeCommand['command'];
+  result: unknown | null;
+  reply?: string;
+};
 
 function backendUrl(): string {
   return (import.meta.env['VITE_ANDREW_BACKEND_URL'] || DEFAULT_BACKEND).trim().replace(/\/$/, '');
@@ -59,7 +67,14 @@ async function execute(command: BridgeCommand): Promise<unknown> {
   }
 }
 
-type BridgeLoopResult = { commandId: string; command: BridgeCommand['command']; result: unknown | null };
+async function sendResultToAI(command: BridgeCommand, result: unknown): Promise<string | undefined> {
+  const message = `Bridge ${command.command} result: ${JSON.stringify(result)}. Explain what happened briefly.`;
+  const response = await request<AIResponse>('/api/chat', {
+    method: 'POST',
+    body: JSON.stringify({ message, conversationId: `bridge:${getBridgeUserId()}` }),
+  });
+  return response.reply;
+}
 
 export function startBridgeCommandLoop(onError?: (error: Error) => void, onResult?: (result: BridgeLoopResult) => void): () => void {
   let stopped = false;
@@ -78,7 +93,8 @@ export function startBridgeCommandLoop(onError?: (error: Error) => void, onResul
             method: 'POST',
             body: JSON.stringify({ id: command.id, command: command.command, ok: true, result }),
           });
-          onResult?.({ commandId: command.id, command: command.command, result: response.result });
+          const reply = response.result === null ? undefined : await sendResultToAI(command, response.result);
+          onResult?.({ commandId: command.id, command: command.command, result: response.result, reply });
         } catch (error) {
           await request<ResultResponse>('/api/v1/bridge/v3/result', {
             method: 'POST',
