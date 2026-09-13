@@ -47,10 +47,14 @@ export function isAllowed(
   permission: Permission,
   state: ReadonlyArray<PermissionState> = [],
 ): boolean {
-  const matches = state.filter((entry) => entry.permission === permission);
-  if (matches.length === 0) return false;
-  if (matches.some((entry) => !entry.granted)) return false;
-  return true;
+  if (!PERMISSIONS.has(permission)) return false;
+  try {
+    validatePermissionState(state);
+  } catch {
+    return false;
+  }
+  const entry = state.find((candidate) => candidate.permission === permission);
+  return entry?.granted === true;
 }
 
 export function assertPermission(
@@ -65,6 +69,7 @@ export function assertPermission(
 export function validatePermissionState(
   state: ReadonlyArray<PermissionState>,
 ): void {
+  if (!Array.isArray(state)) throw new Error('Invalid permission state');
   const seen = new Set<Permission>();
   for (const entry of state) {
     if (!entry || typeof entry.permission !== 'string' || !PERMISSIONS.has(entry.permission as Permission) || typeof entry.granted !== 'boolean') {
@@ -73,7 +78,9 @@ export function validatePermissionState(
     if (seen.has(entry.permission)) {
       throw new Error(`Duplicate permission: ${entry.permission}`);
     }
-    if (typeof entry.reason !== 'string' || !entry.reason.trim()) throw new Error(`Missing permission reason: ${entry.permission}`);
+    if (typeof entry.reason !== 'string' || !entry.reason.trim() || entry.reason.length > 500) {
+      throw new Error(`Missing permission reason: ${entry.permission}`);
+    }
     seen.add(entry.permission);
   }
 }
