@@ -25,6 +25,8 @@ jobs:
         id: router_test
         continue-on-error: true
         run: npx vitest run tests/provider-router-failover.test.mjs > provider-router-test.log 2>&1
+      - name: Run provider resilience certification
+        run: npx vitest run tests/phase26-provider-resilience.test.mjs tests/phase27-provider-registry.test.mjs tests/phase28-provider-recovery.test.mjs
       - name: Upload provider-router diagnostics
         if: always()
         uses: actions/upload-artifact@v4
