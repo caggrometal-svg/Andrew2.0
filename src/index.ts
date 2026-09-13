@@ -3,6 +3,7 @@ export * from './core/connectors';
 export * from './core/activity-log';
 export * from './core/memory';
 export * from './core/permissions';
+export * from './core/invariants';
 export * from './analysis/critical-engine';
 export * from './forecasting/scenario-engine';
 export * from './forecasting/chile-systems';
