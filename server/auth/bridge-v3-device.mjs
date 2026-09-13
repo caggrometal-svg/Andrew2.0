@@ -4,15 +4,15 @@ const WINDOW_MS = 300_000;
 const DEVICE_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
 
 function publicKeyRegistry() {
-  const raw = process.env.BRIDGE_DEVICE_PUBLIC_KEYS?.trim();
+  const raw = (process.env.BRIDGE_V3_DEVICE_PUBLIC_KEYS || process.env.BRIDGE_DEVICE_PUBLIC_KEYS || '').trim();
   if (!raw) return new Map();
   let parsed;
   try {
     parsed = JSON.parse(raw);
   } catch {
-    throw new Error('BRIDGE_DEVICE_PUBLIC_KEYS must be valid JSON');
+    throw new Error('BRIDGE_V3_DEVICE_PUBLIC_KEYS must be valid JSON');
   }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('BRIDGE_DEVICE_PUBLIC_KEYS must be an object');
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('BRIDGE_V3_DEVICE_PUBLIC_KEYS must be an object');
   return new Map(Object.entries(parsed));
 }
 
