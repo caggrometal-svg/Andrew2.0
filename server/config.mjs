@@ -15,6 +15,8 @@ const optionalProvider = (prefix, defaults = {}) => ({
   endpoint: (process.env[`${prefix}_ENDPOINT`] || defaults.endpoint || '').trim(),
   model: (process.env[`${prefix}_MODEL`] || defaults.model || '').trim(),
   supportsVision: /^(1|true|yes)$/i.test(process.env[`${prefix}_SUPPORTS_VISION`] || ''),
+  tier: Number(process.env[`${prefix}_TIER`] || defaults.tier || 3),
+  weight: Math.max(1, Number(process.env[`${prefix}_WEIGHT`] || defaults.weight || 1)),
 });
 
 export const config = {
@@ -27,11 +29,13 @@ export const config = {
   secondaryEndpoint: (process.env.AI_SECONDARY_ENDPOINT || '').trim(),
   secondaryModel: (process.env.AI_SECONDARY_MODEL || 'deepseek-chat').trim(),
   secondarySupportsVision: /^(1|true|yes)$/i.test(process.env.AI_SECONDARY_SUPPORTS_VISION || ''),
+  usagePolicy: 'unlimited-app',
+  appEnforcedQuota: false,
   providers: {
-    gemini: optionalProvider('AI_GEMINI', { endpoint: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', model: 'gemini-2.5-flash' }),
-    anthropic: optionalProvider('AI_ANTHROPIC', { endpoint: 'https://api.anthropic.com/v1/messages', model: 'claude-sonnet-4-20250514' }),
-    groq: optionalProvider('AI_GROQ', { endpoint: 'https://api.groq.com/openai/v1/chat/completions', model: 'llama-3.3-70b-versatile' }),
-    deepseek: optionalProvider('AI_DEEPSEEK', { endpoint: 'https://api.deepseek.com/chat/completions', model: 'deepseek-chat' }),
+    gemini: optionalProvider('AI_GEMINI', { endpoint: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', model: 'gemini-2.5-flash', tier: 2 }),
+    anthropic: optionalProvider('AI_ANTHROPIC', { endpoint: 'https://api.anthropic.com/v1/messages', model: 'claude-sonnet-4-20250514', tier: 2 }),
+    groq: optionalProvider('AI_GROQ', { endpoint: 'https://api.groq.com/openai/v1/chat/completions', model: 'llama-3.3-70b-versatile', tier: 3 }),
+    deepseek: optionalProvider('AI_DEEPSEEK', { endpoint: 'https://api.deepseek.com/chat/completions', model: 'deepseek-chat', tier: 3 }),
   },
   routingPolicy: (process.env.AI_ROUTING_POLICY || 'balanced').trim().toLowerCase(),
   corsOrigins: (process.env.CORS_ORIGINS || '').split(',').map((v) => v.trim()).filter(Boolean),
