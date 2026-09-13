@@ -4,39 +4,58 @@ import { config } from '../config.mjs';
 const DEFAULT_TIMEOUT_MS = 60_000;
 const CACHE_TTL_MS = 15 * 60 * 1000;
 const MAX_CACHE_ENTRIES = 256;
-const MAX_PROVIDER_ATTEMPTS = 3;
-const RETRY_BASE_MS = 900;
+const TRANSIENT_MAX_ATTEMPTS = 2;
+const RETRY_BASE_MS = 250;
 const BREAKER_THRESHOLD = 3;
 const BREAKER_COOLDOWN_MS = 30_000;
+const RATE_LIMIT_COOLDOWN_MS = 5 * 60_000;
 const HEALTH_LATENCY_TARGET_MS = 4_000;
+const GLOBAL_UNAVAILABLE_ERROR = 'Servicio no disponible temporalmente';
 
 export class AIProviderError extends Error {
-  constructor(message, { provider, status = null, retryable = false, permanent = false, cause } = {}) {
+  constructor(message, { provider, status = null, retryable = false, permanent = false, rateLimited = false, code = null, cause } = {}) {
     super(message, { cause });
     this.name = 'AIProviderError';
     this.provider = provider;
     this.status = status;
     this.retryable = retryable;
     this.permanent = permanent;
+    this.rateLimited = rateLimited;
+    this.code = code;
+  }
+}
+
+export class AIServiceUnavailableError extends Error {
+  constructor(cause = null) {
+    super(GLOBAL_UNAVAILABLE_ERROR, { cause: cause || undefined });
+    this.name = 'AIServiceUnavailableError';
+    this.code = 'AI_SERVICE_UNAVAILABLE';
+    this.status = 503;
+    this.retryable = true;
   }
 }
 
 function hash(value) { return crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex'); }
-function retryableStatus(status) { return status === 408 || status === 409 || status === 429 || status >= 500; }
-function permanentStatus(status) { return [400, 401, 403, 404, 405, 406, 415, 422].includes(status); }
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+function permanentStatus(status) { return [400, 401, 403, 404, 405, 406, 415, 422].includes(status); }
+function retryableStatus(status) { return status === 408 || status === 409 || status >= 500; }
+function rateLimitMessage(message) { return /rate[ -]?limit|rate_limit|rpd|requests per day|quota(?:[_ -]?(?:exhausted|exceeded|limit))?/i.test(String(message || '')); }
+function isRateLimitStatus(status) { return Number(status) === 429; }
 function hasMedia(request) { return Boolean(request.attachment?.type || (request.input || []).some(item => Array.isArray(item.content) && item.content.some(part => part?.type === 'input_image'))); }
+
 function configured(name) {
   if (name === 'primary') return Boolean(config.openaiApiKey && config.primaryEndpoint && config.openaiModel);
   if (name === 'secondary') return Boolean(config.secondaryApiKey && config.secondaryEndpoint && config.secondaryModel);
   const p = config.providers?.[name];
   return Boolean(p?.apiKey && p?.endpoint && p?.model);
 }
+
 function providerConfig(name) {
   if (name === 'primary') return { apiKey: config.openaiApiKey, endpoint: config.primaryEndpoint, model: config.openaiModel, protocol: 'responses', supportsVision: true };
   if (name === 'secondary') return { apiKey: config.secondaryApiKey, endpoint: config.secondaryEndpoint, model: config.secondaryModel, protocol: 'chat', supportsVision: config.secondarySupportsVision };
   return config.providers?.[name];
 }
+
 function providerNames() { return ['primary', 'secondary', ...Object.keys(config.providers || {})]; }
 function supportsMedia(name) { return Boolean(providerConfig(name)?.supportsVision); }
 
@@ -58,13 +77,9 @@ function policyOrder(request, health) {
   if (config.routingPolicy === 'primary') {
     preferred = ['primary', 'anthropic', 'secondary', 'deepseek', 'groq', 'gemini'];
   } else if (config.routingPolicy === 'secondary') {
-    preferred = media
-      ? ['secondary', 'anthropic', 'primary', 'gemini', 'groq', 'deepseek']
-      : ['secondary', 'deepseek', 'groq', 'gemini', 'anthropic', 'primary'];
+    preferred = media ? ['secondary', 'anthropic', 'primary', 'gemini', 'groq', 'deepseek'] : ['secondary', 'deepseek', 'groq', 'gemini', 'anthropic', 'primary'];
   } else {
-    preferred = media
-      ? ['primary', 'anthropic', 'gemini', 'secondary', 'deepseek', 'groq']
-      : ['secondary', 'deepseek', 'groq', 'gemini', 'anthropic', 'primary'];
+    preferred = media ? ['primary', 'anthropic', 'gemini', 'secondary', 'deepseek', 'groq'] : ['secondary', 'deepseek', 'groq', 'gemini', 'anthropic', 'primary'];
   }
   const ordered = [...preferred.filter(name => candidates.includes(name)), ...candidates.filter(name => !preferred.includes(name))];
   if (config.routingPolicy !== 'balanced') return ordered;
@@ -72,37 +87,49 @@ function policyOrder(request, health) {
     const aState = health.get(a) || createHealthState();
     const bState = health.get(b) || createHealthState();
     const scoreDiff = providerScore(b, bState) - providerScore(a, aState);
-    if (scoreDiff !== 0) return scoreDiff;
-    return ordered.indexOf(a) - ordered.indexOf(b);
+    return scoreDiff !== 0 ? scoreDiff : ordered.indexOf(a) - ordered.indexOf(b);
   });
 }
 
 function createHealthState() {
-  return { successes: 0, failures: 0, permanentFailures: 0, consecutiveFailures: 0, lastFailureAt: null, lastSuccessAt: null, lastError: null, lastStatus: null, lastErrorClass: null, latencyEwmaMs: null, openUntil: 0, halfOpen: false, probeInFlight: false };
+  return { successes: 0, failures: 0, rateLimited: 0, permanentFailures: 0, consecutiveFailures: 0, lastFailureAt: null, lastSuccessAt: null, lastError: null, lastStatus: null, lastErrorClass: null, latencyEwmaMs: null, openUntil: 0, halfOpen: false, probeInFlight: false };
+}
+
+function providerErrorFromResponse(provider, response, data) {
+  const message = data?.error?.message || data?.message || `${provider} HTTP ${response.status}`;
+  const rateLimited = isRateLimitStatus(response.status) || rateLimitMessage(message);
+  const permanent = permanentStatus(response.status) && !rateLimited;
+  return new AIProviderError(message, { provider, status: response.status, retryable: rateLimited || retryableStatus(response.status), permanent, rateLimited, code: rateLimited ? 'RATE_LIMITED' : null });
 }
 
 async function fetchJson(url, options, provider, timeoutMs = DEFAULT_TIMEOUT_MS) {
   let lastError;
-  for (let attempt = 1; attempt <= MAX_PROVIDER_ATTEMPTS; attempt += 1) {
+  for (let attempt = 1; attempt <= TRANSIENT_MAX_ATTEMPTS; attempt += 1) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const response = await fetch(url, { ...options, signal: controller.signal });
       const data = await response.json().catch(() => ({}));
       if (response.ok) return data;
-      const permanent = permanentStatus(response.status);
-      const error = new AIProviderError(data?.error?.message || `${provider} HTTP ${response.status}`, { provider, status: response.status, retryable: retryableStatus(response.status) && !permanent, permanent });
-      if (!error.retryable || attempt === MAX_PROVIDER_ATTEMPTS) throw error;
+      const error = providerErrorFromResponse(provider, response, data);
+      if (error.rateLimited) throw error;
+      if (!error.retryable || attempt === TRANSIENT_MAX_ATTEMPTS) throw error;
       lastError = error;
       const retryAfter = Number(response.headers.get('retry-after'));
-      const delay = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter * 1000, 10_000) : RETRY_BASE_MS * (2 ** (attempt - 1));
-      await sleep(delay + Math.floor(Math.random() * 250));
+      const delay = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter * 1000, 5_000) : RETRY_BASE_MS * (2 ** (attempt - 1));
+      await sleep(delay + Math.floor(Math.random() * 100));
     } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error));
-      if (error instanceof AIProviderError && (!error.retryable || attempt === MAX_PROVIDER_ATTEMPTS)) throw error;
-      if (attempt === MAX_PROVIDER_ATTEMPTS) throw lastError;
-      await sleep(RETRY_BASE_MS * (2 ** (attempt - 1)) + Math.floor(Math.random() * 250));
-    } finally { clearTimeout(timer); }
+      if (error instanceof AIProviderError) {
+        if (error.rateLimited || !error.retryable || attempt === TRANSIENT_MAX_ATTEMPTS) throw error;
+        lastError = error;
+      } else {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        if (attempt === TRANSIENT_MAX_ATTEMPTS) throw lastError;
+      }
+      await sleep(RETRY_BASE_MS * (2 ** (attempt - 1)) + Math.floor(Math.random() * 100));
+    } finally {
+      clearTimeout(timer);
+    }
   }
   throw lastError || new AIProviderError(`${provider} request failed`, { provider, retryable: true });
 }
@@ -118,7 +145,7 @@ function toChatContent(input, supportsVision) {
     if (!item || !['user', 'assistant', 'system'].includes(item.role)) continue;
     if (typeof item.content === 'string') { messages.push({ role: item.role, content: item.content }); continue; }
     if (!Array.isArray(item.content)) continue;
-    const content = item.content.flatMap((part) => {
+    const content = item.content.flatMap(part => {
       if (part?.type === 'input_text' && typeof part.text === 'string') return [{ type: 'text', text: part.text }];
       if (part?.type === 'input_image' && supportsVision) return [{ type: 'image_url', image_url: { url: part.image_url } }];
       return [];
@@ -129,9 +156,9 @@ function toChatContent(input, supportsVision) {
 }
 
 function toAnthropicMessages(input) {
-  return (input || []).filter(item => item && (item.role === 'user' || item.role === 'assistant')).map((item) => {
+  return (input || []).filter(item => item && (item.role === 'user' || item.role === 'assistant')).map(item => {
     if (typeof item.content === 'string') return { role: item.role, content: item.content };
-    const content = (item.content || []).flatMap((part) => {
+    const content = (item.content || []).flatMap(part => {
       if (part?.type === 'input_text' && typeof part.text === 'string') return [{ type: 'text', text: part.text }];
       if (part?.type === 'input_image') {
         const parsed = dataUrlParts(part.image_url);
@@ -145,12 +172,27 @@ function toAnthropicMessages(input) {
 
 function memoryMessages(memory) {
   if (!Array.isArray(memory) || memory.length === 0) return [];
-  const entries = memory
-    .filter(value => typeof value === 'string' && value.trim())
-    .slice(0, 24)
-    .map(value => value.trim().slice(0, 1000));
-  if (!entries.length) return [];
-  return [{ role: 'system', content: `Memoria compartida de Andrew:\n${entries.join('\n')}` }];
+  const entries = memory.filter(value => typeof value === 'string' && value.trim()).slice(0, 24).map(value => value.trim().slice(0, 1000));
+  return entries.length ? [{ role: 'system', content: `Memoria compartida de Andrew:\n${entries.join('\n')}` }] : [];
+}
+
+function extractResponseText(data) {
+  if (typeof data?.output_text === 'string' && data.output_text.trim()) return data.output_text.trim();
+  const output = Array.isArray(data?.output) ? data.output.flatMap(item => Array.isArray(item?.content) ? item.content : []) : [];
+  const outputText = output.filter(item => item?.type === 'output_text' && typeof item.text === 'string').map(item => item.text).join('\n').trim();
+  if (outputText) return outputText;
+  const choice = data?.choices?.[0]?.message?.content;
+  if (typeof choice === 'string' && choice.trim()) return choice.trim();
+  if (Array.isArray(choice)) return choice.filter(item => typeof item?.text === 'string').map(item => item.text).join('\n').trim();
+  return '';
+}
+
+function extractAnthropicText(data) {
+  return (data?.content || []).filter(item => item?.type === 'text' && typeof item.text === 'string').map(item => item.text).join('\n').trim();
+}
+
+function logEvent(event, fields = {}) {
+  console.info(JSON.stringify({ event, timestamp: new Date().toISOString(), ...fields }));
 }
 
 export class ProviderRouter {
@@ -163,7 +205,8 @@ export class ProviderRouter {
     if (cached) return { ...cached, provider: 'cache', latencyMs: 0 };
     const started = Date.now();
     const failures = [];
-    for (const name of policyOrder(request, this.#health)) {
+    const candidates = policyOrder(request, this.#health);
+    for (const name of candidates) {
       if (!this.#canAttempt(name)) continue;
       const health = this.#health.get(name);
       if (health?.halfOpen) health.probeInFlight = true;
@@ -173,6 +216,7 @@ export class ProviderRouter {
         this.#recordSuccess(name, Date.now() - providerStarted);
         const output = { text: result.text, provider: name, model: result.model, latencyMs: Date.now() - started };
         this.#setCache(key, output);
+        logEvent('provider.success', { provider: name, model: result.model, latencyMs: output.latencyMs });
         return output;
       } catch (error) {
         this.#recordFailure(name, error, Date.now() - providerStarted);
@@ -182,16 +226,16 @@ export class ProviderRouter {
         if (current) current.probeInFlight = false;
       }
     }
-    return { text: this.#local(request.prompt, failures), provider: 'local-degraded', model: null, latencyMs: Date.now() - started };
+    logEvent('provider.router.exhausted', { providers: candidates, failures: failures.map(error => ({ provider: error?.provider || null, status: error?.status || null, code: error?.code || null })) });
+    throw new AIServiceUnavailableError(failures.at(-1) || null);
   }
 
   getHealth() {
     const providers = {};
     for (const [name, state] of this.#health) {
-      const isConfigured = configured(name);
       const open = state.openUntil > Date.now();
       providers[name] = {
-        configured: isConfigured,
+        configured: configured(name),
         state: open ? 'open' : state.halfOpen ? 'half-open' : 'closed',
         score: providerScore(name, state),
         protocol: providerConfig(name)?.protocol || 'chat',
@@ -199,6 +243,7 @@ export class ProviderRouter {
         model: providerConfig(name)?.model || null,
         successes: state.successes,
         failures: state.failures,
+        rateLimited: state.rateLimited,
         permanentFailures: state.permanentFailures,
         consecutiveFailures: state.consecutiveFailures,
         lastFailureAt: state.lastFailureAt,
@@ -216,17 +261,20 @@ export class ProviderRouter {
   #canAttempt(name) {
     const state = this.#health.get(name);
     if (!state || !configured(name)) return false;
-    if (state.openUntil > Date.now()) return false;
-    if (state.openUntil && state.openUntil <= Date.now()) {
+    const now = Date.now();
+    if (state.openUntil > now) return false;
+    if (state.openUntil && state.openUntil <= now) {
       if (state.probeInFlight) return false;
       state.halfOpen = true;
+      logEvent('provider.breaker.half_open', { provider: name });
     }
-    return !state.halfOpen || !state.probeInFlight;
+    return !state.probeInFlight;
   }
 
   #recordSuccess(name, latencyMs) {
     const state = this.#health.get(name);
     if (!state) return;
+    const wasHalfOpen = state.halfOpen;
     state.successes += 1;
     state.consecutiveFailures = 0;
     state.lastSuccessAt = Date.now();
@@ -236,19 +284,29 @@ export class ProviderRouter {
     state.openUntil = 0;
     state.halfOpen = false;
     state.latencyEwmaMs = state.latencyEwmaMs === null ? latencyMs : (state.latencyEwmaMs * 0.8) + (latencyMs * 0.2);
+    if (wasHalfOpen) logEvent('provider.breaker.closed', { provider: name });
   }
 
   #recordFailure(name, error, latencyMs) {
     const state = this.#health.get(name);
     if (!state) return;
-    const permanent = Boolean(error?.permanent) || permanentStatus(error?.status);
+    const rateLimited = Boolean(error?.rateLimited) || isRateLimitStatus(error?.status) || rateLimitMessage(error?.message);
+    const permanent = !rateLimited && (Boolean(error?.permanent) || permanentStatus(error?.status));
     state.failures += 1;
     state.lastFailureAt = Date.now();
     state.lastError = error instanceof Error ? error.message.slice(0, 256) : String(error).slice(0, 256);
     state.lastStatus = error?.status ?? null;
-    state.lastErrorClass = permanent ? 'permanent' : error?.retryable ? 'transient' : 'unknown';
+    state.lastErrorClass = rateLimited ? 'rate-limited' : permanent ? 'permanent' : error?.retryable ? 'transient' : 'unknown';
     state.latencyEwmaMs = state.latencyEwmaMs === null ? latencyMs : (state.latencyEwmaMs * 0.8) + (latencyMs * 0.2);
     state.halfOpen = false;
+    if (rateLimited) {
+      state.rateLimited += 1;
+      state.consecutiveFailures += 1;
+      state.openUntil = Date.now() + RATE_LIMIT_COOLDOWN_MS;
+      logEvent('provider.rate_limited', { provider: name, status: error?.status || 429, cooldownMs: RATE_LIMIT_COOLDOWN_MS });
+      logEvent('provider.breaker.open', { provider: name, reason: 'rate-limit', openUntil: state.openUntil });
+      return;
+    }
     if (permanent) {
       state.permanentFailures += 1;
       state.consecutiveFailures = 0;
@@ -256,7 +314,10 @@ export class ProviderRouter {
       return;
     }
     state.consecutiveFailures += 1;
-    if (state.consecutiveFailures >= BREAKER_THRESHOLD) state.openUntil = Date.now() + BREAKER_COOLDOWN_MS;
+    if (state.consecutiveFailures >= BREAKER_THRESHOLD) {
+      state.openUntil = Date.now() + BREAKER_COOLDOWN_MS;
+      logEvent('provider.breaker.open', { provider: name, reason: 'transient-failures', openUntil: state.openUntil });
+    }
   }
 
   #getCache(key) {
@@ -289,34 +350,18 @@ export class ProviderRouter {
     const messages = [...memoryMessages(request.memory), ...toAnthropicMessages(request.input)];
     const body = { model: p.model, max_tokens: Number(process.env.AI_ANTHROPIC_MAX_TOKENS || 2048), messages };
     const data = await fetchJson(p.endpoint, { method: 'POST', headers: { 'x-api-key': p.apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' }, body: JSON.stringify(body) }, 'anthropic');
-    const text = (data?.content || []).filter(item => item?.type === 'text').map(item => item.text).join('\n').trim();
-    if (!text) throw new AIProviderError('anthropic returned an empty response', { provider: 'anthropic', retryable: true });
+    const text = extractAnthropicText(data);
+    if (!text) throw new AIProviderError('Anthropic returned an empty response', { provider: 'anthropic', retryable: true });
     return { text, model: p.model };
   }
 
   async #genericChat(name, request) {
     const p = providerConfig(name);
-    const messages = [...memoryMessages(request.memory), ...toChatContent(request.input, p.supportsVision)];
-    const body = { model: p.model, messages, temperature: request.temperature ?? 0.2 };
-    const data = await fetchJson(p.endpoint, { method: 'POST', headers: { Authorization: `Bearer ${p.apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, name);
-    const text = data?.choices?.[0]?.message?.content || data?.output_text || '';
-    if (!String(text).trim()) throw new AIProviderError(`${name} returned an empty response`, { provider: name, retryable: true });
-    return { text: String(text).trim(), model: p.model };
+    const messages = [...memoryMessages(request.memory), ...toChatContent(request.input, Boolean(p?.supportsVision))];
+    const headers = { Authorization: `Bearer ${p.apiKey}`, 'Content-Type': 'application/json' };
+    const data = await fetchJson(p.endpoint, { method: 'POST', headers, body: JSON.stringify({ model: p.model, messages, temperature: request.temperature ?? 0.2 }) }, name);
+    const text = extractResponseText(data);
+    if (!text) throw new AIProviderError(`${name} returned an empty response`, { provider: name, retryable: true });
+    return { text, model: p.model };
   }
-
-  #local(prompt, failures) {
-    const reason = failures.at(-1)?.message || 'No AI provider is currently available.';
-    return `Andrew está en modo degradado. No fue posible completar la solicitud con los proveedores configurados. Motivo: ${reason}`;
-  }
-}
-
-function extractResponseText(data) {
-  if (typeof data?.output_text === 'string') return data.output_text.trim();
-  const chunks = [];
-  for (const item of data?.output || []) {
-    for (const content of item?.content || []) {
-      if (content?.type === 'output_text' && typeof content.text === 'string') chunks.push(content.text);
-    }
-  }
-  return chunks.join('\n').trim();
 }
