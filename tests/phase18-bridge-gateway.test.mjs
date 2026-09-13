@@ -13,6 +13,7 @@ vi.mock('../server/bridge/bridge-store.mjs', () => ({
     return true;
   }),
 }));
+vi.mock('../server/openai.mjs', () => ({ getAIProviderHealth: vi.fn(() => ({ providers: {} })) }));
 
 import { registerBridgeV3Routes } from '../server/routes/bridge-v3.mjs';
 
