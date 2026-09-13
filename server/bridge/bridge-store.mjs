@@ -71,14 +71,14 @@ export async function enqueueBridgeCommand({ userId, envelope }) {
   return envelope;
 }
 
+async function deleteExpired(userId) {
+  await getPool().query('DELETE FROM andrew_bridge_commands WHERE user_id = $1 AND expires_at <= NOW()', [userId]);
+}
+
 export async function listPendingBridgeCommands(userId) {
   await initializeBridgeStore();
   const cleanId = cleanUserId(userId);
-  const result = await getPool().query(
-    `DELETE FROM andrew_bridge_commands WHERE user_id = $1 AND expires_at <= NOW() RETURNING id`,
-    [cleanId],
-  );
-  void result;
+  await deleteExpired(cleanId);
   const rows = await getPool().query(
     `SELECT id, command, payload, EXTRACT(EPOCH FROM created_at) * 1000 AS created_at,
             EXTRACT(EPOCH FROM expires_at) * 1000 AS expires_at
@@ -94,6 +94,32 @@ export async function listPendingBridgeCommands(userId) {
     createdAt: Number(row.created_at),
     expiresAt: Number(row.expires_at),
   }));
+}
+
+export async function getBridgeSyncState(userId) {
+  await initializeBridgeStore();
+  const cleanId = cleanUserId(userId);
+  await deleteExpired(cleanId);
+  const rows = await getPool().query(
+    `SELECT id, command, payload, EXTRACT(EPOCH FROM created_at) * 1000 AS created_at,
+            EXTRACT(EPOCH FROM expires_at) * 1000 AS expires_at
+       FROM andrew_bridge_commands
+      WHERE user_id = $1 AND acknowledged_at IS NULL AND expires_at > NOW()
+      ORDER BY created_at ASC LIMIT $2`,
+    [cleanId, MAX_PENDING],
+  );
+  const commands = rows.rows.map((row) => ({
+    id: row.id,
+    command: row.command,
+    ...(row.payload === null ? {} : { payload: row.payload }),
+    createdAt: Number(row.created_at),
+    expiresAt: Number(row.expires_at),
+  }));
+  return {
+    serverTime: Date.now(),
+    cursor: commands.length ? commands[commands.length - 1].createdAt : Date.now(),
+    pending: commands,
+  };
 }
 
 export async function acknowledgeBridgeCommand({ userId, id, ok, error }) {
