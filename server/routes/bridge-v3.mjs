@@ -85,17 +85,20 @@ export async function registerBridgeV3Routes(app) {
     if (typeof body.id !== 'string' || body.id.length > 64 || typeof body.ok !== 'boolean' || typeof body.command !== 'string' || !ALLOWED_COMMANDS.has(body.command)) return reply.code(400).send({ ok: false, error: 'invalid_payload' });
     if (body.error !== undefined && (typeof body.error !== 'string' || !ACK_ERRORS.has(body.error))) return reply.code(400).send({ ok: false, error: 'invalid_payload' });
     let result; try { result = cleanResult(body.result); } catch (error) { return reply.code(400).send({ ok: false, error: error instanceof TypeError && error.message === 'result_too_large' ? 'result_too_large' : 'invalid_result' }); }
-    const acknowledged = await acknowledgeBridgeCommand({ userId: deviceId, id: body.id, ok: body.ok, error: body.error, result });
-    if (!acknowledged) return reply.code(404).send({ ok: false, error: 'command_not_pending' });
-    
+
+    // A successful runtime-parameter result is only acknowledged after the backend
+    // has actually applied and validated the change. This prevents a false ACK.
     if (body.command === 'set_runtime_parameter' && body.ok) {
       try {
-        await applyBridgeRuntimeCommand({ command: body.command, payload: result ?? {} });
+        const applied = await applyBridgeRuntimeCommand({ command: body.command, payload: result ?? {} });
+        result = cleanResult(applied);
       } catch (error) {
-        console.error(`[BridgeV3] Runtime command execution failed: ${error instanceof Error ? error.message : String(error)}`);
+        return reply.code(422).send({ ok: false, id: body.id, error: 'runtime_apply_failed', detail: error instanceof Error ? error.message : String(error) });
       }
     }
-    
+
+    const acknowledged = await acknowledgeBridgeCommand({ userId: deviceId, id: body.id, ok: body.ok, error: body.error, result });
+    if (!acknowledged) return reply.code(404).send({ ok: false, error: 'command_not_pending' });
     return { ok: true, id: body.id, acknowledgedAt: Date.now(), result: result ?? null };
   });
 }
