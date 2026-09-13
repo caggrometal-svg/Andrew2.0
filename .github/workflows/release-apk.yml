@@ -34,7 +34,7 @@ jobs:
 
       - name: Bridge security and foundation tests
         run: |
-          npx vitest run tests/phase25-bridge-security.test.mjs tests/phase25-remote-bridge-loop.test.ts
+          npx vitest run tests/phase25-bridge-security.test.mjs tests/phase25-remote-bridge-loop.test.ts tests/phase29-e2e-bridge.test.mjs
           npm run test:phase19
           npm run test:phase20
           npm run test:phase21
@@ -70,9 +70,17 @@ jobs:
         working-directory: android
         run: ./gradlew clean assembleDebug --no-daemon --stacktrace
 
+      - name: Generate APK checksum
+        run: |
+          apk=$(find android/app/build/outputs/apk/debug -type f -name '*.apk' | head -n 1)
+          test -n "$apk"
+          sha256sum "$apk" | tee android/app/build/outputs/apk/debug/andrew-latest.apk.sha256
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: Andrew2.0-debug-apk
-          path: android/app/build/outputs/apk/debug/*.apk
+          path: |
+            android/app/build/outputs/apk/debug/*.apk
+            android/app/build/outputs/apk/debug/andrew-latest.apk.sha256
           if-no-files-found: error
