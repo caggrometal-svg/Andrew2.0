@@ -17,10 +17,16 @@ let server;
 let providerServer;
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(`PHASE25_TIMEOUT:${label}`)), ms)),
+  ]);
+}
 async function waitReady(url, timeoutMs = 30000) {
   const end = Date.now() + timeoutMs;
   while (Date.now() < end) {
-    try { if ((await fetch(`${url}/health`)).status === 200) return; } catch {}
+    try { if ((await fetch(`${url}/health`, { signal: AbortSignal.timeout(2000) })).status === 200) return; } catch {}
     await sleep(250);
   }
   throw new Error('REAL_FASTIFY_START_TIMEOUT');
@@ -35,7 +41,14 @@ function sign(body, timestamp = Date.now(), nonce = crypto.randomUUID()) {
     'x-andrew-signature': crypto.sign(null, Buffer.from(canonical), privateKey).toString('base64url'),
   };
 }
-async function chat(body, headers) { return fetch(`${base}/api/chat`, { method: 'POST', headers, body }); }
+async function chat(body, headers) {
+  return withTimeout(fetch(`${base}/api/chat`, {
+    method: 'POST',
+    headers,
+    body,
+    signal: AbortSignal.timeout(10000),
+  }), 12000, 'chat');
+}
 
 before(async () => {
   providerServer = http.createServer((request, response) => {
@@ -56,10 +69,10 @@ before(async () => {
       }
     });
   });
-  await new Promise((resolve, reject) => {
+  await withTimeout(new Promise((resolve, reject) => {
     providerServer.once('error', reject);
     providerServer.listen(providerPort, '127.0.0.1', resolve);
-  });
+  }), 5000, 'provider-start');
 
   server = spawn(process.execPath, ['--import', 'tsx', 'server/server.mjs'], {
     cwd: process.cwd(),
@@ -77,15 +90,32 @@ before(async () => {
   });
   server.stdout.on('data', chunk => process.stdout.write(`[REAL-SERVER] ${chunk}`));
   server.stderr.on('data', chunk => process.stderr.write(`[REAL-SERVER] ${chunk}`));
+  server.once('error', error => { throw error; });
   await waitReady(base);
-  const response = await fetch(`${base}/api/v1/bridge/pairing`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ userId, publicKeyBase64, pairingCode }) });
+  const response = await withTimeout(fetch(`${base}/api/v1/bridge/pairing`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ userId, publicKeyBase64, pairingCode }),
+    signal: AbortSignal.timeout(5000),
+  }), 7000, 'pairing');
   assert.equal(response.status, 201, await response.text());
   console.log('[E2E TRACE] keypair -> real pairing route -> public key registered');
 });
 
 after(async () => {
-  if (server) { server.kill('SIGTERM'); await new Promise(resolve => server.once('exit', resolve)); }
-  if (providerServer) await new Promise(resolve => providerServer.close(resolve));
+  if (server) {
+    server.kill('SIGTERM');
+    if (!server.killed) server.kill('SIGKILL');
+    await withTimeout(new Promise(resolve => {
+      if (server.exitCode !== null) return resolve();
+      server.once('exit', resolve);
+    }), 5000, 'server-shutdown').catch(() => {
+      if (server && server.exitCode === null) server.kill('SIGKILL');
+    });
+  }
+  if (providerServer) {
+    await withTimeout(new Promise(resolve => providerServer.close(resolve)), 5000, 'provider-shutdown').catch(() => {});
+  }
 });
 
 test('E2E 1 missing headers', async () => {
