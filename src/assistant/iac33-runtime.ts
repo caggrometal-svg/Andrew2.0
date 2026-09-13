@@ -1,5 +1,5 @@
 import { authorize, requireAuthorization } from '../core/authorization';
-import type { Permission, PermissionState } from '../core/permissions';
+import { validatePermissionState, type Permission, type PermissionState } from '../core/permissions';
 import { LocalStorageProvider, type StorageProvider } from '../storage/storage-provider';
 
 export type Capability = Permission;
@@ -11,6 +11,8 @@ export interface PlannedAction { id: string; action: string; capability: Capabil
 const PROJECTS_KEY = 'iac33.projects.v1';
 const ACTIVITY_KEY = 'iac33.activity.v1';
 const MAX_ACTIVITY = 5000;
+const MAX_ACTION_ID = 200;
+const MAX_ACTION_TEXT = 500;
 
 class ProjectStore {
   constructor(private readonly storage: StorageProvider) {}
@@ -55,7 +57,8 @@ export class IAC33Runtime {
 
   authorizeAction(projectId: string, permissions: ReadonlyArray<PermissionState>, action: PlannedAction): boolean {
     if (!this.getProject(projectId)) throw new Error(`Project not found: ${projectId}`);
-    if (!action.id.trim() || !action.action.trim()) throw new Error('Invalid planned action');
+    validatePermissionState(permissions);
+    if (!isValidPlannedAction(action)) throw new Error('Invalid planned action');
     const decision = authorize(action.capability, permissions);
     const confirmationMissing = action.requiresConfirmation && action.confirmed !== true;
     const allowed = decision.allowed && !confirmationMissing;
@@ -72,7 +75,7 @@ export class IAC33Runtime {
     this.projectStore.save([...this.projects.values()]);
     this.activityStore.save(this.activities);
   }
-} 
+}
 
 function isProjectState(value: unknown): value is ProjectState {
   if (!value || typeof value !== 'object') return false;
@@ -87,10 +90,20 @@ function isProjectState(value: unknown): value is ProjectState {
 function isActivityRecord(value: unknown): value is ActivityRecord {
   if (!value || typeof value !== 'object') return false;
   const item = value as Partial<ActivityRecord>;
-  return typeof item.id === 'string' && item.id.trim().length > 0
+  return typeof item.id === 'string' && item.id.trim().length > 0 && item.id.length <= MAX_ACTION_ID
     && typeof item.timestamp === 'string' && !Number.isNaN(Date.parse(item.timestamp))
-    && typeof item.action === 'string' && item.action.trim().length > 0
+    && typeof item.action === 'string' && item.action.trim().length > 0 && item.action.length <= MAX_ACTION_TEXT
     && typeof item.capability === 'string'
     && typeof item.result === 'string' && ['success', 'denied', 'error'].includes(item.result)
-    && !!item.details && typeof item.details.projectId === 'string' && typeof item.details.reason === 'string';
+    && !!item.details && typeof item.details.projectId === 'string' && item.details.projectId.length <= 200
+    && typeof item.details.reason === 'string' && item.details.reason.length <= 500;
+}
+
+function isValidPlannedAction(action: PlannedAction): boolean {
+  return !!action
+    && typeof action.id === 'string' && action.id.trim().length > 0 && action.id.length <= MAX_ACTION_ID
+    && typeof action.action === 'string' && action.action.trim().length > 0 && action.action.length <= MAX_ACTION_TEXT
+    && typeof action.capability === 'string'
+    && typeof action.requiresConfirmation === 'boolean'
+    && (action.confirmed === undefined || typeof action.confirmed === 'boolean');
 }
