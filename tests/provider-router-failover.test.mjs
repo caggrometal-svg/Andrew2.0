@@ -30,7 +30,7 @@ beforeEach(() => {
 });
 
 describe('ProviderRouter failover hardening', () => {
-  it('fails over immediately on primary 429 without retrying the same provider', async () => {
+  it('opens primary on 429 and deterministically routes the next request to secondary', async () => {
     const calls = [];
     vi.stubGlobal('fetch', vi.fn(async (url) => {
       calls.push(url);
@@ -38,11 +38,18 @@ describe('ProviderRouter failover hardening', () => {
       return response(200, { choices: [{ message: { content: 'secondary response' } }] });
     }));
     const router = new ProviderRouter();
-    const result = await router.execute(request('failover-429'));
-    expect(result.provider).toBe('secondary');
-    expect(calls).toEqual([process.env.AI_PRIMARY_ENDPOINT, process.env.AI_SECONDARY_ENDPOINT]);
-    expect(calls.filter(url => url === process.env.AI_PRIMARY_ENDPOINT)).toHaveLength(1);
+
+    const first = await router.execute(request('trip-primary'));
+    expect(first.provider).toBe('secondary');
     expect(router.getHealth().providers.primary.state).toBe('open');
+
+    const primaryCallsBeforeFallback = calls.filter((url) => url === process.env.AI_PRIMARY_ENDPOINT).length;
+    const secondaryCallsBeforeFallback = calls.filter((url) => url === process.env.AI_SECONDARY_ENDPOINT).length;
+    const result = await router.execute(request('forced-open-fallback'));
+    expect(result.provider).toBe('secondary');
+    expect(router.getHealth().providers.primary.state).toBe('open');
+    expect(calls.filter((url) => url === process.env.AI_PRIMARY_ENDPOINT)).toHaveLength(primaryCallsBeforeFallback);
+    expect(calls.filter((url) => url === process.env.AI_SECONDARY_ENDPOINT)).toHaveLength(secondaryCallsBeforeFallback + 1);
   });
 
   it('preserves memory and history across provider switch', async () => {
@@ -78,7 +85,7 @@ describe('ProviderRouter failover hardening', () => {
     const result = await router.execute(request('cooldown-recovery'));
     expect(result.provider).toBe('primary');
     expect(router.getHealth().providers.primary.state).toBe('closed');
-    expect(calls.filter(url => url === process.env.AI_PRIMARY_ENDPOINT)).toHaveLength(2);
+    expect(calls.filter((url) => url === process.env.AI_PRIMARY_ENDPOINT)).toHaveLength(2);
     nowSpy.mockRestore();
   });
 
