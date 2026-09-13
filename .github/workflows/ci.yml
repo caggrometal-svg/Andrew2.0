@@ -2,13 +2,17 @@ name: Phase 4 Release Gate
 
 on:
   push:
-    branches: [main]
+    branches: [iac33-integration-next]
   pull_request:
-    branches: [main]
+    branches: [iac33-integration-next]
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   release-gate:
@@ -22,9 +26,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Typecheck
         run: npm run typecheck
