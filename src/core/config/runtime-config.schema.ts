@@ -14,16 +14,10 @@ export type RuntimeConfigInput = Omit<RuntimeConfig, 'version' | 'revision'> & {
   readonly revision?: number;
 };
 
-const LIMITS = Object.freeze({
-  timeoutMs: 300_000,
-  pollIntervalMs: 86_400_000,
-  modelLength: 256,
-});
+const LIMITS = Object.freeze({ timeoutMs: 300_000, pollIntervalMs: 86_400_000, modelLength: 256 });
 
 function assertFiniteInteger(name: string, value: unknown, max: number): asserts value is number {
-  if (typeof value !== 'number' || !Number.isFinite(value) || !Number.isInteger(value) || value < 0 || value > max) {
-    throw new TypeError(`invalid ${name}`);
-  }
+  if (typeof value !== 'number' || !Number.isFinite(value) || !Number.isInteger(value) || value < 0 || value > max) throw new TypeError(`invalid ${name}`);
 }
 
 function assertBoolean(name: string, value: unknown): asserts value is boolean {
@@ -39,25 +33,15 @@ function normalizeModel(value: unknown): string | undefined {
 }
 
 export function validateRuntimeConfig(input: RuntimeConfigInput): RuntimeConfig {
-  if (input.version !== undefined && input.version !== RUNTIME_CONFIG_VERSION) {
-    throw new TypeError('unsupported runtime config version');
-  }
+  if (input.version !== undefined && input.version !== RUNTIME_CONFIG_VERSION) throw new TypeError('unsupported runtime config version');
   const revision = input.revision ?? 0;
   assertFiniteInteger('revision', revision, Number.MAX_SAFE_INTEGER);
   assertBoolean('syncEnabled', input.syncEnabled);
   assertFiniteInteger('timeoutMs', input.timeoutMs, LIMITS.timeoutMs);
   assertFiniteInteger('pollIntervalMs', input.pollIntervalMs, LIMITS.pollIntervalMs);
-
-  const config: RuntimeConfig = Object.freeze({
-    version: RUNTIME_CONFIG_VERSION,
-    revision,
-    syncEnabled: input.syncEnabled,
-    timeoutMs: input.timeoutMs,
-    pollIntervalMs: input.pollIntervalMs,
-    ...(normalizeModel(input.model) === undefined ? {} : { model: normalizeModel(input.model) }),
-  });
-
-  return config;
+  const model = normalizeModel(input.model);
+  const base: RuntimeConfig = Object.freeze({ version: RUNTIME_CONFIG_VERSION, revision, syncEnabled: input.syncEnabled, timeoutMs: input.timeoutMs, pollIntervalMs: input.pollIntervalMs });
+  return Object.freeze(model === undefined ? base : { ...base, model });
 }
 
 export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = Object.freeze({
