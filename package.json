@@ -4,10 +4,7 @@
   "private": true,
   "description": "IAC33 - Intelligent analysis and probabilistic research platform",
   "type": "module",
-  "engines": {
-    "node": "^20.11.0",
-    "npm": "^10.2.0"
-  },
+  "engines": { "node": "^20.11.0", "npm": "^10.2.0" },
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
@@ -15,7 +12,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:regression-gate": "node scripts/vitest-regression-gate.mjs",
-    "test:phase25-e2e": "node --test tests/phase25-bridge-security-v2.test.mjs tests/phase25-http-real-e2e.test.mjs",
+    "test:phase25-e2e": "node --test tests/phase25-http-e2e.test.mjs tests/phase25-http-real-e2e.test.mjs",
     "test:memory": "vitest run tests/memory.integration.test.mjs",
     "test:learning": "vitest run tests/learning-control.test.mjs",
     "test:phase4": "vitest run tests/phase4-tool-router.test.ts",
@@ -55,6 +52,7 @@
     "pg": "8.16.3",
     "react": "18.3.1",
     "react-dom": "18.3.1",
+    "pg": "8.16.3",
     "tsx": "4.20.5"
   },
   "devDependencies": {
