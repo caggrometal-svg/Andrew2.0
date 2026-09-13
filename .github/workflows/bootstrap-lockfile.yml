@@ -27,7 +27,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: npm
+          cache: false
 
       - name: Generate lockfile only when absent
         shell: bash
