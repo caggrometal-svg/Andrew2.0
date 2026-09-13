@@ -5,10 +5,10 @@ import { AndroidBridgeV3Executor, type AndroidBridgeExecutionHooks } from './and
 /**
  * Phase 22: Capacitor-safe native boundary.
  *
- * The web layer never invokes arbitrary native methods. A native Capacitor plugin
- * can be injected through the four explicit hooks below when present. Until then,
- * commands remain no-ops with a successful protocol result, preserving the
- * allow-listed bridge contract without broad OS access.
+ * The web layer never invokes arbitrary native methods. A native bridge is
+ * injected through the four explicit hooks below when present. Runtime
+ * parameters cross the WebView boundary as key/value strings because the
+ * Android JavascriptInterface does not marshal arbitrary JavaScript objects.
  */
 export type CapacitorBridgePlugin = AndroidBridgeExecutionHooks;
 
@@ -26,7 +26,12 @@ export function createCapacitorBridgePluginFromGlobal(globalObject: unknown): Ca
   const hooks: CapacitorBridgePlugin = {};
   if (typeof plugin['openSettings'] === 'function') hooks.openSettings = () => (plugin['openSettings'] as () => void)();
   if (typeof plugin['setRuntimeParameter'] === 'function') {
-    hooks.setRuntimeParameter = (payload) => (plugin['setRuntimeParameter'] as (payload: Record<string, unknown>) => void)(payload);
+    hooks.setRuntimeParameter = (payload) => {
+      const key = typeof payload['key'] === 'string' ? payload['key'] : '';
+      const value = payload['value'];
+      if (!key || (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean')) return;
+      (plugin['setRuntimeParameter'] as (key: string, value: string) => void)(key, String(value));
+    };
   }
   if (typeof plugin['requestStatus'] === 'function') hooks.requestStatus = () => (plugin['requestStatus'] as () => void)();
   if (typeof plugin['syncNow'] === 'function') hooks.syncNow = () => (plugin['syncNow'] as () => void)();
