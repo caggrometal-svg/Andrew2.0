@@ -43,25 +43,63 @@ const BACKOFF_MS = 900;
 const VIDEO_CHUNK_BYTES = 2 * 1024 * 1024;
 const VIDEO_CHUNK_RETRIES = 4;
 const USER_ID_STORAGE_KEY = 'andrew:user-id';
+const USER_NAME_STORAGE_KEY = 'andrew:user-name';
+const CHAT_STORAGE_KEY = 'andrew:ui:chat:v2';
 const BACKEND_NETWORK_CAPABILITY = 'public-web' as const;
+const DEFAULT_BACKEND_URL = 'https://andrew2-api.onrender.com';
 
 const networkAdapter = new FetchNetworkAdapter({ fetchImpl: (input: NetworkRequestInput, init) => fetch(input, init) });
 
+function createFallbackId(prefix: string): string {
+  const cryptoApi = globalThis.crypto;
+  if (cryptoApi && typeof cryptoApi.randomUUID === 'function') return `${prefix}:${cryptoApi.randomUUID()}`;
+  return `${prefix}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 14)}`;
+}
+
 function getBackendUrl(): string {
-  const configured = (import.meta.env['VITE_ANDREW_BACKEND_URL'] || 'https://andrew2-api.onrender.com').trim();
-  return configured.replace(/\/$/, '');
+  const configured = String(import.meta.env['VITE_ANDREW_BACKEND_URL'] || DEFAULT_BACKEND_URL).trim();
+  if (!configured) return DEFAULT_BACKEND_URL;
+  try {
+    const parsed = new URL(configured);
+    if (parsed.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(parsed.hostname)) return DEFAULT_BACKEND_URL;
+    return parsed.toString().replace(/\/$/, '');
+  } catch {
+    return DEFAULT_BACKEND_URL;
+  }
 }
 
 function getAndrewUserId(): string {
   try {
     const existing = window.localStorage.getItem(USER_ID_STORAGE_KEY)?.trim();
     if (existing && /^[A-Za-z0-9._:-]{1,128}$/.test(existing)) return existing;
-    const generated = `user:${crypto.randomUUID()}`;
+    const generated = createFallbackId('user');
     window.localStorage.setItem(USER_ID_STORAGE_KEY, generated);
     return generated;
   } catch {
-    return `session:${crypto.randomUUID()}`;
+    return createFallbackId('session');
   }
+}
+
+function getLocalMemory(): string[] {
+  const memory: string[] = [];
+  try {
+    const userName = window.localStorage.getItem(USER_NAME_STORAGE_KEY)?.trim();
+    if (userName) memory.push(`Identidad del usuario: ${userName.slice(0, 80)}`);
+    const raw = window.localStorage.getItem(CHAT_STORAGE_KEY);
+    if (!raw) return memory;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return memory;
+    for (const item of parsed.slice(-12)) {
+      if (!item || typeof item !== 'object') continue;
+      const value = item as { role?: unknown; content?: unknown };
+      if ((value.role === 'user' || value.role === 'assistant') && typeof value.content === 'string') {
+        memory.push(`${value.role === 'user' ? 'Usuario' : 'Andrew'}: ${value.content.trim().slice(0, 1000)}`);
+      }
+    }
+  } catch {
+    // Local context is best-effort and must never block the network request.
+  }
+  return memory.slice(0, 20);
 }
 
 function sleep(ms: number): Promise<void> {
@@ -88,8 +126,8 @@ async function fetchWithRetry(input: NetworkRequestInput, init: RequestInit, tim
     else notify(listener, 'retrying', `Reintentando conexión (${attempt + 1}/${attempts + 1})`);
     try {
       const { response } = await networkAdapter.request({ capability: BACKEND_NETWORK_CAPABILITY, input, init, timeoutMs });
-      if (response.ok) notify(listener, 'connected');
       const retryableStatus = response.status === 408 || response.status === 429 || response.status >= 500;
+      if (response.ok) notify(listener, 'connected');
       if (!retryableStatus || attempt === attempts) return response;
       await sleep(BACKOFF_MS * (2 ** attempt));
     } catch (error) {
@@ -178,10 +216,17 @@ export async function uploadVideoInChunks(file: File, onProgress?: (percent: num
 }
 
 export async function sendAndrewMessage(request: AndrewChatRequest, timeoutMs = DEFAULT_TIMEOUT_MS, onNetworkStatus?: NetworkStatusListener): Promise<AndrewChatResponse> {
+  const message = request.message.trim();
+  if (!message) throw new Error('El mensaje no puede estar vacío.');
+  if (message.length > 12000) throw new Error('El mensaje supera el máximo de 12.000 caracteres.');
+  if (!request.conversationId.trim()) throw new Error('La conversación no tiene un identificador válido.');
+  const memory = [...getLocalMemory(), ...(request.memory || [])]
+    .filter(item => typeof item === 'string' && item.trim())
+    .slice(-20);
   const response = await fetchWithRetry(`${getBackendUrl()}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-Andrew-User-Id': getAndrewUserId() },
-    body: JSON.stringify({ message: request.message.trim(), conversationId: request.conversationId, memory: request.memory?.slice(0, 20), attachment: request.attachment }),
+    body: JSON.stringify({ message, conversationId: request.conversationId.trim(), memory, attachment: request.attachment }),
   }, Math.max(timeoutMs, 60000), onNetworkStatus);
   const data = await response.json().catch(() => ({})) as AndrewChatResponse | AndrewChatError;
   if (!response.ok || !data.ok) throw parseError(data, `Andrew backend HTTP ${response.status}`);
