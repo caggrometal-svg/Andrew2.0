@@ -11,9 +11,10 @@ const allowedLearning = [
 ];
 
 describe('core security invariants', () => {
-  it('fails closed for an unknown permission state', () => {
-    expect(isAllowed('memory.write', [])).toBe(false);
-    expect(authorize('memory.write', [])).toEqual({ allowed: false, permission: 'memory.write', reason: 'Permission denied: memory.write' });
+  it('fails closed when authorization state is omitted', () => {
+    expect(isAllowed('memory.write')).toBe(false);
+    expect(authorize('memory.write')).toEqual({ allowed: false, permission: 'memory.write', reason: 'Permission denied: memory.write' });
+    expect(() => requireAuthorization('memory.write')).toThrow('Permission denied: memory.write');
   });
 
   it('rejects duplicate permission entries', () => {
@@ -23,8 +24,15 @@ describe('core security invariants', () => {
     ])).toThrow('Duplicate permission');
   });
 
+  it('rejects unknown runtime permission values', () => {
+    expect(() => validatePermissionState([
+      { permission: 'unknown.capability' as never, granted: true, reason: 'test' },
+    ])).toThrow('Invalid permission state');
+  });
+
   it('rejects unauthorized memory mutation before storage changes', () => {
     expect(() => saveMemory('secret', [], [])).toThrow('Permission denied: memory.write');
+    expect(() => saveMemory('secret')).toThrow('Permission denied: memory.write');
     expect(getMemories()).toEqual([]);
   });
 
@@ -47,8 +55,9 @@ describe('core security invariants', () => {
     expect(updated.text).toBe('after');
   });
 
-  it('keeps the default permission contract valid', () => {
+  it('keeps the unified default permission contract valid', () => {
     expect(() => validatePermissionState(defaultPermissions)).not.toThrow();
     expect(() => requireAuthorization('memory.write', defaultPermissions)).not.toThrow();
+    expect(() => requireAuthorization('project.write', defaultPermissions)).toThrow('Permission denied: project.write');
   });
 });
