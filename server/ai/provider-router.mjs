@@ -143,6 +143,16 @@ function toAnthropicMessages(input) {
   });
 }
 
+function memoryMessages(memory) {
+  if (!Array.isArray(memory) || memory.length === 0) return [];
+  const entries = memory
+    .filter(value => typeof value === 'string' && value.trim())
+    .slice(0, 24)
+    .map(value => value.trim().slice(0, 1000));
+  if (!entries.length) return [];
+  return [{ role: 'system', content: `Memoria compartida de Andrew:\n${entries.join('\n')}` }];
+}
+
 export class ProviderRouter {
   #cache = new Map();
   #health = new Map(providerNames().map(name => [name, createHealthState()]));
@@ -276,10 +286,8 @@ export class ProviderRouter {
 
   async #anthropic(request) {
     const p = providerConfig('anthropic');
-    const messages = toAnthropicMessages(request.input);
-    const system = request.memory?.length ? `Memoria compartida:\n${request.memory.join('\n')}` : undefined;
+    const messages = [...memoryMessages(request.memory), ...toAnthropicMessages(request.input)];
     const body = { model: p.model, max_tokens: Number(process.env.AI_ANTHROPIC_MAX_TOKENS || 2048), messages };
-    if (system) body.system = system;
     const data = await fetchJson(p.endpoint, { method: 'POST', headers: { 'x-api-key': p.apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' }, body: JSON.stringify(body) }, 'anthropic');
     const text = (data?.content || []).filter(item => item?.type === 'text').map(item => item.text).join('\n').trim();
     if (!text) throw new AIProviderError('anthropic returned an empty response', { provider: 'anthropic', retryable: true });
@@ -288,7 +296,7 @@ export class ProviderRouter {
 
   async #genericChat(name, request) {
     const p = providerConfig(name);
-    const messages = toChatContent(request.input, p.supportsVision);
+    const messages = [...memoryMessages(request.memory), ...toChatContent(request.input, p.supportsVision)];
     const body = { model: p.model, messages, temperature: request.temperature ?? 0.2 };
     const data = await fetchJson(p.endpoint, { method: 'POST', headers: { Authorization: `Bearer ${p.apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, name);
     const text = data?.choices?.[0]?.message?.content || data?.output_text || '';
