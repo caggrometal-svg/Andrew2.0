@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
-const mockedConfig = {
+const mockedConfig = vi.hoisted(() => ({
   openaiApiKey: 'primary-key', openaiModel: 'primary-model', primaryEndpoint: 'https://primary.test/v1/responses',
   secondaryApiKey: 'secondary-key', secondaryEndpoint: 'https://secondary.test/v1/chat/completions', secondaryModel: 'secondary-model', secondarySupportsVision: true,
   routingPolicy: 'primary',
@@ -10,7 +10,7 @@ const mockedConfig = {
     groq: { apiKey: '', endpoint: '', model: '', protocol: 'chat', supportsVision: false },
     gemini: { apiKey: '', endpoint: '', model: '', protocol: 'chat', supportsVision: true },
   },
-};
+}));
 
 vi.mock('../server/config.mjs', () => ({ config: mockedConfig }));
 import { ProviderRouter } from '../server/ai/provider-router.mjs';
