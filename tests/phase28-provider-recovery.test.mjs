@@ -67,4 +67,20 @@ describe('Phase 28 provider recovery', () => {
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.input[0].content).toEqual(expect.arrayContaining([{ type: 'input_image', image_url: 'data:image/jpeg;base64,AAAA' }]));
   });
+
+  it('translates vision input to OpenAI-compatible image_url for generic chat providers', async () => {
+    mockedConfig.routingPolicy = 'secondary';
+    mockedConfig.secondarySupportsVision = true;
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(response({ choices: [{ message: { content: 'secondary vision' } }] }));
+    const router = new ProviderRouter();
+    const result = await router.execute({ prompt: 'vision-secondary', input: [{ role: 'user', content: [
+      { type: 'input_text', text: 'describe esta imagen' }, { type: 'input_image', image_url: 'data:image/jpeg;base64,AAAA' },
+    ] }], attachment: { type: 'image', name: 'vision.jpg' } });
+    expect(result.provider).toBe('secondary');
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.messages[0].content).toEqual([
+      { type: 'text', text: 'describe esta imagen' },
+      { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,AAAA' } },
+    ]);
+  });
 });
