@@ -8,7 +8,7 @@ import { ffmpegPath, ffprobePath } from './media/ffmpeg-runtime.mjs';
 import { registerChatRoutes } from './routes/chat.mjs';
 import { registerGatewayRoutes } from './routes/gateway.mjs';
 import { registerTelemetryRoutes } from './routes/telemetry.mjs';
-import { registerMemoryRoutes } from './routes/memory.mjs';
+import { registerMemoryRoutes, } from './routes/memory.mjs';
 import { registerBridgeV3Routes } from './routes/bridge-v3.mjs';
 import { registerDiagnosticsRoutes } from './routes/diagnostics.mjs';
 import { registerVideoRoutes } from './media/video.mjs';
@@ -18,6 +18,7 @@ import { initializeLearningStore, listAcceptedPatterns } from './learning/learni
 import { initializeSessionStore } from './session/session-store.mjs';
 import { snapshotMetrics } from './observability/runtime-metrics.mjs';
 import { registerCalculatorTool } from './tools/builtins/calculator.mjs';
+import { getAIProviderHealth } from './openai.mjs';
 
 const app = Fastify({ logger: true, bodyLimit: config.maxBodyBytes, trustProxy: true });
 app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer' }, (_request, body, done) => done(null, body));
@@ -81,7 +82,7 @@ app.get('/download/andrew-latest.apk', async (request, reply) => {
 });
 
 app.get('/', async () => ({ ok: true, service: 'andrew2-backend', health: '/health', apk: '/download/andrew-latest.apk' }));
-app.get('/health', async () => { const startedAt = process.hrtime.bigint(); const ffmpeg = inspectBinary(ffmpegPath); const ffprobe = inspectBinary(ffprobePath); const openaiConfigured = Boolean(config.openaiApiKey); const memoryConfigured = Boolean(process.env.DATABASE_URL?.trim()); const learningConfigured = memoryConfigured; const sessionConfigured = memoryConfigured; const system = { uptimeSeconds: Math.floor(process.uptime()), memory: process.memoryUsage(), node: process.version, pid: process.pid }; const latencyMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000; const healthy = openaiConfigured && memoryConfigured && ffmpeg.available && ffmpeg.executable && ffprobe.available && ffprobe.executable; return { ok: healthy, status: healthy ? 'healthy' : 'degraded', service: 'andrew2-backend', latencyMs: Number(latencyMs.toFixed(3)), checks: { server: 'ok', openaiApiKeyConfigured: openaiConfigured, memoryStoreConfigured: memoryConfigured, learningStoreConfigured: learningConfigured, sessionStoreConfigured: sessionConfigured, mediaRuntime: ffmpeg.available && ffmpeg.executable && ffprobe.available && ffprobe.executable ? 'ok' : 'degraded' }, environment: { port: config.port, host: config.host, corsOriginsConfigured: config.corsOrigins.length }, system, metrics: snapshotMetrics(), media: { video: 'chunked-temp', generation: 'openai-videos', ffmpeg, ffprobe } }; });
+app.get('/health', async () => { const startedAt = process.hrtime.bigint(); const ffmpeg = inspectBinary(ffmpegPath); const ffprobe = inspectBinary(ffprobePath); const openaiConfigured = Boolean(config.openaiApiKey); const memoryConfigured = Boolean(process.env.DATABASE_URL?.trim()); const learningConfigured = memoryConfigured; const sessionConfigured = memoryConfigured; const ai = getAIProviderHealth(); const aiConfigured = Object.values(ai.providers).some((provider) => provider.configured); const aiOperational = Object.values(ai.providers).some((provider) => provider.configured && provider.score > 0); const system = { uptimeSeconds: Math.floor(process.uptime()), memory: process.memoryUsage(), node: process.version, pid: process.pid }; const latencyMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000; const healthy = openaiConfigured && aiConfigured && aiOperational && memoryConfigured && ffmpeg.available && ffmpeg.executable && ffprobe.available && ffprobe.executable; return { ok: healthy, status: healthy ? 'healthy' : 'degraded', service: 'andrew2-backend', latencyMs: Number(latencyMs.toFixed(3)), checks: { server: 'ok', openaiApiKeyConfigured: openaiConfigured, aiProvidersConfigured: aiConfigured, aiProviderOperational: aiOperational, memoryStoreConfigured: memoryConfigured, learningStoreConfigured: learningConfigured, sessionStoreConfigured: sessionConfigured, mediaRuntime: ffmpeg.available && ffmpeg.executable && ffprobe.available && ffprobe.executable ? 'ok' : 'degraded' }, ai, environment: { port: config.port, host: config.host, corsOriginsConfigured: config.corsOrigins.length }, system, metrics: snapshotMetrics(), media: { video: 'chunked-temp', generation: 'openai-videos', ffmpeg, ffprobe } }; });
 await initializeMemoryStore();
 await initializeLearningStore();
 await initializeSessionStore();
