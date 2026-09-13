@@ -35,8 +35,42 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
+      - name: Preserve Bridge V3 native sources
+        shell: bash
+        run: |
+          if [ -d android/app/src/main/java/com/andrew/app/bridge/v3 ]; then
+            mkdir -p .bridge-native
+            cp -R android/app/src/main/java/com/andrew/app/bridge/v3 .bridge-native/bridge-v3
+            rm -rf android
+          fi
+
       - name: Add Android platform
         run: npx cap add android
+
+      - name: Restore Bridge V3 native sources
+        shell: bash
+        run: |
+          if [ -d .bridge-native/bridge-v3 ]; then
+            mkdir -p android/app/src/main/java/com/andrew/app/bridge/v3
+            cp -R .bridge-native/bridge-v3/. android/app/src/main/java/com/andrew/app/bridge/v3/
+          fi
+
+      - name: Add Bridge V3 Android dependencies
+        shell: bash
+        working-directory: android
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('app/build.gradle')
+          text = path.read_text()
+          dependency = '    implementation "androidx.work:work-runtime-ktx:2.11.2"\n'
+          if dependency not in text:
+              marker = 'dependencies {'
+              if marker not in text:
+                  raise SystemExit('dependencies block not found')
+              text = text.replace(marker, marker + '\n' + dependency, 1)
+              path.write_text(text)
+          PY
 
       - name: Sync Capacitor Android
         run: npx cap sync android
