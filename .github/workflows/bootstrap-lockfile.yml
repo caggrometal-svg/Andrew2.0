@@ -1,7 +1,14 @@
 name: Bootstrap dependency lockfile
 
 on:
+  push:
+    branches:
+      - iac33-integration-next
   workflow_dispatch:
+
+concurrency:
+  group: bootstrap-lockfile-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -20,21 +27,25 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: npm
 
-      - name: Generate lockfile
+      - name: Generate lockfile only when absent
         shell: bash
         run: |
           set -euo pipefail
+          if test -s package-lock.json; then
+            echo 'package-lock.json already exists; no bootstrap mutation required.'
+            exit 0
+          fi
           npm install --package-lock-only --ignore-scripts --no-audit --no-fund
           test -s package-lock.json
-          npm ci --ignore-scripts --no-audit --no-fund
 
-      - name: Commit lockfile
+      - name: Commit generated lockfile
         shell: bash
         run: |
           set -euo pipefail
           if git diff --quiet -- package-lock.json; then
-            echo 'package-lock.json already synchronized.'
+            echo 'package-lock.json unchanged.'
             exit 0
           fi
           git config user.name 'github-actions[bot]'
