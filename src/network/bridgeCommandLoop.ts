@@ -1,4 +1,5 @@
 import { getBridgeUserId } from './andrewBridge';
+import type { AndrewBridgeNative } from '../bridge/types';
 
 const DEFAULT_BACKEND = 'https://andrew2-api.onrender.com';
 const POLL_MS = 5000;
@@ -12,17 +13,6 @@ type BridgeCommand = {
 
 type CommandResponse = { ok: true; commands: BridgeCommand[] };
 type AckResponse = { ok: true; id: string; acknowledgedAt: number };
-
-type NativeBridge = {
-  openSettings?: () => void;
-  setRuntimeParameter?: (key: string, value: string) => void;
-  requestStatus?: () => string;
-  syncNow?: () => void;
-};
-
-declare global {
-  interface Window { AndrewBridge?: NativeBridge; }
-}
 
 function backendUrl(): string {
   return (import.meta.env['VITE_ANDREW_BACKEND_URL'] || DEFAULT_BACKEND).trim().replace(/\/$/, '');
@@ -44,28 +34,28 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 function execute(command: BridgeCommand): void {
-  const native = window.AndrewBridge;
+  const native: AndrewBridgeNative | undefined = window.AndrewBridge;
   if (!native) throw new Error('native_bridge_unavailable');
   switch (command.command) {
     case 'open_settings':
       if (!native.openSettings) throw new Error('native_operation_unavailable');
-      native.openSettings();
+      void native.openSettings();
       return;
     case 'set_runtime_parameter': {
       const key = command.payload?.key;
       const value = command.payload?.value;
       if (typeof key !== 'string' || (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean')) throw new Error('invalid_runtime_payload');
       if (!native.setRuntimeParameter) throw new Error('native_operation_unavailable');
-      native.setRuntimeParameter(key, String(value));
+      void native.setRuntimeParameter(key, String(value));
       return;
     }
     case 'request_status':
       if (!native.requestStatus) throw new Error('native_operation_unavailable');
-      native.requestStatus();
+      void native.requestStatus();
       return;
     case 'sync_now':
       if (!native.syncNow) throw new Error('native_operation_unavailable');
-      native.syncNow();
+      void native.syncNow();
       return;
   }
 }
