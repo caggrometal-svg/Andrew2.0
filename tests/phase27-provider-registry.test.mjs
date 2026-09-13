@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
-const mockedConfig = {
+const mockedConfig = vi.hoisted(() => ({
   openaiApiKey: 'primary-key',
   openaiModel: 'primary-model',
   primaryEndpoint: 'https://primary.test/v1/responses',
@@ -13,7 +13,7 @@ const mockedConfig = {
     anthropic: { apiKey: 'anthropic-key', endpoint: 'https://anthropic.test/v1/messages', model: 'claude-test', protocol: 'messages', supportsVision: true },
     deepseek: { apiKey: 'deepseek-key', endpoint: 'https://deepseek.test/chat/completions', model: 'deepseek-test', protocol: 'chat', supportsVision: false },
   },
-};
+}));
 
 vi.mock('../server/config.mjs', () => ({ config: mockedConfig }));
 import { ProviderRouter } from '../server/ai/provider-router.mjs';
