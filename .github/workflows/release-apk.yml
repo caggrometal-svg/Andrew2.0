@@ -59,6 +59,51 @@ jobs:
       - name: Install native Andrew bridge
         run: node scripts/install-android-bridge.mjs
 
+      - name: Prepare production signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$ANDROID_KEYSTORE_BASE64"
+          test -n "$KEY_ALIAS"
+          test -n "$STORE_PASSWORD"
+          test -n "$KEY_PASSWORD"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/release.keystore
+          chmod 600 android/release.keystore
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('android/app/build.gradle')
+          text = path.read_text()
+          if 'signingConfigs {' not in text:
+              marker = re.search(r'(?m)^\s*buildTypes\s*\{', text)
+              if not marker:
+                  raise SystemExit('buildTypes block not found in android/app/build.gradle')
+              block = '''    signingConfigs {
+          release {
+              storeFile file("../release.keystore")
+              storePassword System.getenv("STORE_PASSWORD")
+              keyAlias System.getenv("KEY_ALIAS")
+              keyPassword System.getenv("KEY_PASSWORD")
+          }
+      }
+
+'''
+              text = text[:marker.start()] + block + text[marker.start():]
+          release = re.search(r'(?m)^(\s*)release\s*\{', text)
+          if not release:
+              raise SystemExit('release buildType not found in android/app/build.gradle')
+          start = release.end()
+          if 'signingConfig signingConfigs.release' not in text[start:start + 800]:
+              indent = release.group(1) + '    '
+              text = text[:start] + f'\n{indent}signingConfig signingConfigs.release' + text[start:]
+          path.write_text(text)
+          PY
+
       - name: Verify Java and Gradle
         working-directory: android
         run: |
@@ -66,21 +111,31 @@ jobs:
           chmod +x gradlew
           ./gradlew --version
 
-      - name: Build debug APK
+      - name: Build signed release APK
         working-directory: android
-        run: ./gradlew clean assembleDebug --no-daemon --stacktrace
+        env:
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew clean assembleRelease --no-daemon --stacktrace
 
-      - name: Generate APK checksum
+      - name: Verify signed release APK
+        env:
+          APK_SIGNER: ${{ env.ANDROID_HOME }}/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -n 1)/apksigner
         run: |
-          apk=$(find android/app/build/outputs/apk/debug -type f -name '*.apk' | head -n 1)
-          test -n "$apk"
-          sha256sum "$apk" | tee android/app/build/outputs/apk/debug/andrew-latest.apk.sha256
+          set -euo pipefail
+          apk="android/app/build/outputs/apk/release/app-release.apk"
+          test -f "$apk"
+          "$APK_SIGNER" verify --verbose "$apk"
+          "$APK_SIGNER" verify --print-certs "$apk"
+          sha256sum "$apk" | tee android/app/build/outputs/apk/release/app-release.apk.sha256
+          echo "Verified release APK: $apk"
 
-      - name: Upload APK artifact
+      - name: Upload signed release APK
         uses: actions/upload-artifact@v4
         with:
-          name: Andrew2.0-debug-apk
+          name: Andrew2.0-release-apk
           path: |
-            android/app/build/outputs/apk/debug/*.apk
-            android/app/build/outputs/apk/debug/andrew-latest.apk.sha256
+            android/app/build/outputs/apk/release/app-release.apk
+            android/app/build/outputs/apk/release/app-release.apk.sha256
           if-no-files-found: error
