@@ -25,6 +25,16 @@ function cleanResult(value) {
   return value;
 }
 function bodyObject(request) { return request.body && typeof request.body === 'object' && !Array.isArray(request.body) ? request.body : {}; }
+function artifactManifest() {
+  const raw = process.env.BRIDGE_ARTIFACT_MANIFEST_JSON?.trim();
+  if (!raw) return null;
+  let value;
+  try { value = JSON.parse(raw); } catch { throw new Error('invalid bridge artifact manifest'); }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('invalid bridge artifact manifest');
+  const { revisionId, previousRevisionId, sha256Hex, signatureBase64, downloadUrl } = value;
+  if (!REVISION_PATTERN.test(String(revisionId || '')) || (previousRevisionId !== undefined && previousRevisionId !== null && !REVISION_PATTERN.test(String(previousRevisionId))) || !/^[a-f0-9]{64}$/i.test(String(sha256Hex || '')) || typeof signatureBase64 !== 'string' || !signatureBase64 || typeof downloadUrl !== 'string' || !/^https:\/\//i.test(downloadUrl)) throw new Error('invalid bridge artifact manifest');
+  return { revisionId, previousRevisionId: previousRevisionId || null, sha256Hex: sha256Hex.toLowerCase(), signatureBase64, downloadUrl };
+}
 
 export async function registerBridgeV3Routes(app) {
   await initializeBridgeStore();
@@ -39,8 +49,10 @@ export async function registerBridgeV3Routes(app) {
   });
   app.get('/api/v1/bridge/v3/sync', async (request, reply) => {
     const deviceId = authenticate(request, reply); if (!deviceId) return;
+    let artifact;
+    try { artifact = artifactManifest(); } catch { return reply.code(503).send({ ok: false, error: 'artifact_manifest_unavailable' }); }
     const state = await getBridgeSyncState(deviceId);
-    return { ok: true, deviceId, writeEnabled: writeEnabled(), ttlMs: TTL_MS, ai: getAIProviderHealth(), ...state };
+    return { ok: true, deviceId, writeEnabled: writeEnabled(), ttlMs: TTL_MS, ai: getAIProviderHealth(), artifact, ...state };
   });
   app.post('/api/v1/bridge/v3/command', async (request, reply) => {
     const deviceId = authenticate(request, reply); if (!deviceId) return;
@@ -56,7 +68,7 @@ export async function registerBridgeV3Routes(app) {
     const body = bodyObject(request);
     const id = typeof body.id === 'string' && body.id.length <= 64 ? body.id : null;
     const revisionId = typeof body.revisionId === 'string' && REVISION_PATTERN.test(body.revisionId) ? body.revisionId : null;
-    if (!id && !revisionId || typeof body.ok !== 'boolean') return reply.code(400).send({ ok: false, error: 'invalid_payload' });
+    if ((!id && !revisionId) || typeof body.ok !== 'boolean') return reply.code(400).send({ ok: false, error: 'invalid_payload' });
     if (body.error !== undefined && (typeof body.error !== 'string' || !ACK_ERRORS.has(body.error))) return reply.code(400).send({ ok: false, error: 'invalid_payload' });
     let result;
     try { result = cleanResult(body.result); } catch (error) { return reply.code(400).send({ ok: false, error: error instanceof TypeError && error.message === 'result_too_large' ? 'result_too_large' : 'invalid_result' }); }
