@@ -8,17 +8,23 @@ const TIMEOUT_MS = Number.parseInt(process.env.SMOKE_TIMEOUT_MS || '45000', 10);
 const RETRIES = Number.parseInt(process.env.SMOKE_RETRIES || '12', 10);
 const RETRY_DELAY_MS = Number.parseInt(process.env.SMOKE_RETRY_DELAY_MS || '5000', 10);
 
+function failGate(gate, message) {
+  console.error(`GATE=${gate}`);
+  console.error(`STATUS=FAIL`);
+  throw new Error(message);
+}
+
 if (!PAIRING_CODE) {
-  throw new Error('ANDREW_BRIDGE_PAIRING_CODE or ANDREW_BRIDGE_SECRET is required for production smoke authentication.');
+  failGate('CI_CONFIG', 'ANDREW_BRIDGE_PAIRING_CODE or ANDREW_BRIDGE_SECRET is missing from the GitHub Actions environment.');
 }
 if (!Number.isSafeInteger(TIMEOUT_MS) || TIMEOUT_MS <= 0) {
-  throw new Error('SMOKE_TIMEOUT_MS must be a positive integer.');
+  failGate('SMOKE_CONFIG', 'SMOKE_TIMEOUT_MS must be a positive integer.');
 }
 if (!Number.isSafeInteger(RETRIES) || RETRIES <= 0) {
-  throw new Error('SMOKE_RETRIES must be a positive integer.');
+  failGate('SMOKE_CONFIG', 'SMOKE_RETRIES must be a positive integer.');
 }
 if (!Number.isSafeInteger(RETRY_DELAY_MS) || RETRY_DELAY_MS < 0) {
-  throw new Error('SMOKE_RETRY_DELAY_MS must be a non-negative integer.');
+  failGate('SMOKE_CONFIG', 'SMOKE_RETRY_DELAY_MS must be a non-negative integer.');
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -78,15 +84,24 @@ const pairingHeaders = {
   ...(ALLOWED_ORIGIN ? { Origin: ALLOWED_ORIGIN } : {}),
 };
 
-const pairing = await requestJson(`${BASE_URL}/api/v1/bridge/pairing`, {
-  method: 'POST',
-  headers: pairingHeaders,
-  body: pairingBody,
-}, 'bridge pairing');
+let pairing;
+try {
+  pairing = await requestJson(`${BASE_URL}/api/v1/bridge/pairing`, {
+    method: 'POST',
+    headers: pairingHeaders,
+    body: pairingBody,
+  }, 'bridge pairing');
+} catch (error) {
+  failGate('RENDER_PAIRING', error instanceof Error ? error.message : String(error));
+}
 
 if (pairing.response.status !== 201 || pairing.body?.ok !== true || pairing.body?.registered !== true) {
-  throw new Error(`bridge pairing failed: HTTP ${pairing.response.status} ${JSON.stringify(pairing.body)}`);
+  failGate('RENDER_PAIRING', `bridge pairing failed: HTTP ${pairing.response.status} ${JSON.stringify(pairing.body)}`);
 }
+console.log('GATE=CI_CONFIG');
+console.log('STATUS=PASS');
+console.log('GATE=RENDER_PAIRING');
+console.log('STATUS=PASS');
 
 const chatBody = JSON.stringify({ message, conversationId });
 const headers = securityHeaders({ userId, body: chatBody });
@@ -105,6 +120,8 @@ for (let attempt = 1; attempt <= RETRIES; attempt += 1) {
     console.log(JSON.stringify(body));
 
     if (response.status === 200 && body?.ok === true && typeof body.reply === 'string' && body.reply.length > 0 && typeof body.responseId === 'string' && body.responseId.length > 0) {
+      console.log('GATE=PRODUCTION_CHAT');
+      console.log('STATUS=PASS');
       console.log(`PRODUCTION_CHAT_SMOKE=GREEN provider=${String(body.provider || 'unknown')} responseId=${body.responseId}`);
       process.exit(0);
     }
@@ -118,4 +135,4 @@ for (let attempt = 1; attempt <= RETRIES; attempt += 1) {
   if (attempt < RETRIES) await sleep(RETRY_DELAY_MS);
 }
 
-throw new Error(`PRODUCTION_CHAT_SMOKE_FAILED: ${lastFailure?.message || 'unknown failure'}`);
+failGate('PRODUCTION_CHAT', `PRODUCTION_CHAT_SMOKE_FAILED: ${lastFailure?.message || 'unknown failure'}`);
