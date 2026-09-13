@@ -49,16 +49,6 @@ async function readJson(req) {
   catch { throw Object.assign(new Error('invalid_json'), { statusCode: 400 }); }
 }
 
-function bridgeDeviceId(req, requestUrl) {
-  const result = verifyBridgeDeviceAttestation({
-    deviceId: req.headers['x-device-id'],
-    timestamp: req.headers['x-timestamp'],
-    signature: req.headers['x-signature'],
-    url: requestUrl,
-  });
-  return result.ok ? result.deviceId : null;
-}
-
 function bridgeAuthFailure(req, requestUrl) {
   return verifyBridgeDeviceAttestation({
     deviceId: req.headers['x-device-id'],
@@ -68,7 +58,7 @@ function bridgeAuthFailure(req, requestUrl) {
   });
 }
 
-function bridgeWriteEnabled() { return /^(1|true|yes)$/i.test(process.env.ANDREW_BRIDGE_ALLOW_WRITE || ''); }
+function bridgeWriteEnabled() { return /^(1|true|yes)$/i.test(process.env.BRIDGE_V3_ALLOW_WRITE || process.env.ANDREW_BRIDGE_ALLOW_WRITE || ''); }
 function bridgePolicy() { return process.env.ANDREW_ROUTING_POLICY?.trim() || 'balanced'; }
 
 function bridgeArtifactManifest() {
@@ -187,4 +177,5 @@ const server = http.createServer((req, res) => {
   });
 });
 
+initializeBridgeStore().catch(error => console.error('[Andrew2] bridge store initialization failed', error));
 server.listen(PORT, HOST, () => console.log(`[Andrew2] backend listening on ${HOST}:${PORT}`));
