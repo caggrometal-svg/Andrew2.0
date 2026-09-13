@@ -1,22 +1,26 @@
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import http from 'node:http';
 import crypto from 'node:crypto';
 import { canonicalBridgeSignature } from '../server/bridge/bridge-auth.mjs';
 
 const port = Number(process.env.PHASE25_E2E_PORT || 18787);
+const providerPort = Number(process.env.PHASE25_PROVIDER_PORT || 18788);
 const base = `http://127.0.0.1:${port}`;
+const providerBase = `http://127.0.0.1:${providerPort}`;
 const userId = `phase25-e2e-${process.pid}`;
 const pairingCode = crypto.randomBytes(24).toString('base64url');
 const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
 const publicKeyBase64 = publicKey.export({ type: 'spki', format: 'der' }).toString('base64');
 let server;
+let providerServer;
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-async function waitReady() {
-  const end = Date.now() + 30000;
+async function waitReady(url, timeoutMs = 30000) {
+  const end = Date.now() + timeoutMs;
   while (Date.now() < end) {
-    try { if ((await fetch(`${base}/health`)).status === 200) return; } catch {}
+    try { if ((await fetch(`${url}/health`)).status === 200) return; } catch {}
     await sleep(250);
   }
   throw new Error('REAL_FASTIFY_START_TIMEOUT');
@@ -34,20 +38,55 @@ function sign(body, timestamp = Date.now(), nonce = crypto.randomUUID()) {
 async function chat(body, headers) { return fetch(`${base}/api/chat`, { method: 'POST', headers, body }); }
 
 before(async () => {
+  providerServer = http.createServer((request, response) => {
+    let body = '';
+    request.setEncoding('utf8');
+    request.on('data', chunk => { body += chunk; });
+    request.on('end', () => {
+      try {
+        assert.equal(request.method, 'POST');
+        assert.equal(request.url, '/v1/responses');
+        const payload = JSON.parse(body || '{}');
+        assert.ok(Array.isArray(payload.input));
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.end(JSON.stringify({ output_text: 'phase25-provider-e2e-ok' }));
+      } catch (error) {
+        response.writeHead(500, { 'content-type': 'application/json' });
+        response.end(JSON.stringify({ error: { message: error.message } }));
+      }
+    });
+  });
+  await new Promise((resolve, reject) => {
+    providerServer.once('error', reject);
+    providerServer.listen(providerPort, '127.0.0.1', resolve);
+  });
+
   server = spawn(process.execPath, ['--import', 'tsx', 'server/server.mjs'], {
     cwd: process.cwd(),
-    env: { ...process.env, PORT: String(port), HOST: '127.0.0.1', ANDREW_BRIDGE_PAIRING_CODE: pairingCode },
+    env: {
+      ...process.env,
+      OPENAI_API_KEY: 'phase25-e2e-test-key',
+      OPENAI_MODEL: 'gpt-5.6-luna',
+      AI_PRIMARY_ENDPOINT: `${providerBase}/v1/responses`,
+      AI_ROUTING_POLICY: 'primary',
+      PORT: String(port),
+      HOST: '127.0.0.1',
+      ANDREW_BRIDGE_PAIRING_CODE: pairingCode,
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   server.stdout.on('data', chunk => process.stdout.write(`[REAL-SERVER] ${chunk}`));
   server.stderr.on('data', chunk => process.stderr.write(`[REAL-SERVER] ${chunk}`));
-  await waitReady();
+  await waitReady(base);
   const response = await fetch(`${base}/api/v1/bridge/pairing`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ userId, publicKeyBase64, pairingCode }) });
   assert.equal(response.status, 201, await response.text());
   console.log('[E2E TRACE] keypair -> real pairing route -> public key registered');
 });
 
-after(async () => { if (server) { server.kill('SIGTERM'); await new Promise(resolve => server.once('exit', resolve)); } });
+after(async () => {
+  if (server) { server.kill('SIGTERM'); await new Promise(resolve => server.once('exit', resolve)); }
+  if (providerServer) await new Promise(resolve => providerServer.close(resolve));
+});
 
 test('E2E 1 missing headers', async () => {
   const body = JSON.stringify({ message: 'phase25-e2e-1', conversationId: 'phase25-e2e-1' });
@@ -85,5 +124,7 @@ test('E2E 5 valid signature and paired key', async () => {
   const body = JSON.stringify({ message: 'phase25-e2e-5', conversationId: 'phase25-e2e-5' });
   const response = await chat(body, sign(body)); const data = await response.json();
   assert.equal(response.status, 200, JSON.stringify(data)); assert.equal(data.ok, true); assert.equal(typeof data.reply, 'string');
-  console.log(`[E2E TRACE] real /api/chat -> real ProviderRouter -> 200 provider=${data.provider}`);
+  assert.equal(data.provider, 'primary');
+  assert.equal(data.reply, 'phase25-provider-e2e-ok');
+  console.log(`[E2E TRACE] real /api/chat -> real ProviderRouter -> deterministic primary provider -> 200 provider=${data.provider}`);
 });
