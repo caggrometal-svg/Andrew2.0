@@ -5,6 +5,7 @@ import { getRuntimeConfig } from './runtime-config.mjs';
 import { acknowledgeBridgeCommand, getBridgeSyncState, initializeBridgeStore, listPendingBridgeCommands } from './bridge/bridge-store.mjs';
 import { queueBridgeAction } from './bridge/bridge-controller.mjs';
 import { verifyBridgeDeviceAttestation } from './auth/bridge-v3-device.mjs';
+import { controlPlaneRoute } from './control-plane.mjs';
 
 const PORT = Number(process.env.PORT || 10000);
 const HOST = '0.0.0.0';
@@ -22,7 +23,7 @@ const responseHeaders = {
   'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
   'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
   'Access-Control-Allow-Methods': 'GET,POST,PUT,OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Accept, X-Andrew-User-Id, X-Device-Id, X-Timestamp, X-Signature, X-Chunk-Start, X-Chunk-End, X-Upload-Size',
+  'Access-Control-Allow-Headers': 'Content-Type, Accept, Authorization, X-Andrew-User-Id, X-Device-Id, X-Timestamp, X-Signature, X-Chunk-Start, X-Chunk-End, X-Upload-Size',
   'Access-Control-Max-Age': '600',
 };
 
@@ -158,8 +159,9 @@ async function handler(req, res) {
   applyHeaders(res);
   if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+  if (await controlPlaneRoute(req, res, url, { readJson, send })) return;
   if (await bridgeRoute(req, res, url)) return;
-  if (req.method === 'GET' && url.pathname === '/health') return send(res, 200, { ok: true, status: 'ready', service: 'andrew2-backend', model: MODEL, openaiConfigured: Boolean(OPENAI_API_KEY), bridgeV3: true });
+  if (req.method === 'GET' && url.pathname === '/health') return send(res, 200, { ok: true, status: 'ready', service: 'andrew2-backend', model: MODEL, openaiConfigured: Boolean(OPENAI_API_KEY), bridgeV3: true, controlPlane: Boolean(process.env.ANDREW_CONTROL_PLANE_TOKEN) });
   if (req.method === 'GET' && url.pathname === '/api/runtime-config') return send(res, 200, getRuntimeConfig());
   if (req.method === 'POST' && url.pathname === '/api/chat') {
     try { const result = await chat(await readJson(req)); return send(res, result.status, result.body); }
