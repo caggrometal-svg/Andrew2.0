@@ -125,12 +125,7 @@ export async function registerChatRoutes(app) {
       const persistentMemory = await acceptedMemory(userId);
       const memory = [...persistentMemory, ...clientMemory].slice(0, 20);
       const history = cleanHistory(request.body.history);
-      const result = await createResponse({
-        message: userText,
-        memory,
-        history,
-        attachment: multimodalAttachment,
-      });
+      const result = await createResponse({ message: userText, memory, history, attachment: multimodalAttachment });
 
       const plannedAction = planBridgeAction(userText);
       const bridge = plannedAction
@@ -147,6 +142,8 @@ export async function registerChatRoutes(app) {
         model: result.model,
         provider: result.provider,
         latencyMs: result.latencyMs,
+        bridgeProtocol: result.bridgeProtocol,
+        modelMetadata: result.modelMetadata,
         bridge: {
           queued: bridge.queued,
           ...(plannedAction ? { requested: plannedAction.command } : {}),
