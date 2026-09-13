@@ -26,7 +26,8 @@ describe('Phase 19 Android Bridge persistence contract', () => {
     expect(route).toContain("/api/v1/bridge/v3/commands");
     expect(route).toContain("/api/v1/bridge/v3/ack");
     expect(route).toContain("command_not_pending");
-    expect(route).toContain("writeEnabled: false");
+    expect(route).toContain('function writeEnabled');
+    expect(route).toContain('ANDREW_BRIDGE_ALLOW_WRITE');
     expect(route).not.toContain("execute_shell");
   });
 });
