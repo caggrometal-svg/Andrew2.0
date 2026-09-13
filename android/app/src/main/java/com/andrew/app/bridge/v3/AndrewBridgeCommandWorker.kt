@@ -1,6 +1,8 @@
 package com.andrew.app.bridge.v3
 
 import android.content.Context
+import android.content.Intent
+import android.provider.Settings
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
@@ -9,6 +11,7 @@ import androidx.work.PeriodicWorkRequest
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -59,22 +62,35 @@ class AndrewBridgeCommandWorker(context: Context, params: WorkerParameters) : Co
                     val revision = root.resolve("active_revision").takeIf { it.isFile }?.readText()?.trim().orEmpty()
                     ack(id, true, JSONObject().put("activeRevision", revision).put("sandboxActive", root.resolve("active").isDirectory))
                 }
-                "open_settings" -> ack(id, true, JSONObject().put("accepted", true))
+                "open_settings" -> {
+                    val intent = Intent(Settings.ACTION_SETTINGS).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    applicationContext.startActivity(intent)
+                    ack(id, true, JSONObject().put("opened", true).put("action", Settings.ACTION_SETTINGS))
+                }
                 else -> ack(id, false, null, "unsupported")
             }
         } catch (_: Throwable) {
-            ack(id, false, null, "invalid_payload")
+            ack(id, false, null, "execution_failed")
         }
     }
 
-    private fun ack(id: String, ok: Boolean, result: JSONObject?, error: String? = null) {
+    private fun ack(id: String, ok: Boolean, result: JSONObject?, error: String? = null): Boolean {
         val body = JSONObject().apply {
             put("id", id)
             put("ok", ok)
             if (result != null) put("result", result)
             if (error != null) put("error", error)
         }.toString()
-        request("POST", ACK_PATH, body)
+        repeat(ACK_ATTEMPTS) { attempt ->
+            val response = runCatching { request("POST", ACK_PATH, body) }.getOrNull()
+            if (response != null && response.code in 200..299) return true
+            if (attempt + 1 < ACK_ATTEMPTS) {
+                Thread.sleep(ACK_BASE_DELAY_MS shl attempt)
+            }
+        }
+        return false
     }
 
     private fun request(method: String, path: String, body: String?): HttpResponse {
@@ -107,6 +123,8 @@ class AndrewBridgeCommandWorker(context: Context, params: WorkerParameters) : Co
         private const val ACK_PATH = "/api/v1/bridge/v3/ack"
         private const val SYNC_WORK = "andrew-bridge-v3-sync"
         private const val COMMAND_WORK = "andrew-bridge-v3-commands"
+        private const val ACK_ATTEMPTS = 4
+        private const val ACK_BASE_DELAY_MS = 1_000L
 
         @JvmStatic
         fun enqueueNow(context: Context) {
