@@ -39,23 +39,31 @@ class AndrewBridgeCommandWorker(context: Context, params: WorkerParameters) : Co
         val id = command.optString("id", "")
         val name = command.optString("command", "")
         if (id.isBlank()) return
-        when (name) {
-            "sync_now" -> {
-                val request = OneTimeWorkRequest.Builder(AndrewSyncWorker::class.java).build()
-                WorkManager.getInstance(applicationContext).enqueueUniqueWork(SYNC_WORK, ExistingWorkPolicy.REPLACE, request)
-                ack(id, true, JSONObject().put("scheduled", true))
+        try {
+            when (name) {
+                "sync_now" -> {
+                    val request = OneTimeWorkRequest.Builder(AndrewSyncWorker::class.java).build()
+                    WorkManager.getInstance(applicationContext).enqueueUniqueWork(SYNC_WORK, ExistingWorkPolicy.REPLACE, request)
+                    ack(id, true, JSONObject().put("scheduled", true))
+                }
+                "set_runtime_parameter" -> {
+                    val payload = command.optJSONObject("payload") ?: throw IllegalArgumentException("runtime payload missing")
+                    val key = payload.optString("key", "").trim()
+                    if (key.isBlank()) throw IllegalArgumentException("runtime key missing")
+                    val value = if (payload.has("value") && !payload.isNull("value")) payload.get("value") else null
+                    LocalRuntimeConfig.setParameter(applicationContext, key, value)
+                    ack(id, true, JSONObject().put("applied", true).put("key", key))
+                }
+                "request_status" -> {
+                    val root = applicationContext.filesDir.resolve("andrew_web_sandbox")
+                    val revision = root.resolve("active_revision").takeIf { it.isFile }?.readText()?.trim().orEmpty()
+                    ack(id, true, JSONObject().put("activeRevision", revision).put("sandboxActive", root.resolve("active").isDirectory))
+                }
+                "open_settings" -> ack(id, true, JSONObject().put("accepted", true))
+                else -> ack(id, false, null, "unsupported")
             }
-            "set_runtime_parameter" -> {
-                val payload = command.optJSONObject("payload") ?: JSONObject()
-                ack(id, true, payload)
-            }
-            "request_status" -> {
-                val root = applicationContext.filesDir.resolve("andrew_web_sandbox")
-                val revision = root.resolve("active_revision").takeIf { it.isFile }?.readText()?.trim().orEmpty()
-                ack(id, true, JSONObject().put("activeRevision", revision).put("sandboxActive", root.resolve("active").isDirectory))
-            }
-            "open_settings" -> ack(id, true, JSONObject().put("accepted", true))
-            else -> ack(id, false, null, "unsupported")
+        } catch (_: Throwable) {
+            ack(id, false, null, "invalid_payload")
         }
     }
 
