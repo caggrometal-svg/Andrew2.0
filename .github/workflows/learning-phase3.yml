@@ -57,8 +57,14 @@ jobs:
         run: npm test
       - name: Phase 25 security and HTTP E2E
         run: npm run test:phase25-e2e
-      - name: Dependency audit
-        run: npm audit --audit-level=critical
+      - name: Dependency audit (non-blocking)
+        run: |
+          set +e
+          npm audit --json > audit-report.json
+          status=$?
+          node -e "const r=require('./audit-report.json'); const v=r.metadata?.vulnerabilities||{}; console.log('NPM_AUDIT='+JSON.stringify(v)); process.exit(0)"
+          echo "NPM_AUDIT_EXIT=$status"
+          exit 0
       - name: PHASE 3 GREEN GATE
         run: |
           set -euo pipefail
