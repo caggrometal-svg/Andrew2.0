@@ -4,6 +4,8 @@ import { config } from '../config.mjs';
 const DEFAULT_TIMEOUT_MS = 60_000;
 const CACHE_TTL_MS = 15 * 60 * 1000;
 const MAX_CACHE_ENTRIES = 256;
+const MAX_PROVIDER_ATTEMPTS = 3;
+const RETRY_BASE_MS = 900;
 
 export class AIProviderError extends Error {
   constructor(message, { provider, status = null, retryable = false, cause } = {}) {
@@ -20,24 +22,41 @@ function retryableStatus(status) { return status === 408 || status === 409 || st
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
 async function fetchJson(url, options, provider, timeoutMs = DEFAULT_TIMEOUT_MS) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(url, { ...options, signal: controller.signal });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new AIProviderError(data?.error?.message || `${provider} HTTP ${response.status}`, { provider, status: response.status, retryable: retryableStatus(response.status) });
-    return data;
-  } catch (error) {
-    if (error instanceof AIProviderError) throw error;
-    throw new AIProviderError(error?.name === 'AbortError' ? `${provider} timeout` : `${provider} network failure`, { provider, retryable: true, cause: error });
-  } finally { clearTimeout(timer); }
+  let lastError;
+  for (let attempt = 1; attempt <= MAX_PROVIDER_ATTEMPTS; attempt += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(url, { ...options, signal: controller.signal });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok) return data;
+      const error = new AIProviderError(data?.error?.message || `${provider} HTTP ${response.status}`, { provider, status: response.status, retryable: retryableStatus(response.status) });
+      if (!error.retryable || attempt === MAX_PROVIDER_ATTEMPTS) throw error;
+      lastError = error;
+      const retryAfter = Number(response.headers.get('retry-after'));
+      await sleep(Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter * 1000, 10_000) : RETRY_BASE_MS * (2 ** (attempt - 1)));
+    } catch (error) {
+      lastError = error;
+      if (error instanceof AIProviderError && (!error.retryable || attempt === MAX_PROVIDER_ATTEMPTS)) throw error;
+      if (attempt === MAX_PROVIDER_ATTEMPTS) throw error;
+      await sleep(RETRY_BASE_MS * (2 ** (attempt - 1)));
+    } finally { clearTimeout(timer); }
+  }
+  throw lastError || new AIProviderError(`${provider} request failed`, { provider, retryable: true });
 }
 
 export class ProviderRouter {
   #cache = new Map();
 
   async execute(request) {
-    const key = hash({ prompt: request.prompt, history: request.history || [], temperature: request.temperature ?? null, attachment: request.attachment || null });
+    const key = hash({
+      prompt: request.prompt,
+      history: request.history || [],
+      input: request.input || [],
+      memory: request.memory || [],
+      temperature: request.temperature ?? null,
+      attachment: request.attachment || null,
+    });
     const cached = this.#getCache(key);
     if (cached) return { ...cached, provider: 'cache', latencyMs: 0 };
 
@@ -76,7 +95,7 @@ export class ProviderRouter {
   }
 
   async #primary(request) {
-    const data = await fetchJson('https://api.openai.com/v1/responses', {
+    const data = await fetchJson(config.primaryEndpoint, {
       method: 'POST', headers: { Authorization: `Bearer ${config.openaiApiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: config.openaiModel, input: request.input, store: false }),
     }, 'primary');
