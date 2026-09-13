@@ -2,7 +2,7 @@ import { ProviderRouter } from './ai/provider-router.mjs';
 
 const MAX_VIDEO_FRAMES = 6;
 const MAX_HISTORY = 40;
-const router = new ProviderRouter();
+export const router = new ProviderRouter();
 
 function historyInput(history) {
   if (!Array.isArray(history)) return [];
@@ -12,6 +12,10 @@ function historyInput(history) {
     .map((item) => item.role === 'assistant'
       ? { role: 'assistant', content: [{ type: 'output_text', text: item.content.slice(0, 12000) }] }
       : { role: 'user', content: item.content.slice(0, 12000) });
+}
+
+export function getAIProviderHealth() {
+  return router.getHealth();
 }
 
 export async function createResponse({ message, memory = [], attachment, history = [] }) {
