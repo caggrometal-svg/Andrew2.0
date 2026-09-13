@@ -65,7 +65,7 @@ public final class AndrewBridge {
             JSONObject result = new JSONObject();
             result.put("bridge", "android-v23");
             result.put("native", true);
-            result.put("crypto", "android-keystore-ed25519");
+            result.put("crypto", "android-keystore-ed25519-hardware-required");
             result.put("runtime", new JSONObject(prefs.getAll()).toString());
             return result.toString();
         } catch (Exception ignored) {
@@ -94,42 +94,50 @@ fs.writeFileSync(path.join(sourceDir, 'AndrewBridge.java'), bridgeSource);
 
 const keyStoreSource = `package ${namespace};
 
-import android.content.Context;
 import android.security.keystore.KeyGenParameterSpec;
+import android.security.keystore.KeyInfo;
 import android.security.keystore.KeyProperties;
+import android.util.Base64;
 import java.nio.charset.StandardCharsets;
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
+import java.security.KeyFactory;
 import java.security.KeyStore;
 import java.security.PrivateKey;
 import java.security.Signature;
-import java.util.Base64;
+import java.security.spec.InvalidKeySpecException;
 
 public final class AndroidKeyStoreManager {
     private static final String KEYSTORE = "AndroidKeyStore";
     private static final String ALIAS = "andrew-bridge-ed25519-v1";
-    private final Context context;
-
-    public AndroidKeyStoreManager(Context context) {
-        this.context = context.getApplicationContext();
-    }
 
     private synchronized KeyStore loadKeyStore() throws Exception {
         KeyStore keyStore = KeyStore.getInstance(KEYSTORE);
         keyStore.load(null);
         if (!keyStore.containsAlias(ALIAS)) {
-            KeyPairGenerator generator = KeyPairGenerator.getInstance("Ed25519", KEYSTORE);
+            java.security.KeyPairGenerator generator = java.security.KeyPairGenerator.getInstance("Ed25519", KEYSTORE);
             generator.initialize(new KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_SIGN).build());
             generator.generateKeyPair();
         }
         return keyStore;
     }
 
+    private void requireHardwareBacked(KeyStore keyStore) throws Exception {
+        PrivateKey privateKey = (PrivateKey) keyStore.getKey(ALIAS, null);
+        if (privateKey == null) throw new IllegalStateException("keystore_private_key_unavailable");
+        try {
+            KeyFactory factory = KeyFactory.getInstance(privateKey.getAlgorithm(), KEYSTORE);
+            KeyInfo info = factory.getKeySpec(privateKey, KeyInfo.class);
+            if (!info.isInsideSecureHardware()) throw new IllegalStateException("keystore_not_hardware_backed");
+        } catch (InvalidKeySpecException error) {
+            throw new IllegalStateException("keystore_hardware_attestation_unavailable", error);
+        }
+    }
+
     public synchronized String getPublicKeyBase64() {
         try {
             KeyStore keyStore = loadKeyStore();
+            requireHardwareBacked(keyStore);
             byte[] encoded = keyStore.getCertificate(ALIAS).getPublicKey().getEncoded();
-            return Base64.getEncoder().encodeToString(encoded);
+            return Base64.encodeToString(encoded, Base64.NO_WRAP);
         } catch (Exception error) {
             throw new IllegalStateException("keystore_public_key_unavailable", error);
         }
@@ -138,12 +146,12 @@ public final class AndroidKeyStoreManager {
     public synchronized String signBase64Url(String payload) {
         try {
             KeyStore keyStore = loadKeyStore();
+            requireHardwareBacked(keyStore);
             PrivateKey privateKey = (PrivateKey) keyStore.getKey(ALIAS, null);
-            if (privateKey == null) throw new IllegalStateException("keystore_private_key_unavailable");
             Signature signer = Signature.getInstance("Ed25519");
             signer.initSign(privateKey);
             signer.update(payload.getBytes(StandardCharsets.UTF_8));
-            return Base64.getUrlEncoder().withoutPadding().encodeToString(signer.sign());
+            return Base64.encodeToString(signer.sign(), Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING);
         } catch (Exception error) {
             throw new IllegalStateException("keystore_sign_failed", error);
         }
