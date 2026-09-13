@@ -74,15 +74,6 @@ jobs:
           echo 'GATE=CODE'
           echo 'STATUS=PASS'
 
-      - name: Production chat smoke test
-        env:
-          ANDREW_BRIDGE_PAIRING_CODE: ${{ secrets.ANDREW_BRIDGE_PAIRING_CODE }}
-          ANDREW_BRIDGE_SECRET: ${{ secrets.ANDREW_BRIDGE_SECRET }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          node scripts/production-chat-smoke.mjs
-
       - name: CORS rejection check
         shell: bash
         run: |
@@ -145,3 +136,29 @@ jobs:
           test "$GITHUB_SHA" != ''
           echo 'PHASE_1=GREEN'
           echo 'PHASE_2_UNLOCK=true'
+
+  production-smoke:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BASE_URL: https://andrew2-api.onrender.com
+      CHAT_CONVERSATION_ID: phase1-qa
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Production chat smoke test
+        env:
+          ANDREW_BRIDGE_PAIRING_CODE: ${{ secrets.ANDREW_BRIDGE_PAIRING_CODE }}
+          ANDREW_BRIDGE_SECRET: ${{ secrets.ANDREW_BRIDGE_SECRET }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/production-chat-smoke.mjs
