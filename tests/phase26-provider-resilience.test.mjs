@@ -9,6 +9,8 @@ const mockedConfig = vi.hoisted(() => ({
   secondaryModel: 'secondary-model',
   secondarySupportsVision: false,
   routingPolicy: 'balanced',
+  providers: {},
+  tiers: { primary: { tier: 1 }, secondary: { tier: 2 } },
 }));
 
 vi.mock('../server/config.mjs', () => ({ config: mockedConfig }));
@@ -58,7 +60,7 @@ describe('Phase 26 provider resilience', () => {
 
     const fourth = await router.execute({ prompt: 'four', input: [{ role: 'user', content: 'four' }] });
     expect(fourth.provider).toBe('secondary');
-    expect(fetchMock).toHaveBeenCalledTimes(10);
+    expect(fetchMock).toHaveBeenCalledTimes(7);
   });
 
   it('passes explicit memory into the secondary request contract', async () => {
