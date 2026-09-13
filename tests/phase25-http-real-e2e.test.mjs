@@ -16,17 +16,16 @@ const publicKeyBase64 = publicKey.export({ type: 'spki', format: 'der' }).toStri
 let server;
 let providerServer;
 
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 function withTimeout(promise, ms, label) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error(`PHASE25_TIMEOUT:${label}`)), ms)),
-  ]);
+  return Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error(`PHASE25_TIMEOUT:${label}`)), ms))]);
 }
 async function waitReady(url, timeoutMs = 30000) {
   const end = Date.now() + timeoutMs;
   while (Date.now() < end) {
-    try { if ((await fetch(`${url}/health`, { signal: AbortSignal.timeout(2000) })).status === 200) return; } catch {}
+    try {
+      if ((await fetch(`${url}/health`, { signal: AbortSignal.timeout(2000) })).status === 200) return;
+    } catch {}
     await sleep(250);
   }
   throw new Error('REAL_FASTIFY_START_TIMEOUT');
@@ -42,19 +41,14 @@ function sign(body, timestamp = Date.now(), nonce = crypto.randomUUID()) {
   };
 }
 async function chat(body, headers) {
-  return withTimeout(fetch(`${base}/api/chat`, {
-    method: 'POST',
-    headers,
-    body,
-    signal: AbortSignal.timeout(10000),
-  }), 12000, 'chat');
+  return withTimeout(fetch(`${base}/api/chat`, { method: 'POST', headers, body, signal: AbortSignal.timeout(10000) }), 12000, 'chat');
 }
 
 before(async () => {
   providerServer = http.createServer((request, response) => {
     let body = '';
     request.setEncoding('utf8');
-    request.on('data', chunk => { body += chunk; });
+    request.on('data', (chunk) => { body += chunk; });
     request.on('end', () => {
       try {
         assert.equal(request.method, 'POST');
@@ -76,46 +70,27 @@ before(async () => {
 
   server = spawn(process.execPath, ['--import', 'tsx', 'server/server.mjs'], {
     cwd: process.cwd(),
-    env: {
-      ...process.env,
-      OPENAI_API_KEY: 'phase25-e2e-test-key',
-      OPENAI_MODEL: 'gpt-5.6-luna',
-      AI_PRIMARY_ENDPOINT: `${providerBase}/v1/responses`,
-      AI_ROUTING_POLICY: 'primary',
-      PORT: String(port),
-      HOST: '127.0.0.1',
-      ANDREW_BRIDGE_PAIRING_CODE: pairingCode,
-    },
+    env: { ...process.env, OPENAI_API_KEY: 'phase25-e2e-test-key', OPENAI_MODEL: 'gpt-5.6-luna', AI_PRIMARY_ENDPOINT: `${providerBase}/v1/responses`, AI_ROUTING_POLICY: 'primary', PORT: String(port), HOST: '127.0.0.1', ANDREW_BRIDGE_PAIRING_CODE: pairingCode },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-  server.stdout.on('data', chunk => process.stdout.write(`[REAL-SERVER] ${chunk}`));
-  server.stderr.on('data', chunk => process.stderr.write(`[REAL-SERVER] ${chunk}`));
-  server.once('error', error => { throw error; });
+  server.stdout.on('data', (chunk) => process.stdout.write(`[REAL-SERVER] ${chunk}`));
+  server.stderr.on('data', (chunk) => process.stderr.write(`[REAL-SERVER] ${chunk}`));
+  server.once('error', (error) => { throw error; });
   await waitReady(base);
-  const response = await withTimeout(fetch(`${base}/api/v1/bridge/pairing`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ userId, publicKeyBase64, pairingCode }),
-    signal: AbortSignal.timeout(5000),
-  }), 7000, 'pairing');
+  const response = await withTimeout(fetch(`${base}/api/v1/bridge/pairing`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ userId, publicKeyBase64, pairingCode }), signal: AbortSignal.timeout(5000) }), 7000, 'pairing');
   assert.equal(response.status, 201, await response.text());
-  console.log('[E2E TRACE] keypair -> real pairing route -> public key registered');
 });
 
 after(async () => {
   if (server) {
     server.kill('SIGTERM');
     if (!server.killed) server.kill('SIGKILL');
-    await withTimeout(new Promise(resolve => {
+    await withTimeout(new Promise((resolve) => {
       if (server.exitCode !== null) return resolve();
       server.once('exit', resolve);
-    }), 5000, 'server-shutdown').catch(() => {
-      if (server && server.exitCode === null) server.kill('SIGKILL');
-    });
+    }), 5000, 'server-shutdown').catch(() => { if (server && server.exitCode === null) server.kill('SIGKILL'); });
   }
-  if (providerServer) {
-    await withTimeout(new Promise(resolve => providerServer.close(resolve)), 5000, 'provider-shutdown').catch(() => {});
-  }
+  if (providerServer) await withTimeout(new Promise((resolve) => providerServer.close(resolve)), 5000, 'provider-shutdown').catch(() => {});
 });
 
 test('E2E 1 missing headers', async () => {
@@ -123,15 +98,13 @@ test('E2E 1 missing headers', async () => {
   const response = await chat(body, { 'content-type': 'application/json' });
   const data = await response.json();
   assert.equal(response.status, 401); assert.equal(data.error, 'MISSING_SECURITY_HEADERS');
-  console.log('[E2E TRACE] real /api/chat -> middleware -> 401 MISSING_SECURITY_HEADERS');
 });
 
 test('E2E 2 invalid signature', async () => {
   const body = JSON.stringify({ message: 'phase25-e2e-2', conversationId: 'phase25-e2e-2' });
-  const headers = sign(body); headers['x-andrew-signature'] = headers['x-andrew-signature'].slice(0, -2) + 'aa';
+  const headers = sign(body); headers['x-andrew-signature'] = `${headers['x-andrew-signature'].slice(0, -2)}aa`;
   const response = await chat(body, headers); const data = await response.json();
   assert.equal(response.status, 401); assert.equal(data.error, 'INVALID_SIGNATURE');
-  console.log('[E2E TRACE] real /api/chat -> middleware -> 401 INVALID_SIGNATURE');
 });
 
 test('E2E 3 replay nonce', async () => {
@@ -140,21 +113,25 @@ test('E2E 3 replay nonce', async () => {
   assert.equal(first.status, 200, await first.text());
   const replay = await chat(body, headers); const data = await replay.json();
   assert.equal(replay.status, 401); assert.equal(data.error, 'REPLAY_ATTACK_DETECTED');
-  console.log('[E2E TRACE] real /api/chat -> ProviderRouter -> 200; replay -> 401 REPLAY_ATTACK_DETECTED');
 });
 
 test('E2E 4 expired timestamp', async () => {
   const body = JSON.stringify({ message: 'phase25-e2e-4', conversationId: 'phase25-e2e-4' });
   const response = await chat(body, sign(body, Date.now() - 600000)); const data = await response.json();
   assert.equal(response.status, 401); assert.equal(data.error, 'TIMESTAMP_EXPIRED');
-  console.log('[E2E TRACE] real /api/chat -> middleware -> 401 TIMESTAMP_EXPIRED');
 });
 
 test('E2E 5 valid signature and paired key', async () => {
   const body = JSON.stringify({ message: 'phase25-e2e-5', conversationId: 'phase25-e2e-5' });
   const response = await chat(body, sign(body)); const data = await response.json();
-  assert.equal(response.status, 200, JSON.stringify(data)); assert.equal(data.ok, true); assert.equal(typeof data.reply, 'string');
+  assert.equal(response.status, 200, JSON.stringify(data));
+  assert.equal(data.ok, true);
+  assert.equal(typeof data.reply, 'string');
   assert.equal(data.provider, 'primary');
   assert.equal(data.reply, 'phase25-provider-e2e-ok');
-  console.log(`[E2E TRACE] real /api/chat -> real ProviderRouter -> deterministic primary provider -> 200 provider=${data.provider}`);
+});
+
+test('E2E deterministic provider contract', () => {
+  assert.equal(typeof canonicalBridgeSignature, 'function');
+  assert.match(providerBase, /^http:\/\/127\.0\.0\.1:/);
 });
