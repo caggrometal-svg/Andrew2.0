@@ -37,8 +37,10 @@ export async function initializeBridgeStore() {
         expires_at TIMESTAMPTZ NOT NULL,
         acknowledged_at TIMESTAMPTZ,
         ack_ok BOOLEAN,
-        ack_error TEXT
+        ack_error TEXT,
+        result JSONB
       );
+      ALTER TABLE andrew_bridge_commands ADD COLUMN IF NOT EXISTS result JSONB;
       CREATE INDEX IF NOT EXISTS andrew_bridge_pending_idx
         ON andrew_bridge_commands (user_id, created_at DESC)
         WHERE acknowledged_at IS NULL;
@@ -122,15 +124,18 @@ export async function getBridgeSyncState(userId) {
   };
 }
 
-export async function acknowledgeBridgeCommand({ userId, id, ok, error }) {
+export async function acknowledgeBridgeCommand({ userId, id, ok, error, result = null }) {
   await initializeBridgeStore();
   const cleanId = cleanUserId(userId);
-  const result = await getPool().query(
+  const resultJson = result === null || result === undefined ? null : JSON.stringify(result);
+  if (resultJson && resultJson.length > 8192) throw new TypeError('bridge result too large');
+  const updated = await getPool().query(
     `UPDATE andrew_bridge_commands
-        SET acknowledged_at = NOW(), ack_ok = $3, ack_error = $4
+        SET acknowledged_at = NOW(), ack_ok = $3, ack_error = $4, result = $5::jsonb
       WHERE id = $1 AND user_id = $2 AND acknowledged_at IS NULL AND expires_at > NOW()
-      RETURNING id`,
-    [id, cleanId, ok, error || null],
+      RETURNING id, command`,
+    [id, cleanId, ok, error || null, resultJson],
   );
-  return result.rowCount === 1;
+  if (updated.rowCount !== 1) return null;
+  return { id: updated.rows[0].id, command: updated.rows[0].command };
 }
