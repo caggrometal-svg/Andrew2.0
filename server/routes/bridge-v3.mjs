@@ -1,5 +1,5 @@
-import { randomUUID } from 'node:crypto';
 import { acknowledgeBridgeCommand, enqueueBridgeCommand, initializeBridgeStore, listPendingBridgeCommands } from '../bridge/bridge-store.mjs';
+import { getAIProviderHealth } from '../openai.mjs';
 
 const ALLOWED_COMMANDS = new Set(['open_settings', 'set_runtime_parameter', 'request_status', 'sync_now']);
 const TTL_MS = 5 * 60 * 1000;
@@ -40,7 +40,7 @@ export async function registerBridgeV3Routes(app) {
   app.get('/api/v1/bridge/v3/status', async (request, reply) => {
     const userId = identity(request);
     if (!userId) return reply.code(401).send({ ok: false, error: 'identity_required' });
-    return { ok: true, userId, commands: [...ALLOWED_COMMANDS], writeEnabled: false, ttlMs: TTL_MS };
+    return { ok: true, userId, commands: [...ALLOWED_COMMANDS], writeEnabled: false, ttlMs: TTL_MS, ai: getAIProviderHealth() };
   });
 
   app.get('/api/v1/bridge/v3/commands', async (request, reply) => {
