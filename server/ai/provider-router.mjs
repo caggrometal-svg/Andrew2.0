@@ -20,6 +20,15 @@ export class AIProviderError extends Error {
 function hash(value) { return crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex'); }
 function retryableStatus(status) { return status === 408 || status === 409 || status === 429 || status >= 500; }
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+function hasMedia(request) { return Boolean(request.attachment?.type); }
+function policyOrder(request) {
+  const secondaryAvailable = Boolean(config.secondaryApiKey && config.secondaryEndpoint);
+  if (!secondaryAvailable) return ['primary'];
+  if (hasMedia(request) && !config.secondarySupportsVision) return ['primary'];
+  if (config.routingPolicy === 'primary') return ['primary', 'secondary'];
+  if (config.routingPolicy === 'secondary') return ['secondary', 'primary'];
+  return hasMedia(request) ? ['primary', 'secondary'] : ['secondary', 'primary'];
+}
 
 async function fetchJson(url, options, provider, timeoutMs = DEFAULT_TIMEOUT_MS) {
   let lastError;
@@ -49,44 +58,36 @@ export class ProviderRouter {
   #cache = new Map();
 
   async execute(request) {
-    const key = hash({
-      prompt: request.prompt,
-      history: request.history || [],
-      input: request.input || [],
-      memory: request.memory || [],
-      temperature: request.temperature ?? null,
-      attachment: request.attachment || null,
-    });
+    const key = hash({ prompt: request.prompt, history: request.history || [], input: request.input || [], memory: request.memory || [], temperature: request.temperature ?? null, attachment: request.attachment || null });
     const cached = this.#getCache(key);
     if (cached) return { ...cached, provider: 'cache', latencyMs: 0 };
 
     const started = Date.now();
     const failures = [];
-    const providers = [
-      ['primary', () => this.#primary(request)],
-      ...(config.secondaryApiKey && config.secondaryEndpoint ? [['secondary', () => this.#secondary(request)]] : []),
-    ];
+    const executions = {
+      primary: () => this.#primary(request),
+      secondary: () => this.#secondary(request),
+    };
 
-    for (const [name, execute] of providers) {
+    for (const name of policyOrder(request)) {
       try {
-        const text = await execute();
-        const result = { text, provider: name, latencyMs: Date.now() - started };
-        this.#setCache(key, result);
-        return result;
+        const result = await executions[name]();
+        const output = { text: result.text, provider: name, model: result.model, latencyMs: Date.now() - started };
+        this.#setCache(key, output);
+        return output;
       } catch (error) {
         failures.push(error);
-        await sleep(50);
       }
     }
 
-    return { text: this.#local(request.prompt, failures), provider: 'local-degraded', latencyMs: Date.now() - started };
+    return { text: this.#local(request.prompt, failures), provider: 'local-degraded', model: null, latencyMs: Date.now() - started };
   }
 
   #getCache(key) {
     const item = this.#cache.get(key);
     if (!item) return null;
     if (Date.now() - item.timestamp >= CACHE_TTL_MS) { this.#cache.delete(key); return null; }
-    return { text: item.text, provider: item.provider, latencyMs: item.latencyMs };
+    return { text: item.text, provider: item.provider, model: item.model, latencyMs: item.latencyMs };
   }
 
   #setCache(key, result) {
@@ -101,7 +102,7 @@ export class ProviderRouter {
     }, 'primary');
     const text = extractResponseText(data);
     if (!text) throw new AIProviderError('Primary provider returned an empty response', { provider: 'primary', retryable: true });
-    return text;
+    return { text, model: config.openaiModel };
   }
 
   async #secondary(request) {
@@ -112,7 +113,7 @@ export class ProviderRouter {
     }, 'secondary');
     const text = data?.choices?.[0]?.message?.content?.trim();
     if (!text) throw new AIProviderError('Secondary provider returned an empty response', { provider: 'secondary', retryable: true });
-    return text;
+    return { text, model: config.secondaryModel };
   }
 
   #local(prompt, failures) {
