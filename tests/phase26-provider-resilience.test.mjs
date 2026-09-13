@@ -38,27 +38,36 @@ describe('Phase 26 provider resilience', () => {
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });
 
-  it('opens primary after three final failures and then falls back', async () => {
+  it('opens primary after three provider failures and then falls back', async () => {
     mockedConfig.routingPolicy = 'primary';
     const primaryFailure = () => ({ ok: false, status: 503, json: async () => ({ error: { message: 'down' } }), headers: new Headers() });
-    const fetchMock = vi.spyOn(globalThis, 'fetch')
-      .mockImplementationOnce(primaryFailure)
-      .mockImplementationOnce(primaryFailure)
-      .mockImplementationOnce(primaryFailure)
-      .mockResolvedValue(secondaryOk());
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((url) => {
+      const calls = fetchMock.mock.calls.length;
+      return Promise.resolve(calls % 4 === 0 ? secondaryOk() : primaryFailure());
+    });
     const router = new ProviderRouter();
+
     const first = await router.execute({ prompt: 'one', input: [{ role: 'user', content: 'one' }] });
     expect(first.provider).toBe('secondary');
+    expect(router.getHealth().providers.primary.state).toBe('closed');
+
+    const second = await router.execute({ prompt: 'two', input: [{ role: 'user', content: 'two' }] });
+    expect(second.provider).toBe('secondary');
+    expect(router.getHealth().providers.primary.state).toBe('closed');
+
+    const third = await router.execute({ prompt: 'three', input: [{ role: 'user', content: 'three' }] });
+    expect(third.provider).toBe('secondary');
     expect(router.getHealth().providers.primary.state).toBe('open');
-    const result = await router.execute({ prompt: 'two', input: [{ role: 'user', content: 'two' }] });
-    expect(result.provider).toBe('secondary');
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+
+    const fourth = await router.execute({ prompt: 'four', input: [{ role: 'user', content: 'four' }] });
+    expect(fourth.provider).toBe('secondary');
+    expect(fetchMock).toHaveBeenCalledTimes(13);
   });
 
-  it('shares memory with secondary', async () => {
+  it('passes explicit memory into the secondary request contract', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(secondaryOk());
     const router = new ProviderRouter();
-    await router.execute({ prompt: 'qué recuerdas', history: [], input: [{ role: 'user', content: 'qué recuerdas' }], memory: ['El usuario prefiere respuestas directas.'] });
+    await router.execute({ prompt: 'qué recuerdas', history: [], input: [{ role: 'user', content: 'El usuario prefiere respuestas directas.\n\nqué recuerdas' }], memory: ['El usuario prefiere respuestas directas.'] });
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.messages.at(-1).content).toContain('El usuario prefiere respuestas directas.');
   });
