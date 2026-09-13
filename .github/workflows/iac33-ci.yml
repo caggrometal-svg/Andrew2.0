@@ -46,11 +46,14 @@ jobs:
           node --check server/bridge/bridge-controller.mjs
           node --check server/server.mjs
 
+      - name: Phase 25 bridge security certification
+        run: npx vitest run tests/phase25-bridge-security.test.mjs tests/phase25-remote-bridge-loop.test.ts
+
+      - name: Android bridge executor gate
+        run: npx vitest run tests/phase21-android-bridge-executor.test.ts tests/phase22-capacitor-bridge.test.ts tests/phase23-native-android-bridge.test.ts
+
       - name: AI to Android bridge controller gate
         run: npm run test:phase24
-
-      - name: APK remote bridge loop gate
-        run: npx vitest run tests/phase25-remote-bridge-loop.test.ts
 
       - name: Provider resilience gate
         run: npx vitest run tests/phase26-provider-resilience.test.mjs
