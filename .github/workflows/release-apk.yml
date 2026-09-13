@@ -1,4 +1,9 @@
-name: Android APK
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - iac33-integration-next
+      name: Android APK
 
 on:
   workflow_dispatch:
