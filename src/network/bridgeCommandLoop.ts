@@ -4,13 +4,7 @@ import type { AndrewBridgeNative } from '../bridge/types';
 const DEFAULT_BACKEND = 'https://andrew2-api.onrender.com';
 const POLL_MS = 5000;
 
-type BridgeCommand = {
-  id: string;
-  command: 'open_settings' | 'set_runtime_parameter' | 'request_status' | 'sync_now';
-  payload?: { key?: string; value?: string | number | boolean; section?: string };
-  expiresAt: number;
-};
-
+type BridgeCommand = { id: string; command: 'open_settings' | 'set_runtime_parameter' | 'request_status' | 'sync_now'; payload?: { key?: string; value?: string | number | boolean; section?: string }; expiresAt: number };
 type CommandResponse = { ok: true; commands: BridgeCommand[] };
 type ResultResponse = { ok: true; id: string; acknowledgedAt: number; result: unknown | null };
 type AIResponse = { ok: true; reply: string; provider?: string; model?: string; latencyMs?: number };
@@ -34,8 +28,9 @@ async function signedHeaders(userId: string, rawBody: string): Promise<Record<st
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const userId = getBridgeUserId();
   const rawBody = typeof init.body === 'string' ? init.body : '';
+  const callerHeaders = init.headers || {};
   const headers = await signedHeaders(userId, rawBody);
-  const response = await fetch(`${backendUrl()}${path}`, { ...init, headers: { Accept: 'application/json', ...(init.body ? { 'Content-Type': 'application/json' } : {}), ...headers, ...(init.headers || {}) } });
+  const response = await fetch(`${backendUrl()}${path}`, { ...init, headers: { Accept: 'application/json', ...(init.body ? { 'Content-Type': 'application/json' } : {}), ...callerHeaders, ...headers } });
   const data = await response.json().catch(() => null) as T | null;
   if (!response.ok || !data) throw new Error(`Bridge HTTP ${response.status}`);
   return data;
