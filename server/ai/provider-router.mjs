@@ -25,11 +25,11 @@ function supportsMedia(name) { return Boolean(providerConfig(name)?.supportsVisi
 function policyOrder(request) {
   const candidates = providerNames().filter(configured).filter(name => !hasMedia(request) || supportsMedia(name));
   if (!candidates.length) return [];
-  const policy = config.routingPolicy;
-  if (policy === 'primary') return ['primary', ...candidates.filter(name => name !== 'primary')];
-  if (policy === 'secondary') return ['secondary', ...candidates.filter(name => name !== 'secondary')];
+  if (config.routingPolicy === 'primary') return ['primary', ...candidates.filter(name => name !== 'primary')];
+  if (config.routingPolicy === 'secondary') return ['secondary', ...candidates.filter(name => name !== 'secondary')];
   if (hasMedia(request)) return ['primary', ...candidates.filter(name => name !== 'primary')];
-  return ['secondary', 'deepseek', 'groq', 'gemini', 'anthropic', 'primary'].filter((name, index, list) => candidates.includes(name) && list.indexOf(name) === index).concat(candidates.filter(name => !['secondary','deepseek','groq','gemini','anthropic','primary'].includes(name)));
+  const preferred = ['secondary', 'deepseek', 'groq', 'gemini', 'anthropic', 'primary'];
+  return [...preferred.filter(name => candidates.includes(name)), ...candidates.filter(name => !preferred.includes(name))];
 }
 function createHealthState() { return { successes: 0, failures: 0, consecutiveFailures: 0, lastFailureAt: null, lastSuccessAt: null, lastError: null, latencyEwmaMs: null, openUntil: 0, halfOpen: false, probeInFlight: false }; }
 
@@ -65,13 +65,12 @@ export class ProviderRouter {
     const key = hash({ prompt: request.prompt, history: request.history || [], input: request.input || [], memory: request.memory || [], temperature: request.temperature ?? null, attachment: request.attachment || null });
     const cached = this.#getCache(key); if (cached) return { ...cached, provider: 'cache', latencyMs: 0 };
     const started = Date.now(); const failures = [];
-    const executions = Object.fromEntries(providerNames().map(name => [name, () => this.#executeProvider(name, request)]));
     for (const name of policyOrder(request)) {
       if (!this.#canAttempt(name)) continue;
       const health = this.#health.get(name); if (health?.halfOpen) health.probeInFlight = true;
       const providerStarted = Date.now();
       try {
-        const result = await executions[name](); this.#recordSuccess(name, Date.now() - providerStarted);
+        const result = await this.#executeProvider(name, request); this.#recordSuccess(name, Date.now() - providerStarted);
         const output = { text: result.text, provider: name, model: result.model, latencyMs: Date.now() - started }; this.#setCache(key, output); return output;
       } catch (error) { this.#recordFailure(name, error, Date.now() - providerStarted); failures.push(error); }
       finally { const current = this.#health.get(name); if (current) current.probeInFlight = false; }
@@ -100,13 +99,19 @@ export class ProviderRouter {
   #getCache(key) { const item = this.#cache.get(key); if (!item) return null; if (Date.now() - item.timestamp >= CACHE_TTL_MS) { this.#cache.delete(key); return null; } return { text: item.text, provider: item.provider, model: item.model, latencyMs: item.latencyMs }; }
   #setCache(key, result) { this.#cache.set(key, { ...result, timestamp: Date.now() }); while (this.#cache.size > MAX_CACHE_ENTRIES) this.#cache.delete(this.#cache.keys().next().value); }
 
-  async #executeProvider(name, request) {
-    if (name === 'primary') return this.#primary(request);
-    if (name === 'secondary') return this.#secondary(request);
-    return this.#genericChat(name, request);
-  }
+  async #executeProvider(name, request) { if (name === 'primary') return this.#primary(request); if (name === 'anthropic') return this.#anthropic(request); return this.#genericChat(name, request); }
   async #primary(request) { const data = await fetchJson(config.primaryEndpoint, { method: 'POST', headers: { Authorization: `Bearer ${config.openaiApiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: config.openaiModel, input: request.input, store: false }) }, 'primary'); const text = extractResponseText(data); if (!text) throw new AIProviderError('Primary provider returned an empty response', { provider: 'primary', retryable: true }); return { text, model: config.openaiModel }; }
-  async #secondary(request) { return this.#genericChat('secondary', request); }
+  async #anthropic(request) {
+    const p = providerConfig('anthropic');
+    const system = request.memory?.length ? `Memoria compartida:\n${request.memory.join('\n')}` : undefined;
+    const messages = [...(request.history || []).filter(item => item.role === 'user' || item.role === 'assistant').map(item => ({ role: item.role, content: item.content })), { role: 'user', content: request.prompt }];
+    const body = { model: p.model, max_tokens: Number(process.env.AI_ANTHROPIC_MAX_TOKENS || 2048), messages };
+    if (system) body.system = system;
+    const data = await fetchJson(p.endpoint, { method: 'POST', headers: { 'x-api-key': p.apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' }, body: JSON.stringify(body) }, 'anthropic');
+    const text = (data?.content || []).filter(item => item?.type === 'text').map(item => item.text).join('\n').trim();
+    if (!text) throw new AIProviderError('anthropic returned an empty response', { provider: 'anthropic', retryable: true });
+    return { text, model: p.model };
+  }
   async #genericChat(name, request) {
     const p = providerConfig(name); const memory = request.memory?.length ? `\nContexto de memoria compartida:\n${request.memory.join('\n')}` : '';
     const messages = [...(request.history || []).map(item => ({ role: item.role, content: item.content })), { role: 'user', content: `${request.prompt}${memory}` }];
