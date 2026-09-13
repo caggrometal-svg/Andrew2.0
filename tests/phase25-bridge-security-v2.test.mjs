@@ -1,5 +1,4 @@
-import test from 'node:test';
-import assert from 'node:assert/strict';
+import { beforeEach, describe, expect, it } from 'vitest';
 import crypto from 'node:crypto';
 import { canonicalBridgeSignature, resetBridgeAuthForTests, verifyBridgeSignature } from '../server/bridge/bridge-auth.mjs';
 
@@ -10,12 +9,46 @@ const publicPem = publicKey.export({ type: 'spki', format: 'pem' });
 
 function signed({ key = privateKey, timestamp = Date.now(), nonce = crypto.randomUUID(), body = '{"message":"phase25"}' } = {}) {
   const data = canonicalBridgeSignature({ userId, timestamp, nonce, body });
-  return { 'x-andrew-user-id': userId, 'x-andrew-timestamp': String(timestamp), 'x-andrew-nonce': nonce, 'x-andrew-signature': crypto.sign(null, Buffer.from(data), key).toString('base64url'), body };
+  return {
+    'x-andrew-user-id': userId,
+    'x-andrew-timestamp': String(timestamp),
+    'x-andrew-nonce': nonce,
+    'x-andrew-signature': crypto.sign(null, Buffer.from(data), key).toString('base64url'),
+    body,
+  };
 }
 
-test.beforeEach(() => resetBridgeAuthForTests());
-test('TEST 1: 401 Missing Headers', () => assert.equal(verifyBridgeSignature({ headers: {}, publicKey: publicPem }).status, 401));
-test('TEST 2: 401 Invalid Signature', () => { const headers = signed({ key: wrong }); assert.equal(verifyBridgeSignature({ headers, body: headers.body, publicKey: publicPem }).status, 401); });
-test('TEST 3: 401 Replay Attack', () => { const headers = signed(); assert.equal(verifyBridgeSignature({ headers, body: headers.body, publicKey: publicPem }).ok, true); const replay = verifyBridgeSignature({ headers, body: headers.body, publicKey: publicPem }); assert.equal(replay.status, 401); assert.equal(replay.error, 'bridge_auth_replay'); });
-test('TEST 4: 401 Timestamp Expired', () => { const headers = signed({ timestamp: Date.now() - 301000 }); const result = verifyBridgeSignature({ headers, body: headers.body, publicKey: publicPem }); assert.equal(result.status, 401); assert.equal(result.error, 'bridge_auth_expired'); });
-test('TEST 5: 200 OK Valid Signature', () => { const headers = signed(); const result = verifyBridgeSignature({ headers, body: headers.body, publicKey: publicPem }); assert.equal(result.ok, true); assert.equal(result.userId, userId); });
+describe('Phase 25 bridge security v2', () => {
+  beforeEach(() => resetBridgeAuthForTests());
+
+  it('returns 401 for missing headers', () => {
+    expect(verifyBridgeSignature({ headers: {}, publicKey: publicPem }).status).toBe(401);
+  });
+
+  it('returns 401 for an invalid signature', () => {
+    const headers = signed({ key: wrong });
+    expect(verifyBridgeSignature({ headers, body: headers.body, publicKey: publicPem }).status).toBe(401);
+  });
+
+  it('rejects a replayed nonce', () => {
+    const headers = signed();
+    expect(verifyBridgeSignature({ headers, body: headers.body, publicKey: publicPem }).ok).toBe(true);
+    const replay = verifyBridgeSignature({ headers, body: headers.body, publicKey: publicPem });
+    expect(replay.status).toBe(401);
+    expect(replay.error).toBe('bridge_auth_replay');
+  });
+
+  it('rejects an expired timestamp', () => {
+    const headers = signed({ timestamp: Date.now() - 301000 });
+    const result = verifyBridgeSignature({ headers, body: headers.body, publicKey: publicPem });
+    expect(result.status).toBe(401);
+    expect(result.error).toBe('bridge_auth_expired');
+  });
+
+  it('accepts a valid signature', () => {
+    const headers = signed();
+    const result = verifyBridgeSignature({ headers, body: headers.body, publicKey: publicPem });
+    expect(result.ok).toBe(true);
+    expect(result.userId).toBe(userId);
+  });
+});
