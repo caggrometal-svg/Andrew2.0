@@ -1,6 +1,6 @@
-import { acknowledgeBridgeCommand, getBridgeSyncState, initializeBridgeStore, listPendingBridgeCommands } from '../bridge/bridge-store.mjs';
-import { getAIProviderHealth } from '../openai.mjs';
-import { queueBridgeAction } from '../bridge/bridge-controller.mjs';
+import { acknowledgeBridgeCommand as defaultAcknowledgeBridgeCommand, getBridgeSyncState as defaultGetBridgeSyncState, initializeBridgeStore as defaultInitializeBridgeStore, listPendingBridgeCommands as defaultListPendingBridgeCommands } from '../bridge/bridge-store.mjs';
+import { getAIProviderHealth as defaultGetAIProviderHealth } from '../openai.mjs';
+import { queueBridgeAction as defaultQueueBridgeAction } from '../bridge/bridge-controller.mjs';
 
 const ALLOWED_COMMANDS = new Set(['open_settings', 'set_runtime_parameter', 'request_status', 'sync_now']);
 const TTL_MS = 5 * 60 * 1000;
@@ -25,7 +25,16 @@ function cleanResult(value) {
   return value;
 }
 
-export async function registerBridgeV3Routes(app) {
+export async function registerBridgeV3Routes(app, deps = {}) {
+  const {
+    acknowledgeBridgeCommand = defaultAcknowledgeBridgeCommand,
+    getBridgeSyncState = defaultGetBridgeSyncState,
+    initializeBridgeStore = defaultInitializeBridgeStore,
+    listPendingBridgeCommands = defaultListPendingBridgeCommands,
+    getAIProviderHealth = defaultGetAIProviderHealth,
+    queueBridgeAction = defaultQueueBridgeAction,
+  } = deps;
+
   await initializeBridgeStore();
 
   app.get('/api/v1/bridge/v3/status', async (request, reply) => {
