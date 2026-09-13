@@ -41,7 +41,7 @@ describe('Phase 18 Android Bridge V3 gateway', () => {
     await app.close();
   });
 
-  it('creates a bounded, expiring command envelope', async () => {
+  it('rejects runtime writes while write access is disabled', async () => {
     const app = await build();
     const response = await app.inject({
       method: 'POST',
@@ -50,11 +50,10 @@ describe('Phase 18 Android Bridge V3 gateway', () => {
       payload: { command: 'set_runtime_parameter', payload: { key: 'timeoutMs', value: 5000 } },
     });
     const body = response.json();
-    expect(response.statusCode).toBe(200);
-    expect(body.writeEnabled).toBe(false);
-    expect(body.envelope.command).toBe('set_runtime_parameter');
-    expect(body.envelope.id).toMatch(/^[0-9a-f-]{36}$/);
-    expect(body.envelope.expiresAt - body.envelope.createdAt).toBe(300000);
+    expect(response.statusCode).toBe(403);
+    expect(body.ok).toBe(false);
+    expect(body.error).toBe('write_disabled');
+    expect(body.envelope).toBeUndefined();
     await app.close();
   });
 
@@ -72,6 +71,7 @@ describe('Phase 18 Android Bridge V3 gateway', () => {
   it('delivers pending commands and accepts correlated acknowledgements', async () => {
     const app = await build();
     const commandResponse = await app.inject({ method: 'POST', url: '/api/v1/bridge/v3/command', headers: { 'x-andrew-user-id': 'camilo-test' }, payload: { command: 'request_status' } });
+    expect(commandResponse.statusCode).toBe(200);
     const id = commandResponse.json().envelope.id;
     const pendingResponse = await app.inject({ method: 'GET', url: '/api/v1/bridge/v3/commands', headers: { 'x-andrew-user-id': 'camilo-test' } });
     expect(pendingResponse.statusCode).toBe(200);
