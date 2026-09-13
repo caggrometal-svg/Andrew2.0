@@ -94,7 +94,9 @@ export function startBridgeCommandLoop(onError?: (error: Error) => void, onResul
             body: JSON.stringify({ id: command.id, command: command.command, ok: true, result }),
           });
           const reply = response.result === null ? undefined : await sendResultToAI(command, response.result);
-          onResult?.({ commandId: command.id, command: command.command, result: response.result, reply });
+          const loopResult: BridgeLoopResult = { commandId: command.id, command: command.command, result: response.result };
+          if (reply !== undefined) loopResult.reply = reply;
+          onResult?.(loopResult);
         } catch (error) {
           await request<ResultResponse>('/api/v1/bridge/v3/result', {
             method: 'POST',
