@@ -23,7 +23,7 @@ export class AIProviderError extends Error {
 
 function hash(value) { return crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex'); }
 function retryableStatus(status) { return status === 408 || status === 409 || status === 429 || status >= 500; }
-function permanentStatus(status) { return [400, 401, 403, 404, 405, 406, 409, 415, 422].includes(status); }
+function permanentStatus(status) { return [400, 401, 403, 404, 405, 406, 415, 422].includes(status); }
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 function hasMedia(request) { return Boolean(request.attachment?.type || (request.input || []).some(item => Array.isArray(item.content) && item.content.some(part => part?.type === 'input_image'))); }
 function configured(name) {
@@ -288,21 +288,27 @@ export class ProviderRouter {
 
   async #genericChat(name, request) {
     const p = providerConfig(name);
-    const messages = toChatContent(request.input, Boolean(p.supportsVision));
-    if (!messages.length) messages.push({ role: 'user', content: request.prompt });
-    const data = await fetchJson(p.endpoint, { method: 'POST', headers: { Authorization: `Bearer ${p.apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: p.model, messages, temperature: request.temperature ?? 0.2 }) }, name);
-    const raw = data?.choices?.[0]?.message?.content;
-    const text = typeof raw === 'string' ? raw.trim() : Array.isArray(raw) ? raw.filter(part => typeof part?.text === 'string').map(part => part.text).join('\n').trim() : '';
-    if (!text) throw new AIProviderError(`${name} returned an empty response`, { provider: name, retryable: true });
-    return { text, model: p.model };
+    const messages = toChatContent(request.input, p.supportsVision);
+    const body = { model: p.model, messages, temperature: request.temperature ?? 0.2 };
+    const data = await fetchJson(p.endpoint, { method: 'POST', headers: { Authorization: `Bearer ${p.apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, name);
+    const text = data?.choices?.[0]?.message?.content || data?.output_text || '';
+    if (!String(text).trim()) throw new AIProviderError(`${name} returned an empty response`, { provider: name, retryable: true });
+    return { text: String(text).trim(), model: p.model };
   }
 
   #local(prompt, failures) {
-    const last = failures.at(-1);
-    const reason = last?.status === 429 ? 'límite temporal del proveedor' : last?.status === 402 ? 'cuota o saldo del proveedor' : 'fallo de los proveedores externos';
-    return `Andrew continúa en modo degradado local. La consulta no se perdió. Motivo: ${reason}. Este modo no se presenta como una IA generativa equivalente. Consulta: ${prompt.slice(0, 160)}`;
+    const reason = failures.at(-1)?.message || 'No AI provider is currently available.';
+    return `Andrew está en modo degradado. No fue posible completar la solicitud con los proveedores configurados. Motivo: ${reason}`;
   }
 }
 
-export function createProviderRouter() { return new ProviderRouter(); }
-function extractResponseText(data) { if (typeof data?.output_text === 'string') return data.output_text.trim(); return (data?.output || []).flatMap(item => item?.content || []).filter(content => content?.type === 'output_text' && typeof content.text === 'string').map(content => content.text).join('\n').trim(); }
+function extractResponseText(data) {
+  if (typeof data?.output_text === 'string') return data.output_text.trim();
+  const chunks = [];
+  for (const item of data?.output || []) {
+    for (const content of item?.content || []) {
+      if (content?.type === 'output_text' && typeof content.text === 'string') chunks.push(content.text);
+    }
+  }
+  return chunks.join('\n').trim();
+}
