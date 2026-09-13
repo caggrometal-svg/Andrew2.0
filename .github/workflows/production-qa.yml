@@ -47,11 +47,12 @@ jobs:
 
       - name: Production chat smoke test
         env:
-          ANDREW_BRIDGE_PAIRING_CODE: ${{ secrets.ANDREW_BRIDGE_PAIRING_CODE || secrets.ANDREW_BRIDGE_SECRET }}
+          ANDREW_BRIDGE_PAIRING_CODE: ${{ secrets.ANDREW_BRIDGE_PAIRING_CODE }}
+          ANDREW_BRIDGE_SECRET: ${{ secrets.ANDREW_BRIDGE_SECRET }}
         shell: bash
         run: |
           set -euo pipefail
-          test -n "$ANDREW_BRIDGE_PAIRING_CODE"
+          test -n "${ANDREW_BRIDGE_PAIRING_CODE:-}${ANDREW_BRIDGE_SECRET:-}"
           node scripts/production-chat-smoke.mjs
 
       - name: CORS rejection check
