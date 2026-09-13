@@ -1,11 +1,9 @@
-import { randomUUID } from 'node:crypto';
-import { acknowledgeBridgeCommand, enqueueBridgeCommand, initializeBridgeStore, listPendingBridgeCommands } from '../bridge/bridge-store.mjs';
+import { acknowledgeBridgeCommand, initializeBridgeStore, listPendingBridgeCommands } from '../bridge/bridge-store.mjs';
 import { getAIProviderHealth } from '../openai.mjs';
+import { queueBridgeAction } from '../bridge/bridge-controller.mjs';
 
 const ALLOWED_COMMANDS = new Set(['open_settings', 'set_runtime_parameter', 'request_status', 'sync_now']);
 const TTL_MS = 5 * 60 * 1000;
-const MAX_PAYLOAD_KEYS = 8;
-const MAX_STRING_LENGTH = 256;
 const ACK_ERRORS = new Set(['expired', 'unsupported', 'invalid_payload']);
 
 function identity(request) {
@@ -13,26 +11,8 @@ function identity(request) {
   return typeof value === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(value) ? value : null;
 }
 
-function validatePayload(command, payload) {
-  if (payload === undefined) return { ok: true, value: undefined };
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return { ok: false };
-  const entries = Object.entries(payload);
-  if (entries.length > MAX_PAYLOAD_KEYS) return { ok: false };
-  for (const [key, value] of entries) {
-    if (!/^[A-Za-z0-9_.-]{1,64}$/.test(key)) return { ok: false };
-    if (typeof value === 'string' && value.length > MAX_STRING_LENGTH) return { ok: false };
-    if (value !== null && typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') return { ok: false };
-  }
-  if (command === 'open_settings' && Object.keys(payload).some((key) => key !== 'section')) return { ok: false };
-  if (command === 'request_status' && Object.keys(payload).length > 0) return { ok: false };
-  if (command === 'sync_now' && Object.keys(payload).length > 0) return { ok: false };
-  if (command === 'set_runtime_parameter' && (!('key' in payload) || typeof payload.key !== 'string' || payload.key.length > 64 || !('value' in payload))) return { ok: false };
-  return { ok: true, value: payload };
-}
-
-function createEnvelope(command, payload) {
-  const createdAt = Date.now();
-  return { id: randomUUID(), command, payload, createdAt, expiresAt: createdAt + TTL_MS };
+function writeEnabled() {
+  return /^(1|true|yes)$/i.test(process.env.ANDREW_BRIDGE_ALLOW_WRITE || '');
 }
 
 export async function registerBridgeV3Routes(app) {
@@ -41,13 +21,13 @@ export async function registerBridgeV3Routes(app) {
   app.get('/api/v1/bridge/v3/status', async (request, reply) => {
     const userId = identity(request);
     if (!userId) return reply.code(401).send({ ok: false, error: 'identity_required' });
-    return { ok: true, userId, commands: [...ALLOWED_COMMANDS], writeEnabled: false, ttlMs: TTL_MS, ai: getAIProviderHealth() };
+    return { ok: true, userId, commands: [...ALLOWED_COMMANDS], writeEnabled: writeEnabled(), ttlMs: TTL_MS, ai: getAIProviderHealth() };
   });
 
   app.get('/api/v1/bridge/v3/commands', async (request, reply) => {
     const userId = identity(request);
     if (!userId) return reply.code(401).send({ ok: false, error: 'identity_required' });
-    return { ok: true, commands: await listPendingBridgeCommands(userId), writeEnabled: false };
+    return { ok: true, commands: await listPendingBridgeCommands(userId), writeEnabled: writeEnabled() };
   });
 
   app.post('/api/v1/bridge/v3/command', async (request, reply) => {
@@ -56,11 +36,12 @@ export async function registerBridgeV3Routes(app) {
     const body = request.body && typeof request.body === 'object' && !Array.isArray(request.body) ? request.body : {};
     const command = typeof body.command === 'string' ? body.command : '';
     if (!ALLOWED_COMMANDS.has(command)) return reply.code(400).send({ ok: false, error: 'unsupported_command' });
-    const validation = validatePayload(command, body.payload);
-    if (!validation.ok) return reply.code(400).send({ ok: false, error: 'invalid_payload' });
-    const envelope = createEnvelope(command, validation.value);
-    await enqueueBridgeCommand({ userId, envelope });
-    return { ok: true, userId, writeEnabled: false, envelope };
+    const result = await queueBridgeAction({ userId, action: { command, payload: body.payload } });
+    if (!result.queued) {
+      const status = result.error === 'identity_required' ? 401 : result.error === 'write_disabled' ? 403 : result.error === 'unsupported_command' ? 400 : 400;
+      return reply.code(status).send({ ok: false, error: result.error });
+    }
+    return { ok: true, userId, writeEnabled: writeEnabled(), envelope: result.command };
   });
 
   app.post('/api/v1/bridge/v3/ack', async (request, reply) => {
