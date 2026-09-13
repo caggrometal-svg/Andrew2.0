@@ -44,6 +44,9 @@ jobs:
       - name: Golden-master parity
         run: npm run test:parity
 
+      - name: GPT-App bridge contract tests
+        run: node --test tests/bridge-chat.test.mjs
+
       - name: Full Vitest regression
         run: npm test
 
