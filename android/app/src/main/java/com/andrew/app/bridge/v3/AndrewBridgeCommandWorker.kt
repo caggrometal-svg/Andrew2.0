@@ -100,11 +100,13 @@ class AndrewBridgeCommandWorker(context: Context, params: WorkerParameters) : Co
         private const val SYNC_WORK = "andrew-bridge-v3-sync"
         private const val COMMAND_WORK = "andrew-bridge-v3-commands"
 
+        @JvmStatic
         fun enqueueNow(context: Context) {
             val request = OneTimeWorkRequest.Builder(AndrewBridgeCommandWorker::class.java).build()
             WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(COMMAND_WORK, ExistingWorkPolicy.REPLACE, request)
         }
 
+        @JvmStatic
         fun schedule(context: Context) {
             val request = PeriodicWorkRequest.Builder(AndrewBridgeCommandWorker::class.java, 15, TimeUnit.MINUTES).build()
             WorkManager.getInstance(context.applicationContext).enqueueUniquePeriodicWork(COMMAND_WORK, ExistingPeriodicWorkPolicy.UPDATE, request)
