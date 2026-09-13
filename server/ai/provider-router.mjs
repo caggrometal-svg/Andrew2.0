@@ -44,35 +44,37 @@ function providerScore(name, state) {
   if (!configured(name)) return 0;
   if (state.openUntil > Date.now()) return 0;
   const failurePenalty = Math.min(45, state.consecutiveFailures * 15);
+  const permanentPenalty = state.permanentFailures > 0 ? 35 : 0;
   const latencyPenalty = state.latencyEwmaMs ? Math.min(35, Math.round((state.latencyEwmaMs / HEALTH_LATENCY_TARGET_MS) * 35)) : 0;
   const recentSuccessBonus = state.lastSuccessAt && Date.now() - state.lastSuccessAt < 120_000 ? 8 : 0;
-  return Math.max(1, Math.min(100, 100 - failurePenalty - latencyPenalty + recentSuccessBonus));
+  return Math.max(1, Math.min(100, 100 - failurePenalty - permanentPenalty - latencyPenalty + recentSuccessBonus));
 }
 
 function policyOrder(request, health) {
   const candidates = providerNames().filter(configured).filter(name => !hasMedia(request) || supportsMedia(name));
   if (!candidates.length) return [];
-  const policy = config.routingPolicy;
-  const fixed = policy === 'primary'
-    ? ['primary', ...candidates.filter(name => name !== 'primary')]
-    : policy === 'secondary'
-      ? ['secondary', ...candidates.filter(name => name !== 'secondary')]
-      : hasMedia(request)
-        ? ['primary', ...candidates.filter(name => name !== 'primary')]
-        : ['secondary', 'deepseek', 'groq', 'gemini', 'anthropic', 'primary'];
-
-  const preferred = fixed.filter(name => candidates.includes(name));
-  const rest = candidates.filter(name => !preferred.includes(name));
-  if (policy !== 'balanced') return [...preferred, ...rest];
-
-  const ranked = [...preferred, ...rest].sort((a, b) => {
+  const media = hasMedia(request);
+  let preferred;
+  if (config.routingPolicy === 'primary') {
+    preferred = ['primary', 'anthropic', 'secondary', 'deepseek', 'groq', 'gemini'];
+  } else if (config.routingPolicy === 'secondary') {
+    preferred = media
+      ? ['secondary', 'anthropic', 'primary', 'gemini', 'groq', 'deepseek']
+      : ['secondary', 'deepseek', 'groq', 'gemini', 'anthropic', 'primary'];
+  } else {
+    preferred = media
+      ? ['primary', 'anthropic', 'gemini', 'secondary', 'deepseek', 'groq']
+      : ['secondary', 'deepseek', 'groq', 'gemini', 'anthropic', 'primary'];
+  }
+  const ordered = [...preferred.filter(name => candidates.includes(name)), ...candidates.filter(name => !preferred.includes(name))];
+  if (config.routingPolicy !== 'balanced') return ordered;
+  return [...ordered].sort((a, b) => {
     const aState = health.get(a) || createHealthState();
     const bState = health.get(b) || createHealthState();
     const scoreDiff = providerScore(b, bState) - providerScore(a, aState);
     if (scoreDiff !== 0) return scoreDiff;
-    return preferred.indexOf(a) - preferred.indexOf(b);
+    return ordered.indexOf(a) - ordered.indexOf(b);
   });
-  return ranked;
 }
 
 function createHealthState() {
@@ -89,12 +91,7 @@ async function fetchJson(url, options, provider, timeoutMs = DEFAULT_TIMEOUT_MS)
       const data = await response.json().catch(() => ({}));
       if (response.ok) return data;
       const permanent = permanentStatus(response.status);
-      const error = new AIProviderError(data?.error?.message || `${provider} HTTP ${response.status}`, {
-        provider,
-        status: response.status,
-        retryable: retryableStatus(response.status) && !permanent,
-        permanent,
-      });
+      const error = new AIProviderError(data?.error?.message || `${provider} HTTP ${response.status}`, { provider, status: response.status, retryable: retryableStatus(response.status) && !permanent, permanent });
       if (!error.retryable || attempt === MAX_PROVIDER_ATTEMPTS) throw error;
       lastError = error;
       const retryAfter = Number(response.headers.get('retry-after'));
@@ -119,10 +116,7 @@ function toChatContent(input, supportsVision) {
   const messages = [];
   for (const item of input || []) {
     if (!item || !['user', 'assistant', 'system'].includes(item.role)) continue;
-    if (typeof item.content === 'string') {
-      messages.push({ role: item.role, content: item.content });
-      continue;
-    }
+    if (typeof item.content === 'string') { messages.push({ role: item.role, content: item.content }); continue; }
     if (!Array.isArray(item.content)) continue;
     const content = item.content.flatMap((part) => {
       if (part?.type === 'input_text' && typeof part.text === 'string') return [{ type: 'text', text: part.text }];
@@ -274,11 +268,7 @@ export class ProviderRouter {
   }
 
   async #primary(request) {
-    const data = await fetchJson(config.primaryEndpoint, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${config.openaiApiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: config.openaiModel, input: request.input, store: false }),
-    }, 'primary');
+    const data = await fetchJson(config.primaryEndpoint, { method: 'POST', headers: { Authorization: `Bearer ${config.openaiApiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: config.openaiModel, input: request.input, store: false }) }, 'primary');
     const text = extractResponseText(data);
     if (!text) throw new AIProviderError('Primary provider returned an empty response', { provider: 'primary', retryable: true });
     return { text, model: config.openaiModel };
@@ -290,11 +280,7 @@ export class ProviderRouter {
     const system = request.memory?.length ? `Memoria compartida:\n${request.memory.join('\n')}` : undefined;
     const body = { model: p.model, max_tokens: Number(process.env.AI_ANTHROPIC_MAX_TOKENS || 2048), messages };
     if (system) body.system = system;
-    const data = await fetchJson(p.endpoint, {
-      method: 'POST',
-      headers: { 'x-api-key': p.apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    }, 'anthropic');
+    const data = await fetchJson(p.endpoint, { method: 'POST', headers: { 'x-api-key': p.apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' }, body: JSON.stringify(body) }, 'anthropic');
     const text = (data?.content || []).filter(item => item?.type === 'text').map(item => item.text).join('\n').trim();
     if (!text) throw new AIProviderError('anthropic returned an empty response', { provider: 'anthropic', retryable: true });
     return { text, model: p.model };
@@ -304,11 +290,7 @@ export class ProviderRouter {
     const p = providerConfig(name);
     const messages = toChatContent(request.input, Boolean(p.supportsVision));
     if (!messages.length) messages.push({ role: 'user', content: request.prompt });
-    const data = await fetchJson(p.endpoint, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${p.apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: p.model, messages, temperature: request.temperature ?? 0.2 }),
-    }, name);
+    const data = await fetchJson(p.endpoint, { method: 'POST', headers: { Authorization: `Bearer ${p.apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: p.model, messages, temperature: request.temperature ?? 0.2 }) }, name);
     const raw = data?.choices?.[0]?.message?.content;
     const text = typeof raw === 'string' ? raw.trim() : Array.isArray(raw) ? raw.filter(part => typeof part?.text === 'string').map(part => part.text).join('\n').trim() : '';
     if (!text) throw new AIProviderError(`${name} returned an empty response`, { provider: name, retryable: true });
@@ -323,8 +305,4 @@ export class ProviderRouter {
 }
 
 export function createProviderRouter() { return new ProviderRouter(); }
-
-function extractResponseText(data) {
-  if (typeof data?.output_text === 'string') return data.output_text.trim();
-  return (data?.output || []).flatMap(item => item?.content || []).filter(content => content?.type === 'output_text' && typeof content.text === 'string').map(content => content.text).join('\n').trim();
-}
+function extractResponseText(data) { if (typeof data?.output_text === 'string') return data.output_text.trim(); return (data?.output || []).flatMap(item => item?.content || []).filter(content => content?.type === 'output_text' && typeof content.text === 'string').map(content => content.text).join('\n').trim(); }
