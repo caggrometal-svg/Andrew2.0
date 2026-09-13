@@ -46,3 +46,6 @@ jobs:
 
       - name: AI to Android bridge controller gate
         run: npm run test:phase24
+
+      - name: APK remote bridge loop gate
+        run: npx vitest run tests/phase25-remote-bridge-loop.test.ts
