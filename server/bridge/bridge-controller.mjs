@@ -7,6 +7,7 @@ const ALLOWED_PARAMETERS = new Set(['model', 'timeoutMs', 'pollIntervalMs', 'syn
 const USER_ID = /^[A-Za-z0-9._:-]{1,128}$/;
 
 function validUserId(userId) { return typeof userId === 'string' && USER_ID.test(userId); }
+function validRuntimeKey(key) { return ALLOWED_PARAMETERS.has(key) || /^providerWeight\.[A-Za-z0-9_-]{1,64}$/.test(key); }
 function validPayload(command, payload) {
   if (payload === undefined) return true;
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return false;
@@ -19,11 +20,11 @@ function validPayload(command, payload) {
   }
   if (command === 'open_settings') return Object.keys(payload).every((key) => key === 'section');
   if (command === 'request_status' || command === 'sync_now') return entries.length === 0;
-  if (command === 'set_runtime_parameter') return typeof payload.key === 'string' && ALLOWED_PARAMETERS.has(payload.key) && Object.prototype.hasOwnProperty.call(payload, 'value') && ['string','number','boolean'].includes(typeof payload.value);
+  if (command === 'set_runtime_parameter') return typeof payload.key === 'string' && validRuntimeKey(payload.key) && Object.prototype.hasOwnProperty.call(payload, 'value') && ['string','number','boolean'].includes(typeof payload.value);
   return false;
 }
 function envelope(command, payload) { const createdAt = Date.now(); return { id: randomUUID(), command, ...(payload === undefined ? {} : { payload }), createdAt, expiresAt: createdAt + TTL_MS }; }
-function parseRuntimeValue(value) { const trimmed = value.trim().replace(/^['"]|['"]$/g, ''); if (/^(true|false)$/i.test(trimmed)) return trimmed.toLowerCase() === 'true'; if (/^-?\d+(?:\.\d+)?$/.test(trimmed)) return Number(trimmed); return trimmed.slice(0, 256); }
+function parseRuntimeValue(value) { const trimmed = value.trim().replace(/^['\"]|['\"]$/g, ''); if (/^(true|false)$/i.test(trimmed)) return trimmed.toLowerCase() === 'true'; if (/^-?\d+(?:\.\d+)?$/.test(trimmed)) return Number(trimmed); return trimmed.slice(0, 256); }
 
 export function planBridgeAction(message) {
   if (typeof message !== 'string') return null;
@@ -32,7 +33,7 @@ export function planBridgeAction(message) {
   if (/\b(?:abre|abrir|open)\b.*\b(?:ajustes|configuraci[oó]n|settings)\b/i.test(text)) return { command: 'open_settings' };
   if (/\b(?:sincroniza|sincronizar|sync)\b/i.test(text)) return { command: 'sync_now' };
   if (/\b(?:dame|mostrar|mu[eé]strame|consultar|consulta|ver)\b.*\bestado\b/i.test(text)) return { command: 'request_status' };
-  const match = text.match(/\b(?:cambia|cambiar|establece|establecer|configura|configurar)\b.*?\b(model|timeoutMs|pollIntervalMs|syncEnabled)\b\s*(?:a|=|:)\s*([^,;\n]+)/i);
+  const match = text.match(/\b(?:cambia|cambiar|establece|establecer|configura|configurar)\b.*?\b(model|timeoutMs|pollIntervalMs|syncEnabled|providerWeight\.[A-Za-z0-9_-]+)\b\s*(?:a|=|:)\s*([^,;\n]+)/i);
   if (!match) return null;
   return { command: 'set_runtime_parameter', payload: { key: match[1], value: parseRuntimeValue(match[2]) } };
 }
