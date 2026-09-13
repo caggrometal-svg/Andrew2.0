@@ -24,7 +24,12 @@ export default function App() {
   const [seismicError, setSeismicError] = useState('');
   const messagesRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => startBridgeCommandLoop((e) => { if (e.message !== 'Bridge HTTP 429') setError(`Bridge remoto: ${e.message}`); }), []);
+  useEffect(() => startBridgeCommandLoop(
+    (e) => { if (e.message !== 'Bridge HTTP 429') setError(`Bridge remoto: ${e.message}`); },
+    (result) => {
+      if (result.reply) setMessages((m) => [...m, { role: 'assistant', text: result.reply! }]);
+    },
+  ), []);
 
   useEffect(() => {
     if (settings.autoScroll) messagesRef.current?.scrollTo({ top: messagesRef.current.scrollHeight, behavior: settings.reducedMotion ? 'auto' : 'smooth' });
