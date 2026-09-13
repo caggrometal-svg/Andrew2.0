@@ -57,3 +57,9 @@ jobs:
 
       - name: Multi-provider registry gate
         run: npx vitest run tests/phase27-provider-registry.test.mjs
+
+      - name: Provider recovery and capability gate
+        run: npx vitest run tests/phase28-provider-recovery.test.mjs
+
+      - name: Full AI regression gate
+        run: npx vitest run tests/phase26-provider-resilience.test.mjs tests/phase27-provider-registry.test.mjs tests/phase28-provider-recovery.test.mjs
