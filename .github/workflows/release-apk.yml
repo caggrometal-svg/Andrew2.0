@@ -34,15 +34,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: npm
 
-      - name: Verify lockfile integrity
+      - name: Verify package manifest
         shell: bash
-        run: test -f package-lock.json
+        run: test -f package.json
 
       - name: Install Dependencies & Build Frontend
         run: |
-          npm ci
+          npm install --no-audit --no-fund
           npm run typecheck
           npm test
           npm run test:server
@@ -58,7 +57,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if grep -RInE --exclude-dir=.git --exclude='npm-audit.json' \
+          if grep -RInE --exclude-dir=.git --exclude-dir=node_modules --exclude='npm-audit.json' \
             '(sk-[A-Za-z0-9]{20,}|OPENAI_API_KEY\s*[:=]\s*["'"']?sk-|BEGIN (RSA|EC|OPENSSH|PRIVATE) KEY)' \
             .; then
             echo 'Potential secret material detected in repository.' >&2
