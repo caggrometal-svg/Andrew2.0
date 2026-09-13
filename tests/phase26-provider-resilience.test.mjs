@@ -41,9 +41,8 @@ describe('Phase 26 provider resilience', () => {
   it('opens primary after three provider failures and then falls back', async () => {
     mockedConfig.routingPolicy = 'primary';
     const primaryFailure = () => ({ ok: false, status: 418, json: async () => ({ error: { message: 'down' } }), headers: new Headers() });
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(() => {
-      const primaryFailures = fetchMock.mock.calls.length;
-      return Promise.resolve(primaryFailures % 2 === 0 ? secondaryOk() : primaryFailure());
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((url) => {
+      return Promise.resolve(String(url) === mockedConfig.primaryEndpoint ? primaryFailure() : secondaryOk());
     });
     const router = new ProviderRouter();
 
