@@ -1,9 +1,8 @@
 import { config } from './config.mjs';
 
-const endpoint = 'https://api.openai.com/v1/responses';
 const MAX_VIDEO_FRAMES = 6;
 const MAX_HISTORY = 40;
-const OPENAI_TIMEOUT_MS = 60_000;
+const AI_TIMEOUT_MS = 60_000;
 const MAX_ATTEMPTS = 3;
 const RETRY_BASE_MS = 900;
 
@@ -22,13 +21,13 @@ function retryableStatus(status) {
   return status === 408 || status === 409 || status === 429 || status >= 500;
 }
 
-async function requestOpenAI(body) {
+async function requestAI(body) {
   let lastError;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), OPENAI_TIMEOUT_MS);
+    const timeout = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
     try {
-      const response = await fetch(endpoint, {
+      const response = await fetch(config.aiEndpoint, {
         method: 'POST',
         headers: { Authorization: `Bearer ${config.openaiApiKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -36,7 +35,7 @@ async function requestOpenAI(body) {
       });
       const data = await response.json().catch(() => ({}));
       if (response.ok) return data;
-      const error = new Error(data?.error?.message || `OpenAI HTTP ${response.status}`);
+      const error = new Error(data?.error?.message || `${config.aiProvider} HTTP ${response.status}`);
       error.status = response.status;
       if (!retryableStatus(response.status) || attempt === MAX_ATTEMPTS) throw error;
       lastError = error;
@@ -49,7 +48,7 @@ async function requestOpenAI(body) {
     }
     await new Promise((resolve) => setTimeout(resolve, RETRY_BASE_MS * (2 ** (attempt - 1))));
   }
-  throw lastError || new Error('OpenAI request failed');
+  throw lastError || new Error('AI request failed');
 }
 
 function historyInput(history) {
@@ -85,8 +84,8 @@ export async function createResponse({ message, memory = [], attachment, history
     }
   }
 
-  const data = await requestOpenAI({ model: config.openaiModel, input, store: false });
+  const data = await requestAI({ model: config.openaiModel, input, store: false });
   const text = extractText(data);
-  if (!text) throw new Error('OpenAI returned an empty response');
-  return { text, responseId: data.id || null, model: data.model || config.openaiModel };
+  if (!text) throw new Error(`${config.aiProvider} returned an empty response`);
+  return { text, responseId: data.id || null, model: data.model || config.openaiModel, provider: config.aiProvider };
 }
