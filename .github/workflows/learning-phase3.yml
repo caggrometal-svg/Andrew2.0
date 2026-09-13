@@ -47,15 +47,24 @@ jobs:
           node --check server/learning/learning-engine.mjs
           node --check server/routes/chat.mjs
           node --check server/server.mjs
+      - name: Autonomous regression suite gate
+        run: npm run test:regression-gate
       - name: Phase 2 persistent memory gate
         run: npm run test:memory
       - name: Phase 3 controlled learning gate
         run: npm run test:learning
       - name: Full regression
         run: npm test
+      - name: Phase 25 security and HTTP E2E
+        run: npm run test:phase25-e2e
+      - name: Dependency audit
+        run: npm audit --audit-level=critical
       - name: PHASE 3 GREEN GATE
         run: |
           set -euo pipefail
           echo 'PHASE_1_REGRESSION=GREEN'
           echo 'PHASE_2_REGRESSION=GREEN'
           echo 'PHASE_3_CONTROLLED_LEARNING=GREEN'
+          echo 'PHASE_25_E2E=GREEN'
+          echo 'ANDREW_3_MODEL_CONTRACT=GREEN'
+          echo 'AUTONOMOUS_REGRESSION_GATE=GREEN'
