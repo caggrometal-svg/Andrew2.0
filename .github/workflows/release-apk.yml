@@ -6,6 +6,9 @@ on:
     branches:
       - main
       - iac33-integration-next
+  pull_request:
+    branches:
+      - iac33-integration-next
 
 concurrency:
   group: android-apk-${{ github.ref }}
@@ -42,6 +45,7 @@ jobs:
           npm ci
           npm run typecheck
           npm test
+          npm run test:server
           npm run build
 
       - name: Security audit gate
