@@ -31,10 +31,11 @@ jobs:
           npm test
           npm run build
 
-      - name: Security audit report
+      - name: Security audit gate
         shell: bash
         run: |
-          npm audit --json > npm-audit.json || true
+          set -o pipefail
+          npm audit --audit-level=high --json | tee npm-audit.json
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
