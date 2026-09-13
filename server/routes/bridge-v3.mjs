@@ -1,5 +1,4 @@
 import { acknowledgeBridgeCommand, getBridgeSyncState, initializeBridgeStore, listPendingBridgeCommands } from '../bridge/bridge-store.mjs';
-import { getAIProviderHealth } from '../openai.mjs';
 import { queueBridgeAction } from '../bridge/bridge-controller.mjs';
 import { bridgeDeviceAttestationHeaders, verifyBridgeDeviceAttestation } from '../auth/bridge-v3-device.mjs';
 
@@ -16,6 +15,7 @@ function authenticate(request, reply) {
   return null;
 }
 function writeEnabled() { return /^(1|true|yes)$/i.test(process.env.ANDREW_BRIDGE_ALLOW_WRITE || ''); }
+function aiPolicy() { return process.env.ANDREW_ROUTING_POLICY?.trim() || 'balanced'; }
 function cleanResult(value) {
   if (value === undefined) return undefined;
   const kind = typeof value;
@@ -41,7 +41,7 @@ export async function registerBridgeV3Routes(app) {
 
   app.get('/api/v1/bridge/v3/status', async (request, reply) => {
     const deviceId = authenticate(request, reply); if (!deviceId) return;
-    return { ok: true, deviceId, commands: [...ALLOWED_COMMANDS], writeEnabled: writeEnabled(), ttlMs: TTL_MS, ai: getAIProviderHealth() };
+    return { ok: true, deviceId, commands: [...ALLOWED_COMMANDS], writeEnabled: writeEnabled(), ttlMs: TTL_MS, ai: { policy: aiPolicy() } };
   });
   app.get('/api/v1/bridge/v3/commands', async (request, reply) => {
     const deviceId = authenticate(request, reply); if (!deviceId) return;
@@ -52,7 +52,7 @@ export async function registerBridgeV3Routes(app) {
     let artifact;
     try { artifact = artifactManifest(); } catch { return reply.code(503).send({ ok: false, error: 'artifact_manifest_unavailable' }); }
     const state = await getBridgeSyncState(deviceId);
-    return { ok: true, deviceId, writeEnabled: writeEnabled(), ttlMs: TTL_MS, ai: getAIProviderHealth(), artifact, ...state };
+    return { ok: true, deviceId, writeEnabled: writeEnabled(), ttlMs: TTL_MS, ai: { policy: aiPolicy() }, artifact, ...state };
   });
   app.post('/api/v1/bridge/v3/command', async (request, reply) => {
     const deviceId = authenticate(request, reply); if (!deviceId) return;
