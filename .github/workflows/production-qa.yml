@@ -37,52 +37,17 @@ jobs:
                  [ "$(echo "$body" | jq -r '.checks.openaiApiKeyConfigured')" = "true" ] && \
                  [ "$(echo "$body" | jq -r '.checks.server')" = "ok" ] && \
                  [ "$(echo "$body" | jq -r '.checks.mediaRuntime')" = "ok" ]; then
+                echo 'GATE=RENDER_HEALTH'
+                echo 'STATUS=PASS'
                 exit 0
               fi
             fi
             sleep 5
           done
+          echo 'GATE=RENDER_HEALTH'
+          echo 'STATUS=FAIL'
           echo 'HEALTH GATE FAILED'
           exit 1
-
-      - name: Production chat smoke test
-        env:
-          ANDREW_BRIDGE_PAIRING_CODE: ${{ secrets.ANDREW_BRIDGE_PAIRING_CODE }}
-          ANDREW_BRIDGE_SECRET: ${{ secrets.ANDREW_BRIDGE_SECRET }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -n "${ANDREW_BRIDGE_PAIRING_CODE:-}${ANDREW_BRIDGE_SECRET:-}"
-          node scripts/production-chat-smoke.mjs
-
-      - name: CORS rejection check
-        shell: bash
-        run: |
-          set -euo pipefail
-          headers="$(curl -sS -D - -o /dev/null -X OPTIONS "$BASE_URL/api/chat" \
-            -H 'Origin: https://malicious-origin.com' \
-            -H 'Access-Control-Request-Method: POST' \
-            -H 'Access-Control-Request-Headers: content-type')"
-          echo "$headers"
-          if printf '%s\n' "$headers" | grep -Eiq '^access-control-allow-origin:[[:space:]]*https://malicious-origin\.com[[:space:]]*$'; then
-            echo 'CORS FAILURE: malicious origin was allowed'
-            exit 1
-          fi
-
-      - name: Telemetry rate-limit check
-        shell: bash
-        run: |
-          set -euo pipefail
-          hit=0
-          for i in $(seq 1 65); do
-            code="$(curl -sS -o /dev/null -w '%{http_code}' \
-              -H 'Content-Type: application/json' \
-              -X POST "$BASE_URL/api/telemetry" \
-              --data '{"event":"qa_rate_limit","source":"ci"}')"
-            echo "REQ=$i HTTP=$code"
-            if [ "$code" = "429" ]; then hit=1; break; fi
-          done
-          test "$hit" = "1"
 
       - name: Backend static validation
         shell: bash
@@ -99,12 +64,64 @@ jobs:
           node --check server/routes/telemetry.mjs
           node --check server/security/distributed-rate-limit.mjs
           node --check scripts/production-chat-smoke.mjs
+          echo 'GATE=CODE'
+          echo 'STATUS=PASS'
+
+      - name: Production chat smoke test
+        env:
+          ANDREW_BRIDGE_PAIRING_CODE: ${{ secrets.ANDREW_BRIDGE_PAIRING_CODE }}
+          ANDREW_BRIDGE_SECRET: ${{ secrets.ANDREW_BRIDGE_SECRET }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/production-chat-smoke.mjs
+
+      - name: CORS rejection check
+        shell: bash
+        run: |
+          set -euo pipefail
+          headers="$(curl -sS -D - -o /dev/null -X OPTIONS "$BASE_URL/api/chat" \
+            -H 'Origin: https://malicious-origin.com' \
+            -H 'Access-Control-Request-Method: POST' \
+            -H 'Access-Control-Request-Headers: content-type')"
+          echo "$headers"
+          if printf '%s\n' "$headers" | grep -Eiq '^access-control-allow-origin:[[:space:]]*https://malicious-origin\.com[[:space:]]*$'; then
+            echo 'GATE=CORS'
+            echo 'STATUS=FAIL'
+            echo 'CORS FAILURE: malicious origin was allowed'
+            exit 1
+          fi
+          echo 'GATE=CORS'
+          echo 'STATUS=PASS'
+
+      - name: Telemetry rate-limit check
+        shell: bash
+        run: |
+          set -euo pipefail
+          hit=0
+          for i in $(seq 1 65); do
+            code="$(curl -sS -o /dev/null -w '%{http_code}' \
+              -H 'Content-Type: application/json' \
+              -X POST "$BASE_URL/api/telemetry" \
+              --data '{"event":"qa_rate_limit","source":"ci"}')"
+            echo "REQ=$i HTTP=$code"
+            if [ "$code" = "429" ]; then hit=1; break; fi
+          done
+          if [ "$hit" != "1" ]; then
+            echo 'GATE=RATE_LIMIT'
+            echo 'STATUS=FAIL'
+            exit 1
+          fi
+          echo 'GATE=RATE_LIMIT'
+          echo 'STATUS=PASS'
 
       - name: Production dependency audit
         shell: bash
         run: |
           set -euo pipefail
           npm audit --omit=dev --audit-level=high
+          echo 'GATE=DEPENDENCY_AUDIT'
+          echo 'STATUS=PASS'
 
       - name: Full dependency audit report
         shell: bash
