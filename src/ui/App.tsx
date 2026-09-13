@@ -6,7 +6,6 @@ import { getBridgeSessionId } from '@network/andrewBridge';
 import { seismicPredictionEngine, type SeismicForecastResult } from '@/services/seismic/seismicEngine';
 import AndrewChat from './AndrewChat';
 import VideoGenerationPanel from './VideoGenerationPanel';
-import './styles.css';
 import './reengineering.css';
 
 type Tab = 'andrew' | 'multimedia' | 'network' | 'seismic' | 'metrics' | 'settings';
