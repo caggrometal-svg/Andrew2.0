@@ -24,6 +24,13 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Guardrail - No Vitest imports in native phase25 suite
+        run: |
+          if grep -rn "from 'vitest'" tests/phase25-*.test.mjs; then
+            echo "ERROR: Vitest import leak detected in native test files."
+            exit 1
+          fi
+
       - name: Health check
         shell: bash
         run: |
