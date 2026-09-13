@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import './styles.css';
 import { TimelineStore, type TimelineState } from './editor/timeline-store';
 import { sendThroughBridge } from './network/andrewBridge';
+import { startBridgeCommandLoop } from './network/bridgeCommandLoop';
 import { fetchChileSeismicity, seismicProjection, type SeismicEvent } from './services/seismic';
 import { DEFAULT_SETTINGS, loadSettings, saveSettings, type AppSettings } from './settings/app-settings';
 
@@ -22,6 +23,8 @@ export default function App() {
   const [seismicBusy, setSeismicBusy] = useState(false);
   const [seismicError, setSeismicError] = useState('');
   const messagesRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => startBridgeCommandLoop((e) => { if (e.message !== 'Bridge HTTP 429') setError(`Bridge remoto: ${e.message}`); }), []);
 
   useEffect(() => {
     if (settings.autoScroll) messagesRef.current?.scrollTo({ top: messagesRef.current.scrollHeight, behavior: settings.reducedMotion ? 'auto' : 'smooth' });
@@ -59,10 +62,7 @@ export default function App() {
 
   function addClip() {
     const videoTrack = timeline.tracks.find((track) => track.id === 'video-1');
-    if (!videoTrack) {
-      setError('No existe la pista de video principal.');
-      return;
-    }
+    if (!videoTrack) { setError('No existe la pista de video principal.'); return; }
     apply(() => store.addClip({ assetId: `asset-${Date.now()}`, trackId: videoTrack.id, start: timeline.duration, duration: 5, sourceStart: 0, sourceDuration: 5, title: `Clip ${videoTrack.clips.length + 1}` }));
   }
 
@@ -70,8 +70,7 @@ export default function App() {
     if (key === 'notifications' && value === true && typeof Notification !== 'undefined' && Notification.permission === 'default') {
       try { await Notification.requestPermission(); } catch { /* WebView may not expose permission APIs */ }
     }
-    const next = saveSettings({ ...settings, [key]: value });
-    setSettings(next);
+    const next = saveSettings({ ...settings, [key]: value }); setSettings(next);
   }
 
   const selectedClip = timeline.tracks.flatMap((t) => t.clips).find((c) => c.id === timeline.selectedClipId);
