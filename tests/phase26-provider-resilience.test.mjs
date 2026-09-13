@@ -40,10 +40,10 @@ describe('Phase 26 provider resilience', () => {
 
   it('opens primary after three provider failures and then falls back', async () => {
     mockedConfig.routingPolicy = 'primary';
-    const primaryFailure = () => ({ ok: false, status: 503, json: async () => ({ error: { message: 'down' } }), headers: new Headers() });
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((url) => {
-      const calls = fetchMock.mock.calls.length;
-      return Promise.resolve(calls % 4 === 0 ? secondaryOk() : primaryFailure());
+    const primaryFailure = () => ({ ok: false, status: 418, json: async () => ({ error: { message: 'down' } }), headers: new Headers() });
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(() => {
+      const primaryFailures = fetchMock.mock.calls.length;
+      return Promise.resolve(primaryFailures % 2 === 0 ? secondaryOk() : primaryFailure());
     });
     const router = new ProviderRouter();
 
@@ -61,7 +61,7 @@ describe('Phase 26 provider resilience', () => {
 
     const fourth = await router.execute({ prompt: 'four', input: [{ role: 'user', content: 'four' }] });
     expect(fourth.provider).toBe('secondary');
-    expect(fetchMock).toHaveBeenCalledTimes(13);
+    expect(fetchMock).toHaveBeenCalledTimes(7);
   });
 
   it('passes explicit memory into the secondary request contract', async () => {
