@@ -19,12 +19,14 @@ import { ProviderRouter } from '../server/ai/provider-router.mjs';
 
 const primaryOk = () => ({ ok: true, json: async () => ({ output_text: 'primary answer' }), headers: new Headers() });
 const secondaryOk = () => ({ ok: true, json: async () => ({ choices: [{ message: { content: 'secondary answer' } }] }), headers: new Headers() });
+const countCalls = (mock, endpoint) => mock.mock.calls.filter(([url]) => String(url) === endpoint).length;
 
 beforeEach(() => {
   mockedConfig.routingPolicy = 'balanced';
   mockedConfig.tiers = { primary: { tier: 1 }, secondary: { tier: 1 } };
   vi.restoreAllMocks();
 });
+
 afterEach(() => vi.useRealTimers());
 
 describe('Phase 26 provider resilience', () => {
@@ -44,7 +46,7 @@ describe('Phase 26 provider resilience', () => {
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });
 
-  it('opens primary after three transient provider failures and then falls back', async () => {
+  it('opens primary after three transient failure cycles and then falls back without probing an open circuit', async () => {
     mockedConfig.routingPolicy = 'primary';
     mockedConfig.tiers = { primary: { tier: 1 }, secondary: { tier: 2 } };
     const primaryFailure = () => ({ ok: false, status: 503, json: async () => ({ error: { message: 'down' } }), headers: new Headers() });
@@ -54,18 +56,29 @@ describe('Phase 26 provider resilience', () => {
     const first = await router.execute({ prompt: 'one', input: [{ role: 'user', content: 'one' }] });
     expect(first.provider).toBe('secondary');
     expect(router.getHealth().providers.primary.state).toBe('closed');
+    const primaryAttemptsPerCycle = countCalls(fetchMock, mockedConfig.primaryEndpoint);
+    const secondaryFallbacksAfterFirst = countCalls(fetchMock, mockedConfig.secondaryEndpoint);
+    expect(primaryAttemptsPerCycle).toBeGreaterThan(0);
+    expect(secondaryFallbacksAfterFirst).toBe(1);
 
     const second = await router.execute({ prompt: 'two', input: [{ role: 'user', content: 'two' }] });
     expect(second.provider).toBe('secondary');
     expect(router.getHealth().providers.primary.state).toBe('closed');
+    expect(countCalls(fetchMock, mockedConfig.primaryEndpoint)).toBe(primaryAttemptsPerCycle * 2);
+    expect(countCalls(fetchMock, mockedConfig.secondaryEndpoint)).toBe(2);
 
     const third = await router.execute({ prompt: 'three', input: [{ role: 'user', content: 'three' }] });
     expect(third.provider).toBe('secondary');
     expect(router.getHealth().providers.primary.state).toBe('open');
+    expect(countCalls(fetchMock, mockedConfig.primaryEndpoint)).toBe(primaryAttemptsPerCycle * 3);
+    expect(countCalls(fetchMock, mockedConfig.secondaryEndpoint)).toBe(3);
 
+    const primaryCallsBeforeOpenFallback = countCalls(fetchMock, mockedConfig.primaryEndpoint);
+    const secondaryCallsBeforeOpenFallback = countCalls(fetchMock, mockedConfig.secondaryEndpoint);
     const fourth = await router.execute({ prompt: 'four', input: [{ role: 'user', content: 'four' }] });
     expect(fourth.provider).toBe('secondary');
-    expect(fetchMock).toHaveBeenCalledTimes(7);
+    expect(countCalls(fetchMock, mockedConfig.primaryEndpoint)).toBe(primaryCallsBeforeOpenFallback);
+    expect(countCalls(fetchMock, mockedConfig.secondaryEndpoint)).toBe(secondaryCallsBeforeOpenFallback + 1);
   });
 
   it('passes explicit memory into the secondary request contract', async () => {
