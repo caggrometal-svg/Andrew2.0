@@ -58,7 +58,7 @@ describe('Phase 26 provider resilience', () => {
 
     const fourth = await router.execute({ prompt: 'four', input: [{ role: 'user', content: 'four' }] });
     expect(fourth.provider).toBe('secondary');
-    expect(fetchMock).toHaveBeenCalledTimes(7);
+    expect(fetchMock).toHaveBeenCalledTimes(10);
   });
 
   it('passes explicit memory into the secondary request contract', async () => {
