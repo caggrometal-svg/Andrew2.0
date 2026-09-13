@@ -51,10 +51,6 @@ function sleep(ms: number): Promise<void> { return new Promise(resolve => window
 function notify(listener: NetworkStatusListener | undefined, status: NetworkStatus, detail?: string): void {
   listener?.(status, detail);
   try { window.dispatchEvent(new CustomEvent('andrew:network-status', { detail: { status, detail } })); } catch { /* Optional UI event. */ }
-  try {
-    const live = document.querySelector<HTMLElement>('[aria-live="polite"]');
-    if (live) live.textContent = status === 'connecting' ? 'Conectando…' : status === 'retrying' ? (detail || 'Reintentando…') : status === 'error' ? 'Conexión interrumpida' : 'Conexión establecida';
-  } catch { /* Non-critical UI notification. */ }
 }
 function isRetryableError(error: unknown): boolean { return error instanceof TypeError || (error instanceof DOMException && error.name === 'AbortError'); }
 
