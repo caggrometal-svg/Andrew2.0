@@ -21,4 +21,5 @@ jobs:
       - run: npm run test:phase18
       - run: npm run test:phase17
       - run: npm run test:phase16
+      - run: npx vitest run tests/provider-router-failover.test.mjs
       - run: echo PHASE_18_GREEN_GATE
