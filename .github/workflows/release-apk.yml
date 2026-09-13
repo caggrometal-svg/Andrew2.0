@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - iac33-integration-next
+      - foundation-strangler
 
 permissions:
   contents: read
