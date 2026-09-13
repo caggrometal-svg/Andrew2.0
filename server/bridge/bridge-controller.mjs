@@ -41,7 +41,8 @@ export function planBridgeAction(message) {
 export async function queueBridgeAction({ userId, action }) {
   if (!validUserId(userId)) return { queued: false, error: 'identity_required' };
   if (!action || !COMMANDS.has(action.command)) return { queued: false, error: 'unsupported_command' };
-  if (action.command === 'set_runtime_parameter' && !/^(1|true|yes)$/i.test(process.env.ANDREW_BRIDGE_ALLOW_WRITE || '')) return { queued: false, error: 'write_disabled' };
+  const writeEnabled = /^(1|true|yes)$/i.test(process.env.BRIDGE_V3_ALLOW_WRITE || process.env.ANDREW_BRIDGE_ALLOW_WRITE || '');
+  if (action.command === 'set_runtime_parameter' && !writeEnabled) return { queued: false, error: 'write_disabled' };
   if (!validPayload(action.command, action.payload)) return { queued: false, error: 'invalid_payload' };
   const command = envelope(action.command, action.payload);
   await enqueueBridgeCommand({ userId, envelope: command });
