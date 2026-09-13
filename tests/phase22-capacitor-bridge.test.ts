@@ -8,14 +8,14 @@ describe('Phase 22 controlled Capacitor bridge boundary', () => {
       setRuntimeParameter: vi.fn(),
       requestStatus: vi.fn(),
       syncNow: vi.fn(),
-      executeShell: vi.fn(),
+      unsupportedMethod: vi.fn(),
     };
     const hooks = createCapacitorBridgePluginFromGlobal({ AndrewBridge: plugin });
     const execute = createCapacitorBridgeExecutor(hooks);
     const base = { id: 'cmd', createdAt: Date.now(), expiresAt: Date.now() + 60_000 };
 
     await execute({ ...base, command: 'open_settings' });
-    await execute({ ...base, command: 'set_runtime_parameter', payload: { model: 'gpt-5.6-luna' } });
+    await execute({ ...base, command: 'set_runtime_parameter', payload: { key: 'model', value: 'gpt-5.6-luna' } });
     await execute({ ...base, command: 'request_status' });
     await execute({ ...base, command: 'sync_now' });
 
@@ -23,11 +23,11 @@ describe('Phase 22 controlled Capacitor bridge boundary', () => {
     expect(plugin.setRuntimeParameter).toHaveBeenCalledWith('model', 'gpt-5.6-luna');
     expect(plugin.requestStatus).toHaveBeenCalledTimes(1);
     expect(plugin.syncNow).toHaveBeenCalledTimes(1);
-    expect(hooks).not.toHaveProperty('executeShell');
+    expect(hooks).not.toHaveProperty('unsupportedMethod');
   });
 
   it('does not expose arbitrary global methods', () => {
-    const hooks = createCapacitorBridgePluginFromGlobal({ AndrewBridge: { executeShell: vi.fn(), runCommand: vi.fn() } });
+    const hooks = createCapacitorBridgePluginFromGlobal({ AndrewBridge: { unsupportedMethod: vi.fn(), runCommand: vi.fn() } });
     expect(hooks).toEqual({});
   });
 });
