@@ -37,6 +37,7 @@ function request(prompt, memory = ['Camilo prefiere respuestas directas']) {
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   mockConfig.routingPolicy = 'primary';
 });
 
