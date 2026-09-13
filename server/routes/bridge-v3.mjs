@@ -1,4 +1,4 @@
-import { acknowledgeBridgeCommand, initializeBridgeStore, listPendingBridgeCommands } from '../bridge/bridge-store.mjs';
+import { acknowledgeBridgeCommand, getBridgeSyncState, initializeBridgeStore, listPendingBridgeCommands } from '../bridge/bridge-store.mjs';
 import { getAIProviderHealth } from '../openai.mjs';
 import { queueBridgeAction } from '../bridge/bridge-controller.mjs';
 
@@ -28,6 +28,13 @@ export async function registerBridgeV3Routes(app) {
     const userId = identity(request);
     if (!userId) return reply.code(401).send({ ok: false, error: 'identity_required' });
     return { ok: true, commands: await listPendingBridgeCommands(userId), writeEnabled: writeEnabled() };
+  });
+
+  app.get('/api/v1/bridge/v3/sync', async (request, reply) => {
+    const userId = identity(request);
+    if (!userId) return reply.code(401).send({ ok: false, error: 'identity_required' });
+    const state = await getBridgeSyncState(userId);
+    return { ok: true, userId, writeEnabled: writeEnabled(), ttlMs: TTL_MS, ai: getAIProviderHealth(), ...state };
   });
 
   app.post('/api/v1/bridge/v3/command', async (request, reply) => {
