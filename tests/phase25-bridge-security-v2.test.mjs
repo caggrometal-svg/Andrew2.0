@@ -15,7 +15,7 @@ function signed({ key = privateKey, timestamp = Date.now(), nonce = crypto.rando
 
 test.beforeEach(() => resetBridgeAuthForTests());
 test('TEST 1: 401 Missing Headers', () => assert.equal(verifyBridgeSignature({ headers: {}, publicKey: publicPem }).status, 401));
-test('TEST 2: 401 Invalid Signature', () => assert.equal(verifyBridgeSignature({ headers: signed({ key: wrong }), publicKey: publicPem }).status, 401));
-test('TEST 3: 401 Replay Attack', () => { const headers = signed(); assert.equal(verifyBridgeSignature({ headers, publicKey: publicPem }).ok, true); const replay = verifyBridgeSignature({ headers, publicKey: publicPem }); assert.equal(replay.status, 401); assert.equal(replay.error, 'bridge_auth_replay'); });
-test('TEST 4: 401 Timestamp Expired', () => { const result = verifyBridgeSignature({ headers: signed({ timestamp: Date.now() - 301000 }), publicKey: publicPem }); assert.equal(result.status, 401); assert.equal(result.error, 'bridge_auth_expired'); });
-test('TEST 5: 200 OK Valid Signature', () => { const result = verifyBridgeSignature({ headers: signed(), publicKey: publicPem }); assert.equal(result.ok, true); assert.equal(result.userId, userId); });
+test('TEST 2: 401 Invalid Signature', () => { const headers = signed({ key: wrong }); assert.equal(verifyBridgeSignature({ headers, body: headers.body, publicKey: publicPem }).status, 401); });
+test('TEST 3: 401 Replay Attack', () => { const headers = signed(); assert.equal(verifyBridgeSignature({ headers, body: headers.body, publicKey: publicPem }).ok, true); const replay = verifyBridgeSignature({ headers, body: headers.body, publicKey: publicPem }); assert.equal(replay.status, 401); assert.equal(replay.error, 'bridge_auth_replay'); });
+test('TEST 4: 401 Timestamp Expired', () => { const headers = signed({ timestamp: Date.now() - 301000 }); const result = verifyBridgeSignature({ headers, body: headers.body, publicKey: publicPem }); assert.equal(result.status, 401); assert.equal(result.error, 'bridge_auth_expired'); });
+test('TEST 5: 200 OK Valid Signature', () => { const headers = signed(); const result = verifyBridgeSignature({ headers, body: headers.body, publicKey: publicPem }); assert.equal(result.ok, true); assert.equal(result.userId, userId); });
