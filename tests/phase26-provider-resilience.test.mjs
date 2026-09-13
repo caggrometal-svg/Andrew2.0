@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
-const mockedConfig = {
+const mockedConfig = vi.hoisted(() => ({
   openaiApiKey: 'primary-key',
   openaiModel: 'primary-model',
   primaryEndpoint: 'https://primary.test/v1/responses',
@@ -9,7 +9,7 @@ const mockedConfig = {
   secondaryModel: 'secondary-model',
   secondarySupportsVision: false,
   routingPolicy: 'balanced',
-};
+}));
 
 vi.mock('../server/config.mjs', () => ({ config: mockedConfig }));
 
