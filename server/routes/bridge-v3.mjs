@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { acknowledgeBridgeCommand, enqueueBridgeCommand, initializeBridgeStore, listPendingBridgeCommands } from '../bridge/bridge-store.mjs';
 import { getAIProviderHealth } from '../openai.mjs';
 
