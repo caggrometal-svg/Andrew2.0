@@ -10,7 +10,7 @@ const mockedConfig = vi.hoisted(() => ({
   secondarySupportsVision: false,
   routingPolicy: 'balanced',
   providers: {},
-  tiers: { primary: { tier: 1 }, secondary: { tier: 2 } },
+  tiers: { primary: { tier: 1 }, secondary: { tier: 1 } },
 }));
 
 vi.mock('../server/config.mjs', () => ({ config: mockedConfig }));
@@ -20,7 +20,11 @@ import { ProviderRouter } from '../server/ai/provider-router.mjs';
 const primaryOk = () => ({ ok: true, json: async () => ({ output_text: 'primary answer' }), headers: new Headers() });
 const secondaryOk = () => ({ ok: true, json: async () => ({ choices: [{ message: { content: 'secondary answer' } }] }), headers: new Headers() });
 
-beforeEach(() => { mockedConfig.routingPolicy = 'balanced'; vi.restoreAllMocks(); });
+beforeEach(() => {
+  mockedConfig.routingPolicy = 'balanced';
+  mockedConfig.tiers = { primary: { tier: 1 }, secondary: { tier: 1 } };
+  vi.restoreAllMocks();
+});
 afterEach(() => vi.useRealTimers());
 
 describe('Phase 26 provider resilience', () => {
@@ -42,6 +46,7 @@ describe('Phase 26 provider resilience', () => {
 
   it('opens primary after three transient provider failures and then falls back', async () => {
     mockedConfig.routingPolicy = 'primary';
+    mockedConfig.tiers = { primary: { tier: 1 }, secondary: { tier: 2 } };
     const primaryFailure = () => ({ ok: false, status: 503, json: async () => ({ error: { message: 'down' } }), headers: new Headers() });
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((url) => Promise.resolve(String(url) === mockedConfig.primaryEndpoint ? primaryFailure() : secondaryOk()));
     const router = new ProviderRouter();
