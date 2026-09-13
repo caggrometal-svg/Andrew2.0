@@ -47,16 +47,26 @@ function execute(command: BridgeCommand): void {
   const native = window.AndrewBridge;
   if (!native) throw new Error('native_bridge_unavailable');
   switch (command.command) {
-    case 'open_settings': native.openSettings?.(); return;
+    case 'open_settings':
+      if (!native.openSettings) throw new Error('native_operation_unavailable');
+      native.openSettings();
+      return;
     case 'set_runtime_parameter': {
       const key = command.payload?.key;
       const value = command.payload?.value;
       if (typeof key !== 'string' || (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean')) throw new Error('invalid_runtime_payload');
-      native.setRuntimeParameter?.(key, String(value));
+      if (!native.setRuntimeParameter) throw new Error('native_operation_unavailable');
+      native.setRuntimeParameter(key, String(value));
       return;
     }
-    case 'request_status': native.requestStatus?.(); return;
-    case 'sync_now': native.syncNow?.(); return;
+    case 'request_status':
+      if (!native.requestStatus) throw new Error('native_operation_unavailable');
+      native.requestStatus();
+      return;
+    case 'sync_now':
+      if (!native.syncNow) throw new Error('native_operation_unavailable');
+      native.syncNow();
+      return;
   }
 }
 
