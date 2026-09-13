@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "andrew-ai-bridge/v3",
+  "title": "Andrew AI Bridge v3 Response",
+  "type": "object",
+  "required": ["ok", "conversationId", "reply", "bridgeProtocol", "modelMetadata", "availability"],
+  "properties": {
+    "ok": { "const": true },
+    "conversationId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "reply": { "type": "string" },
+    "responseId": { "type": ["string", "null"] },
+    "model": { "type": ["string", "null"] },
+    "provider": { "type": ["string", "null"] },
+    "latencyMs": { "type": "number", "minimum": 0 },
+    "bridgeProtocol": { "const": "andrew-ai-bridge/v3" },
+    "modelMetadata": {
+      "type": "object",
+      "required": ["contractVersion", "model", "provider", "deterministicPayload"],
+      "properties": {
+        "contractVersion": { "type": "string" },
+        "model": { "type": ["string", "null"] },
+        "provider": { "type": ["string", "null"] },
+        "inputMessageCount": { "type": "integer", "minimum": 0 },
+        "inputRoleCounts": { "type": "object" },
+        "outputMessageCount": { "type": "integer", "minimum": 0 },
+        "outputTextChars": { "type": "integer", "minimum": 0 },
+        "deterministicPayload": { "const": true }
+      }
+    },
+    "availability": {
+      "type": "object",
+      "required": ["contractVersion", "serviceIdentity", "usagePolicy", "appEnforcedQuota", "providerCount"],
+      "properties": {
+        "contractVersion": { "type": "string" },
+        "serviceIdentity": { "const": "Andrew 3.0" },
+        "usagePolicy": { "const": "unlimited-app" },
+        "appEnforcedQuota": { "const": false },
+        "providerCount": { "type": "integer", "minimum": 0 },
+        "tiers": { "type": "object" }
+      }
+    }
+  }
+}
