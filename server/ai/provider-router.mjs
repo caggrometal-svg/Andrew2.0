@@ -6,6 +6,9 @@ const CACHE_TTL_MS = 15 * 60 * 1000;
 const MAX_CACHE_ENTRIES = 256;
 const MAX_PROVIDER_ATTEMPTS = 3;
 const RETRY_BASE_MS = 900;
+const BREAKER_THRESHOLD = 3;
+const BREAKER_COOLDOWN_MS = 30_000;
+const HEALTH_LATENCY_TARGET_MS = 4_000;
 
 export class AIProviderError extends Error {
   constructor(message, { provider, status = null, retryable = false, cause } = {}) {
@@ -21,13 +24,19 @@ function hash(value) { return crypto.createHash('sha256').update(JSON.stringify(
 function retryableStatus(status) { return status === 408 || status === 409 || status === 429 || status >= 500; }
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 function hasMedia(request) { return Boolean(request.attachment?.type); }
+
+function availableSecondary() { return Boolean(config.secondaryApiKey && config.secondaryEndpoint); }
+
 function policyOrder(request) {
-  const secondaryAvailable = Boolean(config.secondaryApiKey && config.secondaryEndpoint);
-  if (!secondaryAvailable) return ['primary'];
+  if (!availableSecondary()) return ['primary'];
   if (hasMedia(request) && !config.secondarySupportsVision) return ['primary'];
   if (config.routingPolicy === 'primary') return ['primary', 'secondary'];
   if (config.routingPolicy === 'secondary') return ['secondary', 'primary'];
   return hasMedia(request) ? ['primary', 'secondary'] : ['secondary', 'primary'];
+}
+
+function createHealthState() {
+  return { successes: 0, failures: 0, consecutiveFailures: 0, lastFailureAt: null, lastSuccessAt: null, lastError: null, latencyEwmaMs: null, openUntil: 0, halfOpen: false, probeInFlight: false };
 }
 
 async function fetchJson(url, options, provider, timeoutMs = DEFAULT_TIMEOUT_MS) {
@@ -43,12 +52,13 @@ async function fetchJson(url, options, provider, timeoutMs = DEFAULT_TIMEOUT_MS)
       if (!error.retryable || attempt === MAX_PROVIDER_ATTEMPTS) throw error;
       lastError = error;
       const retryAfter = Number(response.headers.get('retry-after'));
-      await sleep(Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter * 1000, 10_000) : RETRY_BASE_MS * (2 ** (attempt - 1)));
+      const delay = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter * 1000, 10_000) : RETRY_BASE_MS * (2 ** (attempt - 1));
+      await sleep(delay + Math.floor(Math.random() * 250));
     } catch (error) {
-      lastError = error;
+      lastError = error instanceof Error ? error : new Error(String(error));
       if (error instanceof AIProviderError && (!error.retryable || attempt === MAX_PROVIDER_ATTEMPTS)) throw error;
-      if (attempt === MAX_PROVIDER_ATTEMPTS) throw error;
-      await sleep(RETRY_BASE_MS * (2 ** (attempt - 1)));
+      if (attempt === MAX_PROVIDER_ATTEMPTS) throw lastError;
+      await sleep(RETRY_BASE_MS * (2 ** (attempt - 1)) + Math.floor(Math.random() * 250));
     } finally { clearTimeout(timer); }
   }
   throw lastError || new AIProviderError(`${provider} request failed`, { provider, retryable: true });
@@ -56,6 +66,7 @@ async function fetchJson(url, options, provider, timeoutMs = DEFAULT_TIMEOUT_MS)
 
 export class ProviderRouter {
   #cache = new Map();
+  #health = new Map([['primary', createHealthState()], ['secondary', createHealthState()]]);
 
   async execute(request) {
     const key = hash({ prompt: request.prompt, history: request.history || [], input: request.input || [], memory: request.memory || [], temperature: request.temperature ?? null, attachment: request.attachment || null });
@@ -64,23 +75,77 @@ export class ProviderRouter {
 
     const started = Date.now();
     const failures = [];
-    const executions = {
-      primary: () => this.#primary(request),
-      secondary: () => this.#secondary(request),
-    };
+    const executions = { primary: () => this.#primary(request), secondary: () => this.#secondary(request) };
 
     for (const name of policyOrder(request)) {
+      if (!this.#canAttempt(name)) continue;
+      const health = this.#health.get(name);
+      if (health?.halfOpen) health.probeInFlight = true;
+      const providerStarted = Date.now();
       try {
         const result = await executions[name]();
+        this.#recordSuccess(name, Date.now() - providerStarted);
         const output = { text: result.text, provider: name, model: result.model, latencyMs: Date.now() - started };
         this.#setCache(key, output);
         return output;
       } catch (error) {
+        this.#recordFailure(name, error, Date.now() - providerStarted);
         failures.push(error);
+      } finally {
+        const current = this.#health.get(name);
+        if (current) current.probeInFlight = false;
       }
     }
 
     return { text: this.#local(request.prompt, failures), provider: 'local-degraded', model: null, latencyMs: Date.now() - started };
+  }
+
+  getHealth() {
+    const providers = {};
+    for (const [name, state] of this.#health) {
+      const configured = name === 'primary' ? Boolean(config.openaiApiKey && config.primaryEndpoint && config.openaiModel) : availableSecondary();
+      const open = state.openUntil > Date.now();
+      const score = !configured ? 0 : open ? 20 : Math.max(0, Math.min(100, 100 - state.consecutiveFailures * 25 - (state.latencyEwmaMs ? Math.min(30, Math.round((state.latencyEwmaMs / HEALTH_LATENCY_TARGET_MS) * 30)) : 0)));
+      providers[name] = { configured, state: open ? 'open' : state.halfOpen ? 'half-open' : 'closed', score, successes: state.successes, failures: state.failures, consecutiveFailures: state.consecutiveFailures, lastFailureAt: state.lastFailureAt, lastSuccessAt: state.lastSuccessAt, latencyEwmaMs: state.latencyEwmaMs, openUntil: open ? state.openUntil : null, lastError: state.lastError };
+    }
+    return { policy: config.routingPolicy, providers };
+  }
+
+  #canAttempt(name) {
+    const state = this.#health.get(name);
+    if (!state) return false;
+    const configured = name === 'primary' ? Boolean(config.openaiApiKey && config.primaryEndpoint && config.openaiModel) : availableSecondary();
+    if (!configured) return false;
+    if (state.openUntil > Date.now()) return false;
+    if (state.openUntil && state.openUntil <= Date.now()) {
+      if (state.probeInFlight) return false;
+      state.halfOpen = true;
+    }
+    return !state.halfOpen || !state.probeInFlight;
+  }
+
+  #recordSuccess(name, latencyMs) {
+    const state = this.#health.get(name);
+    if (!state) return;
+    state.successes += 1;
+    state.consecutiveFailures = 0;
+    state.lastSuccessAt = Date.now();
+    state.lastError = null;
+    state.openUntil = 0;
+    state.halfOpen = false;
+    state.latencyEwmaMs = state.latencyEwmaMs === null ? latencyMs : (state.latencyEwmaMs * 0.8) + (latencyMs * 0.2);
+  }
+
+  #recordFailure(name, error, latencyMs) {
+    const state = this.#health.get(name);
+    if (!state) return;
+    state.failures += 1;
+    state.consecutiveFailures += 1;
+    state.lastFailureAt = Date.now();
+    state.lastError = error instanceof Error ? error.message.slice(0, 256) : String(error).slice(0, 256);
+    state.latencyEwmaMs = state.latencyEwmaMs === null ? latencyMs : (state.latencyEwmaMs * 0.8) + (latencyMs * 0.2);
+    state.halfOpen = false;
+    if (state.consecutiveFailures >= BREAKER_THRESHOLD) state.openUntil = Date.now() + BREAKER_COOLDOWN_MS;
   }
 
   #getCache(key) {
@@ -96,21 +161,16 @@ export class ProviderRouter {
   }
 
   async #primary(request) {
-    const data = await fetchJson(config.primaryEndpoint, {
-      method: 'POST', headers: { Authorization: `Bearer ${config.openaiApiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: config.openaiModel, input: request.input, store: false }),
-    }, 'primary');
+    const data = await fetchJson(config.primaryEndpoint, { method: 'POST', headers: { Authorization: `Bearer ${config.openaiApiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: config.openaiModel, input: request.input, store: false }) }, 'primary');
     const text = extractResponseText(data);
     if (!text) throw new AIProviderError('Primary provider returned an empty response', { provider: 'primary', retryable: true });
     return { text, model: config.openaiModel };
   }
 
   async #secondary(request) {
-    const messages = [...(request.history || []).map(item => ({ role: item.role, content: item.content })), { role: 'user', content: request.prompt }];
-    const data = await fetchJson(config.secondaryEndpoint, {
-      method: 'POST', headers: { Authorization: `Bearer ${config.secondaryApiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: config.secondaryModel, messages, temperature: request.temperature ?? 0.2 }),
-    }, 'secondary');
+    const memory = request.memory?.length ? `\nContexto de memoria compartida:\n${request.memory.join('\n')}` : '';
+    const messages = [...(request.history || []).map(item => ({ role: item.role, content: item.content })), { role: 'user', content: `${request.prompt}${memory}` }];
+    const data = await fetchJson(config.secondaryEndpoint, { method: 'POST', headers: { Authorization: `Bearer ${config.secondaryApiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: config.secondaryModel, messages, temperature: request.temperature ?? 0.2 }) }, 'secondary');
     const text = data?.choices?.[0]?.message?.content?.trim();
     if (!text) throw new AIProviderError('Secondary provider returned an empty response', { provider: 'secondary', retryable: true });
     return { text, model: config.secondaryModel };
@@ -122,6 +182,8 @@ export class ProviderRouter {
     return `Andrew continúa en modo degradado local. La consulta no se perdió. Motivo: ${reason}. Este modo no se presenta como una IA generativa equivalente. Consulta: ${prompt.slice(0, 160)}`;
   }
 }
+
+export function createProviderRouter() { return new ProviderRouter(); }
 
 function extractResponseText(data) {
   if (typeof data?.output_text === 'string') return data.output_text.trim();
