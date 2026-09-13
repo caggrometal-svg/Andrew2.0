@@ -34,50 +34,62 @@ const response = (json, status = 200) => ({
   headers: new Headers(),
 });
 
-const request = () => ({ prompt: 'hola', input: [{ role: 'user', content: 'hola' }] });
+const request = (prompt) => ({ prompt, input: [{ role: 'user', content: prompt }] });
+
+async function executeWithTimers(router, value) {
+  const pending = router.execute(value);
+  await vi.runAllTimersAsync();
+  return pending;
+}
 
 describe('Phase 28 provider recovery', () => {
   it('recovers a tripped breaker through a successful half-open probe', async () => {
     vi.useFakeTimers();
-    const fetchMock = vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(response({ error: { message: 'temporary' } }, 503))
-      .mockResolvedValueOnce(response({ error: { message: 'temporary' } }, 503))
-      .mockResolvedValueOnce(response({ error: { message: 'temporary' } }, 503))
-      .mockResolvedValue(response({ output_text: 'recovered' }));
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+      if (url === 'https://primary.test/v1/responses') return response({ error: { message: 'temporary' } }, 503);
+      return response({ choices: [{ message: { content: 'fallback' } }] });
+    });
 
     const router = new ProviderRouter();
-    for (let i = 0; i < 3; i += 1) await router.execute(request());
+    for (let i = 0; i < 3; i += 1) {
+      await executeWithTimers(router, request(`trip-${i}`));
+    }
     expect(router.getHealth().providers.primary.state).toBe('open');
 
     await vi.advanceTimersByTimeAsync(30_001);
-    const result = await router.execute({ ...request(), prompt: 'recovery probe' });
+    fetchMock.mockImplementation(async (url) => {
+      if (url === 'https://primary.test/v1/responses') return response({ output_text: 'recovered' });
+      return response({ choices: [{ message: { content: 'fallback' } }] });
+    });
 
+    const result = await executeWithTimers(router, request('recovery-probe'));
     expect(result.provider).toBe('primary');
     expect(result.text).toBe('recovered');
     expect(router.getHealth().providers.primary.state).toBe('closed');
     expect(router.getHealth().providers.primary.consecutiveFailures).toBe(0);
     expect(router.getHealth().providers.primary.openUntil).toBeNull();
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock).toHaveBeenCalledTimes(10);
   });
 
   it('does not probe an open provider before cooldown and falls back immediately', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(response({ error: { message: 'temporary' } }, 503))
-      .mockResolvedValueOnce(response({ error: { message: 'temporary' } }, 503))
-      .mockResolvedValueOnce(response({ error: { message: 'temporary' } }, 503))
-      .mockResolvedValue(response({ choices: [{ message: { content: 'secondary fallback' } }] }));
+    vi.useFakeTimers();
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+      if (url === 'https://primary.test/v1/responses') return response({ error: { message: 'temporary' } }, 503);
+      return response({ choices: [{ message: { content: 'secondary fallback' } }] });
+    });
 
     const router = new ProviderRouter();
-    for (let i = 0; i < 3; i += 1) await router.execute(request());
-    const result = await router.execute({ ...request(), prompt: 'fallback while open' });
+    for (let i = 0; i < 3; i += 1) {
+      await executeWithTimers(router, request(`open-${i}`));
+    }
+    const result = await executeWithTimers(router, request('fallback-while-open'));
 
     expect(result.provider).toBe('secondary');
-    expect(fetchMock).toHaveBeenCalledTimes(4);
-    expect(fetchMock.mock.calls[3][0]).toBe('https://secondary.test/v1/chat/completions');
+    expect(fetchMock).toHaveBeenCalledTimes(10);
+    expect(fetchMock.mock.calls[9][0]).toBe('https://secondary.test/v1/chat/completions');
   });
 
   it('keeps media on providers that advertise vision support', async () => {
-    mockedConfig.routingPolicy = 'primary';
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       response({ output_text: 'vision ok' }),
     );
