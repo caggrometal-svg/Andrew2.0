@@ -14,6 +14,8 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:regression-gate": "node scripts/vitest-regression-gate.mjs",
+    "test:phase25-e2e": "node --test tests/phase25-bridge-security-v2.test.mjs tests/phase25-http-real-e2e.test.mjs",
     "test:memory": "vitest run tests/memory.integration.test.mjs",
     "test:learning": "vitest run tests/learning-control.test.mjs",
     "test:phase4": "vitest run tests/phase4-tool-router.test.ts",
