@@ -36,6 +36,7 @@
     "test:phase21": "vitest run tests/phase21-android-bridge-executor.test.ts",
     "test:phase22": "vitest run tests/phase22-capacitor-bridge.test.ts",
     "test:phase23": "vitest run tests/phase23-native-android-bridge.test.ts",
+    "test:phase24": "vitest run tests/phase24-ai-bridge-controller.test.mjs",
     "test:bridge-hardening": "vitest run tests/android-bridge-v3.test.ts",
     "backend": "node --import tsx server/server.mjs",
     "backend:dev": "node --import tsx --watch server/server.mjs"
