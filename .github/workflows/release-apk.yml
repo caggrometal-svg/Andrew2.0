@@ -6,10 +6,10 @@ on:
     branches:
       - main
       - iac33-integration-next
+      - hardening/audit-9-20
 
 permissions:
   contents: read
-  actions: write
 
 jobs:
   build-apk:
@@ -26,7 +26,7 @@ jobs:
 
       - name: Install Dependencies & Build Frontend
         run: |
-          npm install
+          npm install --no-audit --no-fund
           npm run build
 
       - name: Set up JDK 21
@@ -54,6 +54,19 @@ jobs:
       - name: Build APK
         working-directory: android
         run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Validate APK artifacts
+        working-directory: android
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          apks=(app/build/outputs/apk/debug/*.apk)
+          test "${#apks[@]}" -ge 1
+          for apk in "${apks[@]}"; do
+            test -s "$apk"
+            unzip -t "$apk" >/dev/null
+            sha256sum "$apk"
+          done
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
