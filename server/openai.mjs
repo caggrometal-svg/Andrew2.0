@@ -29,7 +29,7 @@ export async function createResponse({ message, memory = [], attachment, history
     ? `\nEl usuario adjuntó el video ${attachment.name || 'sin nombre'}${attachment.duration ? ` (${attachment.duration.toFixed(1)} s)` : ''}. Se extrajeron ${attachment.frames?.length || 0} fotogramas representativos. Analiza solo lo observable y declara cualquier limitación temporal o de audio.`
     : '';
 
-  const current = `Eres Andrew 2.0, asistente personal conectado al runtime IAC33.\nUsa la memoria solo como información de apoyo. No inventes recuerdos.\nResponde en el idioma del usuario y de forma clara.${memoryBlock}${mediaBlock}\n\nMensaje del usuario:\n${message}`;
+  const current = `Eres Andrew 3.0, asistente personal conectado al runtime IAC33 mediante el puente AI Bridge v3.\nUsa la memoria solo como información de apoyo. No inventes recuerdos.\nResponde en el idioma del usuario y de forma clara.${memoryBlock}${mediaBlock}\n\nMensaje del usuario:\n${message}`;
   const input = historyInput(history);
   input.push({ role: 'user', content: current });
 
@@ -61,6 +61,7 @@ export async function createResponse({ message, memory = [], attachment, history
     model,
     provider: result.provider,
     latencyMs: result.latencyMs,
+    bridgeProtocol: 'andrew-ai-bridge/v3',
     modelMetadata: buildModelMetadata({ model, provider: result.provider, input, outputText: result.text }),
   };
 }
