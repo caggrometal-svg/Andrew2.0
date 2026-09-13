@@ -74,8 +74,8 @@ export function deleteMemory(
 function validateMemoryInput(text: string, tags?: string[]): void {
   if (typeof text !== 'string' || !text.trim()) throw new Error('Memory text is required');
   if (text.length > MAX_TEXT_LENGTH) throw new Error('Memory text exceeds maximum length');
-  if (!Array.isArray(tags)) throw new Error('Memory tags must be an array');
-  if (tags.length > 50 || tags.some((tag) => typeof tag !== 'string' || tag.length > MAX_TAG_LENGTH || !tag.trim())) {
+  const normalizedTags = tags ?? [];
+  if (normalizedTags.length > 50 || normalizedTags.some((tag) => typeof tag !== 'string' || tag.length > MAX_TAG_LENGTH || !tag.trim())) {
     throw new Error('Invalid memory tags');
   }
 }
