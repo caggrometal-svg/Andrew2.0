@@ -7,8 +7,12 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
+    "lint": "node scripts/lint-core.mjs",
     "typecheck": "tsc --noEmit",
+    "typecheck:core": "tsc -p tsconfig.core.json",
     "test": "vitest run src/",
+    "test:core": "vitest run src/core/__tests__",
+    "test:parity": "vitest run tests/parity",
     "test:regression": "vitest run src/integration/iac33-runtime.integration.test.ts",
     "test:phase5": "vitest run src/integration/phase5-memory.integration.test.ts"
   },
