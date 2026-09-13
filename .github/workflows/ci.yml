@@ -2,9 +2,9 @@ name: Phase 4 Release Gate
 
 on:
   push:
-    branches: [main]
+    branches: [main, iac33-integration-next, foundation-strangler]
   pull_request:
-    branches: [main]
+    branches: [main, iac33-integration-next]
   workflow_dispatch:
 
 permissions:
@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   release-gate:
-    name: Phase 4 Release Gate
+    name: Foundation + Release Gate
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -26,11 +26,23 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Typecheck
+      - name: Lint isolated core
+        run: npm run lint
+
+      - name: Typecheck isolated core
+        run: npm run typecheck:core
+
+      - name: Typecheck legacy workspace
         run: npm run typecheck
 
       - name: Directed IAC33 runtime integration
         run: npm run test:regression
+
+      - name: Core unit tests
+        run: npm run test:core
+
+      - name: Golden-master parity
+        run: npm run test:parity
 
       - name: Full Vitest regression
         run: npm test
