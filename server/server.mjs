@@ -110,7 +110,7 @@ async function chat(body) {
 
 async function bridgeRoute(req, res, url) {
   if (!url.pathname.startsWith('/api/v1/bridge/v3/')) return false;
-  const auth = bridgeAuthFailure(req, req.url || url.pathname);
+  const auth = bridgeAuthFailure(req, url.pathname);
   if (!auth.ok) { send(res, 401, { ok: false, error: auth.error }); return true; }
   const deviceId = auth.deviceId;
 
@@ -177,5 +177,12 @@ const server = http.createServer((req, res) => {
   });
 });
 
-initializeBridgeStore().catch(error => console.error('[Andrew2] bridge store initialization failed', error));
+try {
+  await initializeBridgeStore();
+} catch (error) {
+  console.error('[Andrew2] bridge store initialization failed; refusing to start', error);
+  process.exitCode = 1;
+  throw error;
+}
+
 server.listen(PORT, HOST, () => console.log(`[Andrew2] backend listening on ${HOST}:${PORT}`));
