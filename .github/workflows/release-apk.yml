@@ -32,13 +32,16 @@ jobs:
       - name: Build frontend
         run: npm run build
 
-      - name: Bridge and foundation tests
+      - name: Bridge security and foundation tests
         run: |
+          npx vitest run tests/phase25-bridge-security.test.mjs tests/phase25-remote-bridge-loop.test.ts
           npm run test:phase19
           npm run test:phase20
           npm run test:phase21
           npm run test:phase22
           npm run test:phase23
+          npm run test:phase24
+          npx vitest run tests/phase26-provider-resilience.test.mjs tests/phase27-provider-registry.test.mjs tests/phase28-provider-recovery.test.mjs
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
