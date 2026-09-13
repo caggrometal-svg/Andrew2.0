@@ -7,6 +7,11 @@ process.env.AI_SECONDARY_API_KEY = 'test';
 process.env.AI_SECONDARY_ENDPOINT = 'https://secondary.test/v1/chat/completions';
 process.env.AI_SECONDARY_MODEL = 'router-test-secondary';
 process.env.AI_ROUTING_POLICY = 'primary';
+for (const prefix of ['AI_GEMINI', 'AI_ANTHROPIC', 'AI_GROQ', 'AI_DEEPSEEK']) {
+  process.env[`${prefix}_API_KEY`] = '';
+  process.env[`${prefix}_ENDPOINT`] = '';
+  process.env[`${prefix}_MODEL`] = '';
+}
 
 const { AIServiceUnavailableError, ProviderRouter } = await import('../server/ai/provider-router.mjs');
 
