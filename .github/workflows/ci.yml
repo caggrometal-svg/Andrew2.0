@@ -22,9 +22,16 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
+
+      - name: Verify repository hygiene
+        run: |
+          test ! -f .env
+          test ! -f .env.local
+          ! grep -RInE 'sk-[A-Za-z0-9_-]{20,}' . --exclude-dir=.git --exclude='*.md' || (echo 'Potential API secret found in tracked source' && exit 1)
 
       - name: Install dependencies
-        run: npm install
+        run: npm install --no-audit --no-fund
 
       - name: Typecheck
         run: npm run typecheck
