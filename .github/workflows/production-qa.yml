@@ -49,19 +49,30 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          response="$(curl -sS -w '\n%{http_code}' \
-            -H 'Content-Type: application/json' \
-            -H "Origin: $ALLOWED_ORIGIN" \
-            -X POST "$BASE_URL/api/chat" \
-            --data "{\"message\":\"QA_PRODUCTION_SMOKE_ANSWER_ONLY\",\"conversationId\":\"$CHAT_CONVERSATION_ID\"}")"
-          code="$(printf '%s\n' "$response" | tail -n1)"
-          body="$(printf '%s\n' "$response" | sed '$d')"
-          echo "HTTP=$code"
-          echo "$body" | jq .
-          test "$code" = "200"
-          test "$(echo "$body" | jq -r '.ok')" = "true"
-          test -n "$(echo "$body" | jq -r '.reply')"
-          test -n "$(echo "$body" | jq -r '.responseId')"
+          for attempt in $(seq 1 12); do
+            response="$(curl -sS --connect-timeout 10 --max-time 45 -w '\n%{http_code}' \
+              -H 'Content-Type: application/json' \
+              -H "Origin: $ALLOWED_ORIGIN" \
+              -X POST "$BASE_URL/api/chat" \
+              --data "{\"message\":\"QA_PRODUCTION_SMOKE_ANSWER_ONLY\",\"conversationId\":\"$CHAT_CONVERSATION_ID\"}" || true)"
+            code="$(printf '%s\n' "$response" | tail -n1)"
+            body="$(printf '%s\n' "$response" | sed '$d')"
+            echo "ATTEMPT=$attempt HTTP=$code"
+            if [ -n "$body" ]; then echo "$body" | jq . || printf '%s\n' "$body"; fi
+            if [ "$code" = "200" ] && \
+               [ "$(echo "$body" | jq -r '.ok' 2>/dev/null || echo false)" = "true" ] && \
+               [ -n "$(echo "$body" | jq -r '.reply' 2>/dev/null || true)" ] && \
+               [ -n "$(echo "$body" | jq -r '.responseId' 2>/dev/null || true)" ]; then
+              exit 0
+            fi
+            if [ "$code" = "502" ] || [ "$code" = "503" ] || [ "$code" = "504" ] || [ "$code" = "000" ]; then
+              sleep 5
+              continue
+            fi
+            exit 1
+          done
+          echo 'PRODUCTION CHAT SMOKE FAILED AFTER RETRIES'
+          exit 1
 
       - name: CORS rejection check
         shell: bash
@@ -105,6 +116,7 @@ jobs:
           node --check server/openai.mjs
           node --check server/routes/chat.mjs
           node --check server/routes/telemetry.mjs
+          node --check server/security/distributed-rate-limit.mjs
 
       - name: Production dependency audit
         shell: bash
