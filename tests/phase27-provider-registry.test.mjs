@@ -71,6 +71,7 @@ describe('Phase 27 multi-provider registry', () => {
 
   it('does not open the breaker for permanent authentication/configuration errors', async () => {
     mockedConfig.routingPolicy = 'primary';
+    mockedConfig.providers.anthropic.apiKey = '';
     const unauthorized = () => ({ ok: false, status: 401, json: async () => ({ error: { message: 'invalid key' } }), headers: new Headers() });
     const secondary = ok({ choices: [{ message: { content: 'fallback' } }] });
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementationOnce(unauthorized).mockResolvedValue(secondary);
