@@ -8,7 +8,7 @@ import { ffmpegPath, ffprobePath } from './media/ffmpeg-runtime.mjs';
 import { registerChatRoutes } from './routes/chat.mjs';
 import { registerGatewayRoutes } from './routes/gateway.mjs';
 import { registerTelemetryRoutes } from './routes/telemetry.mjs';
-import { registerMemoryRoutes, } from './routes/memory.mjs';
+import { registerMemoryRoutes } from './routes/memory.mjs';
 import { registerBridgeV3Routes } from './routes/bridge-v3.mjs';
 import { registerDiagnosticsRoutes } from './routes/diagnostics.mjs';
 import { registerVideoRoutes } from './media/video.mjs';
@@ -36,53 +36,27 @@ app.addHook('preValidation', async (request) => { if (request.method !== 'POST' 
 app.addHook('onSend', async (request, reply, payload) => { if (request.method !== 'POST' || request.url !== '/api/chat' || reply.statusCode !== 200) return payload; const message = request.body?.message; const userId = resolveUserId(request); if (!userId) return payload; if (!shouldLearn(message)) return payload; try { const identity = extractIdentity(message); if (identity) { await createMemory({ userId, conversationId: request.body.conversationId, kind: 'identity', text: identity, tags: ['identity', 'name', 'explicit'], importance: 5, source: 'explicit-user-instruction' }); } else { await createMemory({ userId, conversationId: request.body.conversationId, kind: 'user_fact', text: String(message).trim().slice(0, 4000), tags: ['learning', 'explicit'], importance: 5, source: 'explicit-user-instruction' }); } } catch (error) { request.log.error({ error }, 'persistent learning write failed'); } return payload; });
 const inspectBinary = (binaryPath) => { try { accessSync(binaryPath, constants.X_OK); const stat = statSync(binaryPath); return { available: true, executable: true, size: stat.size, path: binaryPath }; } catch (error) { return { available: false, executable: false, path: binaryPath || null, error: error instanceof Error ? error.message : String(error) }; } };
 
-// Render instances are ephemeral. The APK must live in a persistent external artifact store.
 app.get('/download/andrew-latest.apk', async (request, reply) => {
   const apkUrl = process.env.APK_DOWNLOAD_URL?.trim();
   if (!apkUrl) return reply.code(503).type('application/json').send({ ok: false, error: 'APK_SOURCE_NOT_CONFIGURED', message: 'APK_DOWNLOAD_URL is not configured.' });
-
   let parsedUrl;
-  try {
-    parsedUrl = new URL(apkUrl);
-    if (parsedUrl.protocol !== 'https:') throw new Error('HTTPS required');
-  } catch (error) {
-    request.log.error({ error }, 'invalid APK_DOWNLOAD_URL');
-    return reply.code(503).type('application/json').send({ ok: false, error: 'APK_SOURCE_NOT_CONFIGURED', message: 'APK_DOWNLOAD_URL is invalid.' });
-  }
-
+  try { parsedUrl = new URL(apkUrl); if (parsedUrl.protocol !== 'https:') throw new Error('HTTPS required'); } catch (error) { request.log.error({ error }, 'invalid APK_DOWNLOAD_URL'); return reply.code(503).type('application/json').send({ ok: false, error: 'APK_SOURCE_NOT_CONFIGURED', message: 'APK_DOWNLOAD_URL is invalid.' }); }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30_000);
   try {
-    const upstream = await fetch(parsedUrl, {
-      redirect: 'follow',
-      signal: controller.signal,
-      headers: { accept: 'application/vnd.android.package-archive, application/octet-stream;q=0.9, */*;q=0.1' },
-    });
-    if (!upstream.ok || !upstream.body) {
-      request.log.error({ status: upstream.status }, 'APK upstream unavailable');
-      return reply.code(503).type('application/json').send({ ok: false, error: 'APK_UPSTREAM_UNAVAILABLE', message: 'Latest APK is temporarily unavailable.' });
-    }
-
+    const upstream = await fetch(parsedUrl, { redirect: 'follow', signal: controller.signal, headers: { accept: 'application/vnd.android.package-archive, application/octet-stream;q=0.9, */*;q=0.1' } });
+    if (!upstream.ok || !upstream.body) { request.log.error({ status: upstream.status }, 'APK upstream unavailable'); return reply.code(503).type('application/json').send({ ok: false, error: 'APK_UPSTREAM_UNAVAILABLE', message: 'Latest APK is temporarily unavailable.' }); }
     reply.header('Content-Type', 'application/vnd.android.package-archive');
     reply.header('Content-Disposition', 'attachment; filename="andrew-latest.apk"');
     reply.header('Cache-Control', 'no-cache, no-store, must-revalidate');
-    reply.header('Pragma', 'no-cache');
-    reply.header('Expires', '0');
-    const contentLength = upstream.headers.get('content-length');
-    if (contentLength) reply.header('Content-Length', contentLength);
-
+    reply.header('Pragma', 'no-cache'); reply.header('Expires', '0');
+    const contentLength = upstream.headers.get('content-length'); if (contentLength) reply.header('Content-Length', contentLength);
     return reply.send(Readable.fromWeb(upstream.body));
-  } catch (error) {
-    request.log.error({ error }, 'APK streaming failed');
-    if (!reply.sent) return reply.code(503).type('application/json').send({ ok: false, error: 'APK_UPSTREAM_UNAVAILABLE', message: 'Latest APK is temporarily unavailable.' });
-    return reply;
-  } finally {
-    clearTimeout(timeout);
-  }
+  } catch (error) { request.log.error({ error }, 'APK streaming failed'); if (!reply.sent) return reply.code(503).type('application/json').send({ ok: false, error: 'APK_UPSTREAM_UNAVAILABLE', message: 'Latest APK is temporarily unavailable.' }); return reply; } finally { clearTimeout(timeout); }
 });
 
 app.get('/', async () => ({ ok: true, service: 'andrew2-backend', health: '/health', apk: '/download/andrew-latest.apk' }));
-app.get('/health', async () => { const startedAt = process.hrtime.bigint(); const ffmpeg = inspectBinary(ffmpegPath); const ffprobe = inspectBinary(ffprobePath); const openaiConfigured = Boolean(config.openaiApiKey); const memoryConfigured = Boolean(process.env.DATABASE_URL?.trim()); const learningConfigured = memoryConfigured; const sessionConfigured = memoryConfigured; const ai = getAIProviderHealth(); const aiConfigured = Object.values(ai.providers).some((provider) => provider.configured); const aiOperational = Object.values(ai.providers).some((provider) => provider.configured && provider.score > 0); const system = { uptimeSeconds: Math.floor(process.uptime()), memory: process.memoryUsage(), node: process.version, pid: process.pid }; const latencyMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000; const healthy = openaiConfigured && aiConfigured && aiOperational && memoryConfigured && ffmpeg.available && ffmpeg.executable && ffprobe.available && ffprobe.executable; return { ok: healthy, status: healthy ? 'healthy' : 'degraded', service: 'andrew2-backend', latencyMs: Number(latencyMs.toFixed(3)), checks: { server: 'ok', openaiApiKeyConfigured: openaiConfigured, aiProvidersConfigured: aiConfigured, aiProviderOperational: aiOperational, memoryStoreConfigured: memoryConfigured, learningStoreConfigured: learningConfigured, sessionStoreConfigured: sessionConfigured, mediaRuntime: ffmpeg.available && ffmpeg.executable && ffprobe.available && ffprobe.executable ? 'ok' : 'degraded' }, ai, environment: { port: config.port, host: config.host, corsOriginsConfigured: config.corsOrigins.length }, system, metrics: snapshotMetrics(), media: { video: 'chunked-temp', generation: 'openai-videos', ffmpeg, ffprobe } }; });
+app.get('/health', async () => { const startedAt = process.hrtime.bigint(); const ffmpeg = inspectBinary(ffmpegPath); const ffprobe = inspectBinary(ffprobePath); const openaiConfigured = Boolean(config.openaiApiKey); const memoryConfigured = Boolean(process.env.DATABASE_URL?.trim()); const learningConfigured = memoryConfigured; const sessionConfigured = memoryConfigured; const ai = getAIProviderHealth(); const aiProviders = Object.values(ai.providers); const aiConfigured = aiProviders.some((provider) => provider.configured); const aiOperational = aiProviders.some((provider) => provider.configured && provider.score > 0 && provider.lastErrorClass !== 'permanent'); const aiDegraded = aiConfigured && !aiOperational; const system = { uptimeSeconds: Math.floor(process.uptime()), memory: process.memoryUsage(), node: process.version, pid: process.pid }; const latencyMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000; const healthy = openaiConfigured && aiConfigured && aiOperational && memoryConfigured && ffmpeg.available && ffmpeg.executable && ffprobe.available && ffprobe.executable; return { ok: healthy, status: healthy ? 'healthy' : 'degraded', service: 'andrew2-backend', latencyMs: Number(latencyMs.toFixed(3)), checks: { server: 'ok', openaiApiKeyConfigured: openaiConfigured, aiProvidersConfigured: aiConfigured, aiProviderOperational: aiOperational, aiProviderDegraded: aiDegraded, memoryStoreConfigured: memoryConfigured, learningStoreConfigured: learningConfigured, sessionStoreConfigured: sessionConfigured, mediaRuntime: ffmpeg.available && ffmpeg.executable && ffprobe.available && ffprobe.executable ? 'ok' : 'degraded' }, ai, environment: { port: config.port, host: config.host, corsOriginsConfigured: config.corsOrigins.length }, system, metrics: snapshotMetrics(), media: { video: 'chunked-temp', generation: 'openai-videos', ffmpeg, ffprobe } }; });
 await initializeMemoryStore();
 await initializeLearningStore();
 await initializeSessionStore();
