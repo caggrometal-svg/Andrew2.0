@@ -21,6 +21,8 @@ export const config = {
   secondaryApiKey: (process.env.AI_SECONDARY_API_KEY || '').trim(),
   secondaryEndpoint: (process.env.AI_SECONDARY_ENDPOINT || '').trim(),
   secondaryModel: (process.env.AI_SECONDARY_MODEL || 'deepseek-chat').trim(),
+  secondarySupportsVision: /^(1|true|yes)$/i.test(process.env.AI_SECONDARY_SUPPORTS_VISION || ''),
+  routingPolicy: (process.env.AI_ROUTING_POLICY || 'balanced').trim().toLowerCase(),
   corsOrigins: (process.env.CORS_ORIGINS || '').split(',').map((v) => v.trim()).filter(Boolean),
   maxBodyBytes: Number(process.env.MAX_BODY_BYTES || 8 * 1024 * 1024),
   rateLimitWindowMs: Number(process.env.RATE_LIMIT_WINDOW_MS || 60000),
