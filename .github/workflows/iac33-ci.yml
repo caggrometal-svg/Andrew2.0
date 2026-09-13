@@ -6,6 +6,7 @@ on:
       - iac33-integration-next
       - iac33-dev
       - andrew-backend-openai-v1
+      - phase25-bridge-security
   pull_request:
     branches:
       - iac33-integration-next
@@ -51,6 +52,9 @@ jobs:
           node --check server/server.mjs
 
       - name: Phase 25 bridge security certification
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-5.6-luna' }}
         run: npx vitest run tests/phase25-bridge-security-v2.test.mjs tests/phase25-http-e2e.test.mjs tests/phase25-remote-bridge-loop.test.ts tests/phase29-e2e-bridge.test.mjs
 
       - name: Android bridge executor gate
