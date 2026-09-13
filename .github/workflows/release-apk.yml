@@ -55,6 +55,33 @@ jobs:
             cp -R .bridge-native/bridge-v3/. android/app/src/main/java/com/andrew/app/bridge/v3/
           fi
 
+      - name: Wire Bridge V3 command scheduler into generated MainActivity
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          roots = [Path('android/app/src/main/java')]
+          files = list(roots[0].rglob('MainActivity.kt')) + list(roots[0].rglob('MainActivity.java'))
+          if len(files) != 1:
+              raise SystemExit(f'expected exactly one generated MainActivity, found {len(files)}')
+          path = files[0]
+          text = path.read_text()
+          marker = 'AndrewBridgeCommandWorker.schedule(this)'
+          if marker in text:
+              raise SystemExit('Bridge V3 scheduler already wired')
+          if path.suffix == '.kt':
+              needle = 'class MainActivity : BridgeActivity() {'
+              if needle not in text:
+                  raise SystemExit('unexpected Kotlin MainActivity shape')
+              replacement = needle + '\n    override fun onCreate(savedInstanceState: android.os.Bundle?) {\n        super.onCreate(savedInstanceState)\n        com.andrew.app.bridge.v3.AndrewBridgeCommandWorker.schedule(this)\n    }'
+          else:
+              needle = 'public class MainActivity extends BridgeActivity {'
+              if needle not in text:
+                  raise SystemExit('unexpected Java MainActivity shape')
+              replacement = needle + '\n    @Override\n    public void onCreate(android.os.Bundle savedInstanceState) {\n        super.onCreate(savedInstanceState);\n        com.andrew.app.bridge.v3.AndrewBridgeCommandWorker.schedule(this);\n    }'
+          path.write_text(text.replace(needle, replacement, 1))
+          PY
+
       - name: Add Bridge V3 Android dependencies
         shell: bash
         working-directory: android
