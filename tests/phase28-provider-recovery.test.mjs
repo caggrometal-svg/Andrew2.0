@@ -10,6 +10,7 @@ const mockedConfig = vi.hoisted(() => ({
     groq: { apiKey: '', endpoint: '', model: '', protocol: 'chat', supportsVision: false },
     gemini: { apiKey: '', endpoint: '', model: '', protocol: 'chat', supportsVision: true },
   },
+  tiers: { primary: { tier: 1 }, secondary: { tier: 2 } },
 }));
 
 vi.mock('../server/config.mjs', () => ({ config: mockedConfig }));
@@ -41,7 +42,7 @@ describe('Phase 28 provider recovery', () => {
     expect(router.getHealth().providers.primary.state).toBe('closed');
     expect(router.getHealth().providers.primary.consecutiveFailures).toBe(0);
     expect(router.getHealth().providers.primary.openUntil).toBeNull();
-    expect(fetchMock).toHaveBeenCalledTimes(10);
+    expect(fetchMock).toHaveBeenCalledTimes(7);
   });
 
   it('does not probe an open provider before cooldown and falls back immediately', async () => {
@@ -53,8 +54,8 @@ describe('Phase 28 provider recovery', () => {
     for (let i = 0; i < 3; i += 1) await executeWithTimers(router, request(`open-${i}`));
     const result = await executeWithTimers(router, request('fallback-while-open'));
     expect(result.provider).toBe('secondary');
-    expect(fetchMock).toHaveBeenCalledTimes(10);
-    expect(fetchMock.mock.calls[9][0]).toBe('https://secondary.test/v1/chat/completions');
+    expect(fetchMock).toHaveBeenCalledTimes(7);
+    expect(fetchMock.mock.calls[6][0]).toBe('https://secondary.test/v1/chat/completions');
   });
 
   it('keeps media on providers that advertise vision support', async () => {
@@ -71,6 +72,7 @@ describe('Phase 28 provider recovery', () => {
   it('translates vision input to OpenAI-compatible image_url for generic chat providers', async () => {
     mockedConfig.routingPolicy = 'secondary';
     mockedConfig.secondarySupportsVision = true;
+    mockedConfig.tiers = { primary: { tier: 2 }, secondary: { tier: 1 } };
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(response({ choices: [{ message: { content: 'secondary vision' } }] }));
     const router = new ProviderRouter();
     const result = await router.execute({ prompt: 'vision-secondary', input: [{ role: 'user', content: [
