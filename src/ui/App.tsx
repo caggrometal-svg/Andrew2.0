@@ -7,6 +7,7 @@ import { seismicPredictionEngine, type SeismicForecastResult } from '@/services/
 import AndrewChat from './AndrewChat';
 import VideoGenerationPanel from './VideoGenerationPanel';
 import './reengineering.css';
+import './media.css';
 
 type Tab = 'andrew' | 'multimedia' | 'network' | 'seismic' | 'metrics' | 'settings';
 
