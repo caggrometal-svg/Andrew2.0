@@ -20,7 +20,7 @@ describe('Phase 22 controlled Capacitor bridge boundary', () => {
     await execute({ ...base, command: 'sync_now' });
 
     expect(plugin.openSettings).toHaveBeenCalledTimes(1);
-    expect(plugin.setRuntimeParameter).toHaveBeenCalledWith({ model: 'gpt-5.6-luna' });
+    expect(plugin.setRuntimeParameter).toHaveBeenCalledWith('model', 'gpt-5.6-luna');
     expect(plugin.requestStatus).toHaveBeenCalledTimes(1);
     expect(plugin.syncNow).toHaveBeenCalledTimes(1);
     expect(hooks).not.toHaveProperty('executeShell');
