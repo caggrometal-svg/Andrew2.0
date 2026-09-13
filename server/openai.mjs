@@ -1,4 +1,5 @@
 import { ProviderRouter } from './ai/provider-router.mjs';
+import { buildModelMetadata } from './ai/model-contract.mjs';
 
 const MAX_VIDEO_FRAMES = 6;
 const MAX_HISTORY = 40;
@@ -52,12 +53,14 @@ export async function createResponse({ message, memory = [], attachment, history
   // `input` is already the canonical history+current payload. Do not pass the same
   // history separately: ProviderRouter normalization would otherwise duplicate it.
   const result = await router.execute({ prompt: current, history: [], input, memory, temperature: 0.2, attachment: attachment ? { type: attachment.type, name: attachment.name } : null });
+  const model = result.model || result.provider;
 
   return {
     text: result.text,
     responseId: null,
-    model: result.model || result.provider,
+    model,
     provider: result.provider,
     latencyMs: result.latencyMs,
+    modelMetadata: buildModelMetadata({ model, provider: result.provider, input, outputText: result.text }),
   };
 }
