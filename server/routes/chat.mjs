@@ -161,10 +161,11 @@ export async function registerChatRoutes(app) {
       });
     } catch (error) {
       request.log.error(error);
-      return reply.code(502).send({
+      const unavailable = error instanceof Error && error.code === 'AI_SERVICE_UNAVAILABLE';
+      return reply.code(unavailable ? 503 : 502).send({
         ok: false,
-        error: 'AI_BACKEND_ERROR',
-        message: error instanceof Error ? error.message : 'No fue posible procesar la solicitud de Andrew.',
+        error: unavailable ? 'AI_SERVICE_UNAVAILABLE' : 'AI_BACKEND_ERROR',
+        message: unavailable ? 'Servicio no disponible temporalmente' : error instanceof Error ? error.message : 'No fue posible procesar la solicitud de Andrew.',
       });
     }
   });
