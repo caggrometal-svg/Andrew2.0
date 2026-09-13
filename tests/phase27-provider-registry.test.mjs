@@ -19,7 +19,21 @@ const mockedConfig = vi.hoisted(() => ({
 vi.mock('../server/config.mjs', () => ({ config: mockedConfig }));
 import { ProviderRouter } from '../server/ai/provider-router.mjs';
 
-beforeEach(() => { mockedConfig.routingPolicy = 'balanced'; vi.restoreAllMocks(); });
+function resetConfig() {
+  mockedConfig.openaiApiKey = 'primary-key';
+  mockedConfig.openaiModel = 'primary-model';
+  mockedConfig.primaryEndpoint = 'https://primary.test/v1/responses';
+  mockedConfig.secondaryApiKey = 'secondary-key';
+  mockedConfig.secondaryEndpoint = 'https://secondary.test/v1/chat/completions';
+  mockedConfig.secondaryModel = 'secondary-model';
+  mockedConfig.secondarySupportsVision = false;
+  mockedConfig.routingPolicy = 'balanced';
+  mockedConfig.tiers = { primary: { tier: 1 }, secondary: { tier: 1 } };
+  mockedConfig.providers.anthropic = { apiKey: 'anthropic-key', endpoint: 'https://anthropic.test/v1/messages', model: 'claude-test', protocol: 'messages', supportsVision: true, tier: 2 };
+  mockedConfig.providers.deepseek = { apiKey: 'deepseek-key', endpoint: 'https://deepseek.test/chat/completions', model: 'deepseek-test', protocol: 'chat', supportsVision: false, tier: 3 };
+}
+
+beforeEach(() => { resetConfig(); vi.restoreAllMocks(); });
 afterEach(() => vi.useRealTimers());
 const ok = (json) => ({ ok: true, json: async () => json, headers: new Headers() });
 
@@ -76,7 +90,6 @@ describe('Phase 27 multi-provider registry', () => {
 
   it('does not open the breaker for permanent authentication/configuration errors', async () => {
     mockedConfig.routingPolicy = 'primary';
-    mockedConfig.providers.anthropic.apiKey = '';
     const unauthorized = () => ({ ok: false, status: 401, json: async () => ({ error: { message: 'invalid key' } }), headers: new Headers() });
     const secondary = ok({ choices: [{ message: { content: 'fallback' } }] });
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementationOnce(unauthorized).mockResolvedValue(secondary);
