@@ -59,7 +59,9 @@ async function execute(command: BridgeCommand): Promise<unknown> {
   }
 }
 
-export function startBridgeCommandLoop(onError?: (error: Error) => void): () => void {
+type BridgeLoopResult = { commandId: string; command: BridgeCommand['command']; result: unknown | null };
+
+export function startBridgeCommandLoop(onError?: (error: Error) => void, onResult?: (result: BridgeLoopResult) => void): () => void {
   let stopped = false;
   let polling = false;
 
@@ -72,10 +74,11 @@ export function startBridgeCommandLoop(onError?: (error: Error) => void): () => 
         if (Date.now() > command.expiresAt) continue;
         try {
           const result = await execute(command);
-          await request<ResultResponse>('/api/v1/bridge/v3/result', {
+          const response = await request<ResultResponse>('/api/v1/bridge/v3/result', {
             method: 'POST',
             body: JSON.stringify({ id: command.id, command: command.command, ok: true, result }),
           });
+          onResult?.({ commandId: command.id, command: command.command, result: response.result });
         } catch (error) {
           await request<ResultResponse>('/api/v1/bridge/v3/result', {
             method: 'POST',
