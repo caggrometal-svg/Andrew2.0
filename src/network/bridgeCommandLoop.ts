@@ -12,7 +12,7 @@ type BridgeCommand = {
 };
 
 type CommandResponse = { ok: true; commands: BridgeCommand[] };
-type AckResponse = { ok: true; id: string; acknowledgedAt: number };
+type ResultResponse = { ok: true; id: string; acknowledgedAt: number; result: unknown | null };
 
 function backendUrl(): string {
   return (import.meta.env['VITE_ANDREW_BACKEND_URL'] || DEFAULT_BACKEND).trim().replace(/\/$/, '');
@@ -33,30 +33,29 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return data;
 }
 
-function execute(command: BridgeCommand): void {
+async function execute(command: BridgeCommand): Promise<unknown> {
   const native: AndrewBridgeNative | undefined = window.AndrewBridge;
   if (!native) throw new Error('native_bridge_unavailable');
   switch (command.command) {
     case 'open_settings':
       if (!native.openSettings) throw new Error('native_operation_unavailable');
-      void native.openSettings();
-      return;
+      await native.openSettings();
+      return null;
     case 'set_runtime_parameter': {
       const key = command.payload?.key;
       const value = command.payload?.value;
       if (typeof key !== 'string' || (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean')) throw new Error('invalid_runtime_payload');
       if (!native.setRuntimeParameter) throw new Error('native_operation_unavailable');
-      void native.setRuntimeParameter(key, String(value));
-      return;
+      await native.setRuntimeParameter(key, String(value));
+      return { key, value: String(value) };
     }
     case 'request_status':
       if (!native.requestStatus) throw new Error('native_operation_unavailable');
-      void native.requestStatus();
-      return;
+      return await native.requestStatus();
     case 'sync_now':
       if (!native.syncNow) throw new Error('native_operation_unavailable');
-      void native.syncNow();
-      return;
+      await native.syncNow();
+      return { syncedAt: Date.now() };
   }
 }
 
@@ -72,10 +71,16 @@ export function startBridgeCommandLoop(onError?: (error: Error) => void): () => 
       for (const command of data.commands) {
         if (Date.now() > command.expiresAt) continue;
         try {
-          execute(command);
-          await request<AckResponse>('/api/v1/bridge/v3/ack', { method: 'POST', body: JSON.stringify({ id: command.id, ok: true }) });
+          const result = await execute(command);
+          await request<ResultResponse>('/api/v1/bridge/v3/result', {
+            method: 'POST',
+            body: JSON.stringify({ id: command.id, command: command.command, ok: true, result }),
+          });
         } catch (error) {
-          await request<AckResponse>('/api/v1/bridge/v3/ack', { method: 'POST', body: JSON.stringify({ id: command.id, ok: false, error: error instanceof Error && error.message === 'invalid_runtime_payload' ? 'invalid_payload' : 'unsupported' }) }).catch(() => undefined);
+          await request<ResultResponse>('/api/v1/bridge/v3/result', {
+            method: 'POST',
+            body: JSON.stringify({ id: command.id, command: command.command, ok: false, error: error instanceof Error && error.message === 'invalid_runtime_payload' ? 'invalid_payload' : 'unsupported' }),
+          }).catch(() => undefined);
           throw error;
         }
       }
