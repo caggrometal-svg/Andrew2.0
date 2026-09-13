@@ -9,9 +9,10 @@ const mockedConfig = vi.hoisted(() => ({
   secondaryModel: 'secondary-model',
   secondarySupportsVision: false,
   routingPolicy: 'balanced',
+  tiers: { primary: { tier: 1 }, secondary: { tier: 1 } },
   providers: {
-    anthropic: { apiKey: 'anthropic-key', endpoint: 'https://anthropic.test/v1/messages', model: 'claude-test', protocol: 'messages', supportsVision: true },
-    deepseek: { apiKey: 'deepseek-key', endpoint: 'https://deepseek.test/chat/completions', model: 'deepseek-test', protocol: 'chat', supportsVision: false },
+    anthropic: { apiKey: 'anthropic-key', endpoint: 'https://anthropic.test/v1/messages', model: 'claude-test', protocol: 'messages', supportsVision: true, tier: 2 },
+    deepseek: { apiKey: 'deepseek-key', endpoint: 'https://deepseek.test/chat/completions', model: 'deepseek-test', protocol: 'chat', supportsVision: false, tier: 3 },
   },
 }));
 
@@ -51,6 +52,10 @@ describe('Phase 27 multi-provider registry', () => {
 
   it('converts image content for Anthropic native messages', async () => {
     mockedConfig.routingPolicy = 'secondary';
+    mockedConfig.openaiApiKey = '';
+    mockedConfig.primaryEndpoint = '';
+    mockedConfig.secondaryApiKey = '';
+    mockedConfig.secondaryEndpoint = '';
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(ok({ content: [{ type: 'text', text: 'anthropic vision' }] }));
     const router = new ProviderRouter();
     const result = await router.execute({
