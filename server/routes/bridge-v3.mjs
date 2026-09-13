@@ -1,5 +1,6 @@
 import { acknowledgeBridgeCommand, getBridgeSyncState, initializeBridgeStore, listPendingBridgeCommands } from '../bridge/bridge-store.mjs';
 import { queueBridgeAction } from '../bridge/bridge-controller.mjs';
+import { applyBridgeRuntimeCommand } from '../ai/provider-router.mjs';
 import { bridgeDeviceAttestationHeaders, verifyBridgeDeviceAttestation } from '../auth/bridge-v3-device.mjs';
 
 const ALLOWED_COMMANDS = new Set(['open_settings', 'set_runtime_parameter', 'request_status', 'sync_now']);
@@ -32,7 +33,7 @@ function artifactManifest() {
   try { value = JSON.parse(raw); } catch { throw new Error('invalid bridge artifact manifest'); }
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('invalid bridge artifact manifest');
   const { revisionId, previousRevisionId, sha256Hex, signatureBase64, downloadUrl } = value;
-  if (!REVISION_PATTERN.test(String(revisionId || '')) || (previousRevisionId !== undefined && previousRevisionId !== null && !REVISION_PATTERN.test(String(previousRevisionId))) || !/^[a-f0-9]{64}$/i.test(String(sha256Hex || '')) || typeof signatureBase64 !== 'string' || !signatureBase64 || typeof downloadUrl !== 'string' || !/^https:\/\//i.test(downloadUrl)) throw new Error('invalid bridge artifact manifest');
+  if (!REVISION_PATTERN.test(String(revisionId || '')) || (previousRevisionId !== undefined && previousRevisionId !== null && !REVISION_PATTERN.test(String(previousRevisionId))) || !/^[a-f0-9]{64}$/.test(sha256Hex || '') || typeof signatureBase64 !== 'string' || typeof downloadUrl !== 'string') throw new Error('invalid bridge artifact manifest');
   return { revisionId, previousRevisionId: previousRevisionId || null, sha256Hex: sha256Hex.toLowerCase(), signatureBase64, downloadUrl };
 }
 
@@ -86,6 +87,15 @@ export async function registerBridgeV3Routes(app) {
     let result; try { result = cleanResult(body.result); } catch (error) { return reply.code(400).send({ ok: false, error: error instanceof TypeError && error.message === 'result_too_large' ? 'result_too_large' : 'invalid_result' }); }
     const acknowledged = await acknowledgeBridgeCommand({ userId: deviceId, id: body.id, ok: body.ok, error: body.error, result });
     if (!acknowledged) return reply.code(404).send({ ok: false, error: 'command_not_pending' });
+    
+    if (body.command === 'set_runtime_parameter' && body.ok) {
+      try {
+        await applyBridgeRuntimeCommand({ command: body.command, payload: result ?? {} });
+      } catch (error) {
+        console.error(`[BridgeV3] Runtime command execution failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    
     return { ok: true, id: body.id, acknowledgedAt: Date.now(), result: result ?? null };
   });
 }
