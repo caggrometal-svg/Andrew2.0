@@ -18,7 +18,6 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.security.KeyFactory
-import java.security.PublicKey
 import java.security.Signature
 import java.security.spec.X509EncodedKeySpec
 import java.security.MessageDigest
@@ -30,12 +29,13 @@ class AndrewSyncWorker(context: Context, params: WorkerParameters) : CoroutineWo
     private val signer = DeviceKeyStoreSigner()
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
+        var currentRevision: String? = null
         try {
             val sync = getJson(SYNC_PATH)
             if (!sync.optBoolean("ok", false)) return@withContext Result.retry()
             val artifact = sync.optJSONObject("artifact") ?: return@withContext Result.success()
             val revisionId = requireRevision(artifact.getString("revisionId"))
-            val previousRevisionId = artifact.optString("previousRevisionId").takeIf { it.isNotBlank() }
+            currentRevision = revisionId
             val expectedSha256 = artifact.getString("sha256Hex").lowercase()
             require(expectedSha256.matches(Regex("[0-9a-f]{64}"))) { "invalid artifact digest" }
             val signatureBase64 = artifact.getString("signatureBase64")
@@ -46,6 +46,7 @@ class AndrewSyncWorker(context: Context, params: WorkerParameters) : CoroutineWo
             val staging = File(root, ".staging-$revisionId-${id}")
             val active = File(root, ACTIVE_DIR)
             val previous = File(root, PREVIOUS_DIR)
+            val oldActiveRevision = readPointer(File(root, ACTIVE_POINTER))
             staging.deleteRecursively()
             staging.mkdirs()
 
@@ -72,14 +73,13 @@ class AndrewSyncWorker(context: Context, params: WorkerParameters) : CoroutineWo
             }
             atomicMove(stagedRevision.toPath(), active.toPath())
             writeAtomicPointer(File(root, ACTIVE_POINTER), revisionId)
-            writeAtomicPointer(File(root, PREVIOUS_POINTER), previousRevisionId ?: readPointer(File(root, PREVIOUS_POINTER)) ?: "")
+            writeAtomicPointer(File(root, PREVIOUS_POINTER), oldActiveRevision ?: "")
 
-            val ackOk = acknowledge(revisionId, true, null)
-            if (!ackOk) return@withContext Result.retry()
+            if (!acknowledge(revisionId, true, null)) return@withContext Result.retry()
             Result.success()
-        } catch (rollbackFailure: Throwable) {
+        } catch (failure: Throwable) {
             runCatching { rollback() }
-            runCatching { acknowledge(inputData.getString(KEY_REVISION_ID), false, "healthcheck_failed") }
+            runCatching { acknowledge(currentRevision, false, classifyFailure(failure)) }
             Result.failure()
         }
     }
@@ -138,12 +138,10 @@ class AndrewSyncWorker(context: Context, params: WorkerParameters) : CoroutineWo
     private suspend fun acknowledge(revisionId: String?, ok: Boolean, error: String?): Boolean {
         if (revisionId.isNullOrBlank()) return false
         val body = JSONObject().apply { put("revisionId", revisionId); put("ok", ok); if (error != null) put("error", error) }.toString()
-        var attempt = 0
-        while (attempt < ACK_ATTEMPTS) {
-            attempt += 1
+        repeat(ACK_ATTEMPTS) { attempt ->
             val response = runCatching { signedRequest("POST", ACK_PATH, body) }.getOrNull()
             if (response != null && response.code in 200..299) return true
-            if (attempt < ACK_ATTEMPTS) delay(ACK_BASE_DELAY_MS shl (attempt - 1))
+            if (attempt + 1 < ACK_ATTEMPTS) delay(ACK_BASE_DELAY_MS shl attempt)
         }
         return false
     }
@@ -172,26 +170,31 @@ class AndrewSyncWorker(context: Context, params: WorkerParameters) : CoroutineWo
         val previous = File(root, PREVIOUS_DIR)
         if (!previous.isDirectory) return
         val failed = File(root, ".failed-${System.currentTimeMillis()}")
+        val previousRevision = readPointer(File(root, PREVIOUS_POINTER)) ?: ""
         if (active.exists()) atomicMove(active.toPath(), failed.toPath())
         atomicMove(previous.toPath(), active.toPath())
         failed.deleteRecursively()
-        writeAtomicPointer(File(root, ACTIVE_POINTER), readPointer(File(root, PREVIOUS_POINTER)) ?: "")
+        writeAtomicPointer(File(root, ACTIVE_POINTER), previousRevision)
+        writeAtomicPointer(File(root, PREVIOUS_POINTER), "")
     }
 
-    private fun atomicMove(source: Path, target: Path) {
-        Files.move(source, target, StandardCopyOption.ATOMIC_MOVE)
-    }
-
+    private fun atomicMove(source: Path, target: Path) { Files.move(source, target, StandardCopyOption.ATOMIC_MOVE) }
     private fun writeAtomicPointer(target: File, value: String) {
         val temp = File(target.parentFile, ".${target.name}.${id}.tmp")
         FileOutputStream(temp).use { stream -> stream.write(value.toByteArray(StandardCharsets.UTF_8)); stream.fd.sync() }
         atomicMove(temp.toPath(), target.toPath())
     }
-
     private fun readPointer(file: File): String? = file.takeIf { it.isFile }?.readText()?.trim()?.takeIf { it.isNotEmpty() }
     private fun requireRevision(value: String): String { require(value.matches(Regex("[A-Za-z0-9._-]{1,128}"))); return value }
     private fun sha256(file: File): String { val digest = MessageDigest.getInstance("SHA-256"); FileInputStream(file).use { input -> val buffer = ByteArray(64 * 1024); while (true) { val count = input.read(buffer); if (count < 0) break; digest.update(buffer, 0, count) } }; return digest.digest().joinToString("") { "%02x".format(it) } }
     private fun hexToBytes(value: String): ByteArray = ByteArray(value.length / 2) { index -> value.substring(index * 2, index * 2 + 2).toInt(16).toByte() }
+    private fun classifyFailure(error: Throwable): String = when {
+        error.message?.contains("signature", ignoreCase = true) == true -> "verification_failed"
+        error.message?.contains("digest", ignoreCase = true) == true -> "verification_failed"
+        error.message?.contains("healthcheck", ignoreCase = true) == true || error.message?.contains("health manifest", ignoreCase = true) == true -> "healthcheck_failed"
+        error.message?.contains("HTTP", ignoreCase = true) == true -> "download_failed"
+        else -> "verification_failed"
+    }
 
     private fun unzipSafely(zip: File, destination: File) {
         ZipInputStream(BufferedInputStream(FileInputStream(zip))).use { input ->
@@ -227,6 +230,5 @@ class AndrewSyncWorker(context: Context, params: WorkerParameters) : CoroutineWo
         private const val NETWORK_TIMEOUT_MS = 30_000
         private const val ACK_ATTEMPTS = 4
         private const val ACK_BASE_DELAY_MS = 1_000L
-        private const val KEY_REVISION_ID = "revisionId"
     }
 }
