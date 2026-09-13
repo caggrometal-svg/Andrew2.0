@@ -3,6 +3,7 @@ import { getVideoFrames, getVideoUpload } from '../media/video.mjs';
 import { processLearningObservation } from '../learning/learning-engine.mjs';
 import { listAcceptedPatterns, recordObservation } from '../learning/learning-store.mjs';
 import { planBridgeAction, queueBridgeAction } from '../bridge/bridge-controller.mjs';
+import { createAvailabilityContract } from '../ai/andrew-provider-contract.mjs';
 
 const MAX_IMAGE_DATA_URL = 7_000_000;
 const MAX_HISTORY = 40;
@@ -134,6 +135,11 @@ export async function registerChatRoutes(app) {
 
       void learnFromExchange(request, userText, result.text);
 
+      const availability = createAvailabilityContract({
+        providerCount: Object.values(result.providerHealth?.providers || {}).filter((provider) => provider.configured).length,
+        tierStates: result.providerHealth?.tiers || {},
+      });
+
       return reply.send({
         ok: true,
         conversationId: request.body.conversationId,
@@ -144,6 +150,7 @@ export async function registerChatRoutes(app) {
         latencyMs: result.latencyMs,
         bridgeProtocol: result.bridgeProtocol,
         modelMetadata: result.modelMetadata,
+        availability,
         bridge: {
           queued: bridge.queued,
           ...(plannedAction ? { requested: plannedAction.command } : {}),
