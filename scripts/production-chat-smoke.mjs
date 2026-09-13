@@ -3,13 +3,13 @@ import { canonicalBridgeSignature } from '../server/bridge/bridge-auth.mjs';
 
 const BASE_URL = (process.env.BASE_URL || 'https://andrew2-api.onrender.com').replace(/\/$/, '');
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || '';
-const PAIRING_CODE = process.env.ANDREW_BRIDGE_PAIRING_CODE?.trim();
+const PAIRING_CODE = (process.env.ANDREW_BRIDGE_PAIRING_CODE || process.env.ANDREW_BRIDGE_SECRET)?.trim();
 const TIMEOUT_MS = Number.parseInt(process.env.SMOKE_TIMEOUT_MS || '45000', 10);
 const RETRIES = Number.parseInt(process.env.SMOKE_RETRIES || '12', 10);
 const RETRY_DELAY_MS = Number.parseInt(process.env.SMOKE_RETRY_DELAY_MS || '5000', 10);
 
 if (!PAIRING_CODE) {
-  throw new Error('ANDREW_BRIDGE_PAIRING_CODE is required for production smoke authentication.');
+  throw new Error('ANDREW_BRIDGE_PAIRING_CODE or ANDREW_BRIDGE_SECRET is required for production smoke authentication.');
 }
 if (!Number.isSafeInteger(TIMEOUT_MS) || TIMEOUT_MS <= 0) {
   throw new Error('SMOKE_TIMEOUT_MS must be a positive integer.');
