@@ -26,7 +26,8 @@ describe('Phase 29 Andrew bridge E2E architecture', () => {
     const loop = read('src/network/bridgeCommandLoop.ts');
     expect(router).toContain('policyOrder');
     expect(router).toContain('recordFailure');
-    expect(router).toContain('local-degraded');
+    expect(router).toContain('AIServiceUnavailableError');
+    expect(router).toContain("provider.router.exhausted");
     expect(loop).toContain('/api/chat');
     expect(loop).toContain('/api/v1/bridge/v3/result');
   });
