@@ -1,8 +1,13 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
 const mockedConfig = vi.hoisted(() => ({
-  openaiApiKey: 'primary-key', openaiModel: 'primary-model', primaryEndpoint: 'https://primary.test/v1/responses',
-  secondaryApiKey: 'secondary-key', secondaryEndpoint: 'https://secondary.test/v1/chat/completions', secondaryModel: 'secondary-model', secondarySupportsVision: true,
+  openaiApiKey: 'primary-key',
+  openaiModel: 'primary-model',
+  primaryEndpoint: 'https://primary.test/v1/responses',
+  secondaryApiKey: 'secondary-key',
+  secondaryEndpoint: 'https://secondary.test/v1/chat/completions',
+  secondaryModel: 'secondary-model',
+  secondarySupportsVision: true,
   routingPolicy: 'primary',
   providers: {
     anthropic: { apiKey: '', endpoint: '', model: '', protocol: 'messages', supportsVision: true },
@@ -16,46 +21,63 @@ const mockedConfig = vi.hoisted(() => ({
 vi.mock('../server/config.mjs', () => ({ config: mockedConfig }));
 import { ProviderRouter } from '../server/ai/provider-router.mjs';
 
-beforeEach(() => { mockedConfig.routingPolicy = 'primary'; vi.restoreAllMocks(); });
+beforeEach(() => {
+  mockedConfig.routingPolicy = 'primary';
+  mockedConfig.tiers = { primary: { tier: 1 }, secondary: { tier: 2 } };
+  vi.restoreAllMocks();
+});
+
 afterEach(() => vi.useRealTimers());
 
 const response = (json, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => json, headers: new Headers() });
 const request = (prompt) => ({ prompt, input: [{ role: 'user', content: prompt }] });
+const countCalls = (mock, endpoint) => mock.mock.calls.filter(([url]) => String(url) === endpoint).length;
 async function executeWithTimers(router, value) { const pending = router.execute(value); await vi.runAllTimersAsync(); return pending; }
 
 describe('Phase 28 provider recovery', () => {
   it('recovers a tripped breaker through a successful half-open probe', async () => {
     vi.useFakeTimers();
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => url === 'https://primary.test/v1/responses'
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => String(url) === mockedConfig.primaryEndpoint
       ? response({ error: { message: 'temporary' } }, 503)
       : response({ choices: [{ message: { content: 'fallback' } }] }));
     const router = new ProviderRouter();
     for (let i = 0; i < 3; i += 1) await executeWithTimers(router, request(`trip-${i}`));
     expect(router.getHealth().providers.primary.state).toBe('open');
+    const primaryAttemptsPerTrip = countCalls(fetchMock, mockedConfig.primaryEndpoint) / 3;
+    const fallbackCallsBeforeProbe = countCalls(fetchMock, mockedConfig.secondaryEndpoint);
+    expect(Number.isInteger(primaryAttemptsPerTrip)).toBe(true);
+    expect(primaryAttemptsPerTrip).toBeGreaterThan(0);
+    expect(fallbackCallsBeforeProbe).toBe(3);
+
     await vi.advanceTimersByTimeAsync(30_001);
-    fetchMock.mockImplementation(async (url) => url === 'https://primary.test/v1/responses'
+    fetchMock.mockImplementation(async (url) => String(url) === mockedConfig.primaryEndpoint
       ? response({ output_text: 'recovered' })
       : response({ choices: [{ message: { content: 'fallback' } }] }));
+    const primaryCallsBeforeProbe = countCalls(fetchMock, mockedConfig.primaryEndpoint);
     const result = await executeWithTimers(router, request('recovery-probe'));
     expect(result.provider).toBe('primary');
     expect(result.text).toBe('recovered');
     expect(router.getHealth().providers.primary.state).toBe('closed');
     expect(router.getHealth().providers.primary.consecutiveFailures).toBe(0);
     expect(router.getHealth().providers.primary.openUntil).toBeNull();
-    expect(fetchMock).toHaveBeenCalledTimes(7);
+    expect(countCalls(fetchMock, mockedConfig.primaryEndpoint)).toBe(primaryCallsBeforeProbe + 1);
+    expect(countCalls(fetchMock, mockedConfig.secondaryEndpoint)).toBe(fallbackCallsBeforeProbe);
   });
 
   it('does not probe an open provider before cooldown and falls back immediately', async () => {
     vi.useFakeTimers();
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => url === 'https://primary.test/v1/responses'
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => String(url) === mockedConfig.primaryEndpoint
       ? response({ error: { message: 'temporary' } }, 503)
       : response({ choices: [{ message: { content: 'secondary fallback' } }] }));
     const router = new ProviderRouter();
     for (let i = 0; i < 3; i += 1) await executeWithTimers(router, request(`open-${i}`));
+    expect(router.getHealth().providers.primary.state).toBe('open');
+    const primaryCallsBeforeFallback = countCalls(fetchMock, mockedConfig.primaryEndpoint);
+    const secondaryCallsBeforeFallback = countCalls(fetchMock, mockedConfig.secondaryEndpoint);
     const result = await executeWithTimers(router, request('fallback-while-open'));
     expect(result.provider).toBe('secondary');
-    expect(fetchMock).toHaveBeenCalledTimes(7);
-    expect(fetchMock.mock.calls[6][0]).toBe('https://secondary.test/v1/chat/completions');
+    expect(countCalls(fetchMock, mockedConfig.primaryEndpoint)).toBe(primaryCallsBeforeFallback);
+    expect(countCalls(fetchMock, mockedConfig.secondaryEndpoint)).toBe(secondaryCallsBeforeFallback + 1);
   });
 
   it('keeps media on providers that advertise vision support', async () => {
