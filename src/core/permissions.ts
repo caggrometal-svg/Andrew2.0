@@ -25,7 +25,7 @@ export const defaultPermissions: ReadonlyArray<PermissionState> = Object.freeze(
 
 export function isAllowed(
   permission: Permission,
-  state: ReadonlyArray<PermissionState> = defaultPermissions,
+  state: ReadonlyArray<PermissionState> = [],
 ): boolean {
   const matches = state.filter((entry) => entry.permission === permission);
   if (matches.length === 0) return false;
@@ -35,7 +35,7 @@ export function isAllowed(
 
 export function assertPermission(
   permission: Permission,
-  state: ReadonlyArray<PermissionState> = defaultPermissions,
+  state: ReadonlyArray<PermissionState> = [],
 ): void {
   if (!isAllowed(permission, state)) {
     throw new Error(`Permission denied: ${permission}`);
