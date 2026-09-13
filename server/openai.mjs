@@ -45,18 +45,12 @@ export async function createResponse({ message, memory = [], attachment, history
     ];
   }
 
-  const result = await router.execute({
-    prompt: current,
-    history,
-    input,
-    temperature: 0.2,
-    attachment: attachment ? { type: attachment.type, name: attachment.name } : null,
-  });
+  const result = await router.execute({ prompt: current, history, input, memory, temperature: 0.2, attachment: attachment ? { type: attachment.type, name: attachment.name } : null });
 
   return {
     text: result.text,
     responseId: null,
-    model: result.provider,
+    model: result.model || result.provider,
     provider: result.provider,
     latencyMs: result.latencyMs,
   };
