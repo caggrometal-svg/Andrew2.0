@@ -2,12 +2,20 @@ import { createResponse } from '../openai.mjs';
 import { getVideoFrames, getVideoUpload } from '../media/video.mjs';
 import { processLearningObservation } from '../learning/learning-engine.mjs';
 import { listAcceptedPatterns, recordObservation } from '../learning/learning-store.mjs';
+import { planBridgeAction, queueBridgeAction } from '../bridge/bridge-controller.mjs';
 
 const MAX_IMAGE_DATA_URL = 7_000_000;
+const MAX_HISTORY = 40;
 const USER_ID = /^[A-Za-z0-9._:-]{1,128}$/;
 
 const cleanMemory = (value) => Array.isArray(value)
   ? value.filter((item) => typeof item === 'string').map((item) => item.slice(0, 2000)).slice(0, 20)
+  : [];
+
+const cleanHistory = (value) => Array.isArray(value)
+  ? value.filter((item) => item && (item.role === 'user' || item.role === 'assistant') && typeof item.content === 'string')
+    .map((item) => ({ role: item.role, content: item.content.slice(0, 12000) }))
+    .slice(-MAX_HISTORY)
   : [];
 
 const resolveUserId = (request) => {
@@ -67,6 +75,19 @@ export async function registerChatRoutes(app) {
           message: { type: 'string', minLength: 1, maxLength: 12000 },
           conversationId: { type: 'string', minLength: 1, maxLength: 128 },
           memory: { type: 'array', maxItems: 20, items: { type: 'string', maxLength: 2000 } },
+          history: {
+            type: 'array',
+            maxItems: MAX_HISTORY,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['role', 'content'],
+              properties: {
+                role: { type: 'string', enum: ['user', 'assistant'] },
+                content: { type: 'string', maxLength: 12000 },
+              },
+            },
+          },
           attachment: {
             type: 'object',
             additionalProperties: false,
@@ -103,11 +124,18 @@ export async function registerChatRoutes(app) {
       const clientMemory = cleanMemory(request.body.memory);
       const persistentMemory = await acceptedMemory(userId);
       const memory = [...persistentMemory, ...clientMemory].slice(0, 20);
+      const history = cleanHistory(request.body.history);
       const result = await createResponse({
         message: userText,
         memory,
+        history,
         attachment: multimodalAttachment,
       });
+
+      const plannedAction = planBridgeAction(userText);
+      const bridge = plannedAction
+        ? await queueBridgeAction({ userId, action: plannedAction })
+        : { queued: false, error: 'no_bridge_action' };
 
       void learnFromExchange(request, userText, result.text);
 
@@ -117,6 +145,14 @@ export async function registerChatRoutes(app) {
         reply: result.text,
         responseId: result.responseId,
         model: result.model,
+        provider: result.provider,
+        latencyMs: result.latencyMs,
+        bridge: {
+          queued: bridge.queued,
+          ...(plannedAction ? { requested: plannedAction.command } : {}),
+          ...(bridge.error ? { error: bridge.error } : {}),
+          ...(bridge.command ? { commandId: bridge.command.id, expiresAt: bridge.command.expiresAt } : {}),
+        },
         learning: {
           eligible: true,
           queued: true,
