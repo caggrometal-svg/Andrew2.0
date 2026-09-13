@@ -1,10 +1,9 @@
+import { authorize, requireAuthorization } from '../core/authorization';
+import type { Permission, PermissionState } from '../core/permissions';
 import { LocalStorageProvider, type StorageProvider } from '../storage/storage-provider';
 
-export type Capability =
-  | 'memory.read' | 'memory.write' | 'state.read' | 'state.write'
-  | 'network.read' | 'network.write' | 'analysis.run' | 'project.write' | 'content.generate';
-
-export interface PermissionGrant { capability: Capability; decision: 'allow' | 'deny'; }
+export type Capability = Permission;
+export type PermissionGrant = PermissionState;
 export interface ProjectState { projectId: string; name: string; status: 'idle' | 'active' | 'paused' | 'completed' | 'error'; autonomy: 'restricted' | 'assisted' | 'autonomous'; updatedAt: string; }
 export interface ActivityRecord { id: string; timestamp: string; action: string; capability: Capability; result: 'success' | 'denied' | 'error'; details: { projectId: string; reason: string }; }
 export interface PlannedAction { id: string; action: string; capability: Capability; requiresConfirmation: boolean; confirmed?: boolean; }
@@ -12,15 +11,11 @@ export interface PlannedAction { id: string; action: string; capability: Capabil
 const PROJECTS_KEY = 'iac33.projects.v1';
 const ACTIVITY_KEY = 'iac33.activity.v1';
 const MAX_ACTIVITY = 5000;
-const CAPABILITIES: ReadonlySet<Capability> = new Set([
-  'memory.read', 'memory.write', 'state.read', 'state.write', 'network.read',
-  'network.write', 'analysis.run', 'project.write', 'content.generate',
-]);
 
 class ProjectStore {
   constructor(private readonly storage: StorageProvider) {}
-  load(): ProjectState[] { const value = this.storage.get<unknown>(PROJECTS_KEY); return Array.isArray(value) ? value.filter(isProjectState) : []; }
-  save(projects: ProjectState[]): void { this.storage.set(PROJECTS_KEY, projects); }
+  load(): ProjectState[] { const value = this.storage.get<unknown>(PROJECTS_KEY); return Array.isArray(value) ? value.filter(isProjectState).slice(0, 1000) : []; }
+  save(projects: ProjectState[]): void { this.storage.set(PROJECTS_KEY, projects.slice(0, 1000)); }
 }
 
 class ActivityStore {
@@ -45,7 +40,8 @@ export class IAC33Runtime {
     this.activities.push(...this.activityStore.load());
   }
 
-  createProject(id: string, name: string): ProjectState {
+  createProject(id: string, name: string, permissions?: ReadonlyArray<PermissionState>): ProjectState {
+    requireAuthorization('project.write', permissions);
     if (!id.trim() || !name.trim()) throw new Error('Project id and name are required');
     if (id.length > 200 || name.length > 500) throw new Error('Project fields exceed maximum length');
     if (this.projects.has(id)) throw new Error(`Project already exists: ${id}`);
@@ -57,38 +53,44 @@ export class IAC33Runtime {
 
   getProject(id: string): ProjectState | undefined { return this.projects.get(id); }
 
-  authorizeAction(projectId: string, permissions: PermissionGrant[], action: PlannedAction): boolean {
+  authorizeAction(projectId: string, permissions: ReadonlyArray<PermissionState>, action: PlannedAction): boolean {
     if (!this.getProject(projectId)) throw new Error(`Project not found: ${projectId}`);
-    if (!action.id.trim() || !action.action.trim() || !CAPABILITIES.has(action.capability)) throw new Error('Invalid planned action');
-    const grants = permissions.filter((permission) => permission.capability === action.capability);
-    const explicitDeny = grants.some((permission) => permission.decision === 'deny');
-    const explicitAllow = grants.some((permission) => permission.decision === 'allow');
+    if (!action.id.trim() || !action.action.trim()) throw new Error('Invalid planned action');
+    const decision = authorize(action.capability, permissions);
     const confirmationMissing = action.requiresConfirmation && action.confirmed !== true;
-    const allowed = explicitAllow && !explicitDeny && !confirmationMissing;
-    const reason = explicitDeny ? 'Capability explicitly denied.' : confirmationMissing ? 'Explicit confirmation required.' : explicitAllow ? 'Capability explicitly allowed.' : 'No explicit permission grant exists.';
+    const allowed = decision.allowed && !confirmationMissing;
+    const reason = !decision.allowed ? decision.reason : confirmationMissing ? 'Explicit confirmation required.' : 'Permission explicitly granted.';
     this.activities.push({ id: crypto.randomUUID(), timestamp: new Date().toISOString(), action: action.action, capability: action.capability, result: allowed ? 'success' : 'denied', details: { projectId, reason } });
     this.activityStore.save(this.activities);
     return allowed;
   }
 
   allActivity(): ActivityRecord[] { return this.activities.map((record) => ({ ...record, details: { ...record.details } })); }
-  persist(): void { this.projectStore.save([...this.projects.values()]); this.activityStore.save(this.activities); }
-}
+
+  persist(permissions?: ReadonlyArray<PermissionState>): void {
+    requireAuthorization('project.write', permissions);
+    this.projectStore.save([...this.projects.values()]);
+    this.activityStore.save(this.activities);
+  }
+} 
 
 function isProjectState(value: unknown): value is ProjectState {
   if (!value || typeof value !== 'object') return false;
   const item = value as Partial<ProjectState>;
-  return typeof item.projectId === 'string' && typeof item.name === 'string'
+  return typeof item.projectId === 'string' && item.projectId.trim().length > 0 && item.projectId.length <= 200
+    && typeof item.name === 'string' && item.name.trim().length > 0 && item.name.length <= 500
     && ['idle', 'active', 'paused', 'completed', 'error'].includes(item.status ?? '')
     && ['restricted', 'assisted', 'autonomous'].includes(item.autonomy ?? '')
-    && typeof item.updatedAt === 'string';
+    && typeof item.updatedAt === 'string' && !Number.isNaN(Date.parse(item.updatedAt));
 }
 
 function isActivityRecord(value: unknown): value is ActivityRecord {
   if (!value || typeof value !== 'object') return false;
   const item = value as Partial<ActivityRecord>;
-  return typeof item.id === 'string' && typeof item.timestamp === 'string' && typeof item.action === 'string'
-    && typeof item.capability === 'string' && CAPABILITIES.has(item.capability as Capability)
-    && ['success', 'denied', 'error'].includes(item.result ?? '')
+  return typeof item.id === 'string' && item.id.trim().length > 0
+    && typeof item.timestamp === 'string' && !Number.isNaN(Date.parse(item.timestamp))
+    && typeof item.action === 'string' && item.action.trim().length > 0
+    && typeof item.capability === 'string'
+    && typeof item.result === 'string' && ['success', 'denied', 'error'].includes(item.result)
     && !!item.details && typeof item.details.projectId === 'string' && typeof item.details.reason === 'string';
 }
