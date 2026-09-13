@@ -62,6 +62,16 @@ export async function getBridgeSyncState(userId) {
   return { serverTime: Date.now(), cursor: pending.length ? pending[pending.length - 1].createdAt : Date.now(), pending };
 }
 
+export async function getBridgeCommand({ userId, id }) {
+  await initializeBridgeStore();
+  const cleanId = cleanUserId(userId);
+  if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/i.test(id)) return null;
+  const row = await getPool().query(`SELECT id,command,payload,EXTRACT(EPOCH FROM created_at)*1000 AS created_at,EXTRACT(EPOCH FROM expires_at)*1000 AS expires_at,EXTRACT(EPOCH FROM acknowledged_at)*1000 AS acknowledged_at,ack_ok,ack_error,result FROM andrew_bridge_commands WHERE id=$1 AND user_id=$2 LIMIT 1`, [id, cleanId]);
+  if (!row.rowCount) return null;
+  const value = row.rows[0];
+  return { id: value.id, command: value.command, ...(value.payload === null ? {} : { payload: value.payload }), createdAt: Number(value.created_at), expiresAt: Number(value.expires_at), acknowledgedAt: value.acknowledged_at === null ? null : Number(value.acknowledged_at), ok: value.ack_ok, error: value.ack_error, result: value.result };
+}
+
 export async function acknowledgeBridgeCommand({ userId, id, ok, error, result = null }) {
   await initializeBridgeStore();
   const cleanId = cleanUserId(userId);
