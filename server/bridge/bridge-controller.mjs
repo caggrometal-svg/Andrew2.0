@@ -57,7 +57,7 @@ export function planBridgeAction(message) {
     return { command: 'request_status' };
   }
 
-  const match = text.match(/\b(?:cambia|cambiar|establece|establecer|configura|configurar)\b.*?\b(model|timeoutMs|pollIntervalMs|syncEnabled)\b\s*(?:a|=|:)\s*([^,.;\n]+)/i);
+  const match = text.match(/\b(?:cambia|cambiar|establece|establecer|configura|configurar)\b.*?\b(model|timeoutMs|pollIntervalMs|syncEnabled)\b\s*(?:a|=|:)\s*([^,;\n]+)/i);
   if (!match) return null;
   return { command: 'set_runtime_parameter', payload: { key: match[1], value: parseRuntimeValue(match[2]) } };
 }
