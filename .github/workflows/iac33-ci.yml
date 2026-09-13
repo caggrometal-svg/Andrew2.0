@@ -40,7 +40,9 @@ jobs:
         run: |
           node --check server/config.mjs
           node --check server/openai.mjs
+          node --check server/ai/provider-router.mjs
           node --check server/routes/chat.mjs
+          node --check server/routes/bridge-v3.mjs
           node --check server/bridge/bridge-controller.mjs
           node --check server/server.mjs
 
@@ -49,3 +51,6 @@ jobs:
 
       - name: APK remote bridge loop gate
         run: npx vitest run tests/phase25-remote-bridge-loop.test.ts
+
+      - name: Provider resilience gate
+        run: npx vitest run tests/phase26-provider-resilience.test.mjs
