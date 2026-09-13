@@ -72,7 +72,7 @@ jobs:
           DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/andrew_test
           DATABASE_SSL: disable
         run: |
-          node --test \
+          node --test --test-concurrency=1 \
             tests/phase25-bridge-security-v2.test.mjs \
             tests/phase25-http-e2e.test.mjs \
             tests/phase25-http-real-e2e.test.mjs
