@@ -120,14 +120,14 @@ jobs:
         run: ./gradlew clean assembleRelease --no-daemon --stacktrace
 
       - name: Verify signed release APK
-        env:
-          APK_SIGNER: ${{ env.ANDROID_HOME }}/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -n 1)/apksigner
         run: |
           set -euo pipefail
           apk="android/app/build/outputs/apk/release/app-release.apk"
+          signer="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
           test -f "$apk"
-          "$APK_SIGNER" verify --verbose "$apk"
-          "$APK_SIGNER" verify --print-certs "$apk"
+          test -x "$signer"
+          "$signer" verify --verbose "$apk"
+          "$signer" verify --print-certs "$apk"
           sha256sum "$apk" | tee android/app/build/outputs/apk/release/app-release.apk.sha256
           echo "Verified release APK: $apk"
 
