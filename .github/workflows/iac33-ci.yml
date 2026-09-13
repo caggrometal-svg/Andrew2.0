@@ -41,4 +41,8 @@ jobs:
           node --check server/config.mjs
           node --check server/openai.mjs
           node --check server/routes/chat.mjs
+          node --check server/bridge/bridge-controller.mjs
           node --check server/server.mjs
+
+      - name: AI to Android bridge controller gate
+        run: npm run test:phase24
