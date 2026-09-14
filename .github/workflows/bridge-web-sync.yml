@@ -10,6 +10,9 @@ on:
 permissions:
   contents: write
 
+env:
+  BRIDGE_TAG_PREFIX: bridge-
+
 jobs:
   bridge-web-sync:
     name: Build, publish and verify web runtime
@@ -33,23 +36,53 @@ jobs:
 
       - name: Create bridge artifact
         shell: bash
+        env:
+          BRIDGE_ECDSA_PRIVATE_KEY_B64: ${{ secrets.BRIDGE_ECDSA_PRIVATE_KEY_B64 }}
         run: |
           set -euo pipefail
-          revision='${GITHUB_SHA}'
+          umask 077
+          revision="${GITHUB_SHA}"
           work="$RUNNER_TEMP/andrew-bridge"
           rm -rf "$work"
           mkdir -p "$work/payload"
+          trap 'rm -f "$work/signing-key.pem" "$work/digest.bin" "$work/signature.der"' EXIT
+
           cp -R dist/. "$work/payload/"
           printf '{"ok":true,"revisionId":"%s"}\n' "$revision" > "$work/payload/health.json"
-          (cd "$work/payload" && zip -qr "$work/andrew-web-runtime.zip" .)
-          sha256=$(sha256sum "$work/andrew-web-runtime.zip" | awk '{print $1}')
-          # The backend currently validates the manifest shape and digest, but does
-          # not verify a persistent signing key. Generate a per-run signature so
-          # this workflow has no long-lived private-key secret dependency.
-          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$work/signing-key.pem" 2>/dev/null
+          (
+            cd "$work/payload"
+            zip -qr "$work/andrew-web-runtime.zip" .
+          )
+
+          sha256="$(sha256sum "$work/andrew-web-runtime.zip" | awk '{print $1}')"
+          test -n "$BRIDGE_ECDSA_PRIVATE_KEY_B64"
+          printf '%s' "$BRIDGE_ECDSA_PRIVATE_KEY_B64" | base64 --decode > "$work/signing-key.pem"
+          chmod 600 "$work/signing-key.pem"
+
+          # Strictly require a NIST P-256 EC private key (prime256v1).
+          openssl pkey -in "$work/signing-key.pem" -check -noout
+          key_type="$(
+            openssl pkey -in "$work/signing-key.pem" -text -noout 2>/dev/null \
+              | grep -m1 'ASN1 OID:' \
+              | sed 's/.*ASN1 OID: //'
+          )"
+          test "$key_type" = "prime256v1"
+
+          # Android verifies SHA256withECDSA over the raw 32-byte SHA-256 digest.
           printf '%s' "$sha256" | xxd -r -p > "$work/digest.bin"
-          openssl dgst -sha256 -sign "$work/signing-key.pem" -out "$work/signature.der" "$work/digest.bin"
-          signature=$(base64 -w0 "$work/signature.der")
+          openssl dgst -sha256 \
+            -sign "$work/signing-key.pem" \
+            -out "$work/signature.der" \
+            "$work/digest.bin"
+
+          signature="$(base64 -w0 "$work/signature.der")"
+          openssl pkey -in "$work/signing-key.pem" -pubout -out "$work/public-key.pem"
+          openssl dgst -sha256 \
+            -verify "$work/public-key.pem" \
+            -signature "$work/signature.der" \
+            "$work/digest.bin"
+
+          echo "ECDSA-P256/SHA256 artifact signature verified locally."
           echo "BRIDGE_REVISION=$revision" >> "$GITHUB_ENV"
           echo "BRIDGE_SHA256=$sha256" >> "$GITHUB_ENV"
           echo "BRIDGE_SIGNATURE=$signature" >> "$GITHUB_ENV"
@@ -61,12 +94,25 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tag="bridge-${BRIDGE_REVISION}"
-          gh release create "$tag" "$BRIDGE_ARTIFACT#andrew-web-runtime.zip" \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
-            --title "Andrew web runtime ${BRIDGE_REVISION}" \
-            --notes "Signed web runtime for Andrew 2.0 bridge. Revision ${BRIDGE_REVISION}. SHA-256 ${BRIDGE_SHA256}."
+          tag="${BRIDGE_TAG_PREFIX}${BRIDGE_REVISION}"
+
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $tag already exists; updating it idempotently."
+            gh release upload "$tag" "$BRIDGE_ARTIFACT#andrew-web-runtime.zip" \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+            gh release edit "$tag" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Andrew web runtime ${BRIDGE_REVISION}" \
+              --notes "Signed web runtime for Andrew 2.0 bridge. Revision ${BRIDGE_REVISION}. SHA-256 ${BRIDGE_SHA256}."
+          else
+            echo "Creating release $tag."
+            gh release create "$tag" "$BRIDGE_ARTIFACT#andrew-web-runtime.zip" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "Andrew web runtime ${BRIDGE_REVISION}" \
+              --notes "Signed web runtime for Andrew 2.0 bridge. Revision ${BRIDGE_REVISION}. SHA-256 ${BRIDGE_SHA256}."
+          fi
 
       - name: Verify backend health
         shell: bash
