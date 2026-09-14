@@ -1,11 +1,11 @@
-import { acknowledgeBridgeCommand, getBridgeSyncState, initializeBridgeStore, listPendingBridgeCommands } from '../bridge/bridge-store.mjs';
+import { acknowledgeBridgeCommand, claimBridgeCommand, getBridgeSyncState, initializeBridgeStore, listPendingBridgeCommands } from '../bridge/bridge-store.mjs';
 import { queueBridgeAction } from '../bridge/bridge-controller.mjs';
 import { applyBridgeRuntimeCommand } from '../ai/provider-router.mjs';
 import { bridgeDeviceAttestationHeaders, verifyBridgeDeviceAttestation } from '../auth/bridge-v3-device.mjs';
 
 const ALLOWED_COMMANDS = new Set(['open_settings', 'set_runtime_parameter', 'request_status', 'sync_now']);
 const TTL_MS = 5 * 60 * 1000;
-const ACK_ERRORS = new Set(['expired', 'unsupported', 'invalid_payload', 'healthcheck_failed', 'verification_failed', 'download_failed']);
+const ACK_ERRORS = new Set(['expired', 'unsupported', 'invalid_payload', 'healthcheck_failed', 'verification_failed', 'download_failed', 'execution_failed']);
 const MAX_RESULT_BYTES = 8192;
 const REVISION_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
 
@@ -39,7 +39,6 @@ function artifactManifest() {
 
 export async function registerBridgeV3Routes(app) {
   await initializeBridgeStore();
-
   app.get('/api/v1/bridge/v3/status', async (request, reply) => {
     const deviceId = authenticate(request, reply); if (!deviceId) return;
     return { ok: true, deviceId, commands: [...ALLOWED_COMMANDS], writeEnabled: writeEnabled(), ttlMs: TTL_MS, ai: { policy: aiPolicy() } };
@@ -47,6 +46,13 @@ export async function registerBridgeV3Routes(app) {
   app.get('/api/v1/bridge/v3/commands', async (request, reply) => {
     const deviceId = authenticate(request, reply); if (!deviceId) return;
     return { ok: true, commands: await listPendingBridgeCommands(deviceId), writeEnabled: writeEnabled() };
+  });
+  app.post('/api/v1/bridge/v3/commands/:id/claim', async (request, reply) => {
+    const deviceId = authenticate(request, reply); if (!deviceId) return;
+    const id = typeof request.params?.id === 'string' ? request.params.id : '';
+    const command = await claimBridgeCommand({ userId: deviceId, id });
+    if (!command) return reply.code(409).send({ ok: false, error: 'command_not_available' });
+    return { ok: true, deviceId, command };
   });
   app.get('/api/v1/bridge/v3/sync', async (request, reply) => {
     const deviceId = authenticate(request, reply); if (!deviceId) return;
@@ -85,9 +91,6 @@ export async function registerBridgeV3Routes(app) {
     if (typeof body.id !== 'string' || body.id.length > 64 || typeof body.ok !== 'boolean' || typeof body.command !== 'string' || !ALLOWED_COMMANDS.has(body.command)) return reply.code(400).send({ ok: false, error: 'invalid_payload' });
     if (body.error !== undefined && (typeof body.error !== 'string' || !ACK_ERRORS.has(body.error))) return reply.code(400).send({ ok: false, error: 'invalid_payload' });
     let result; try { result = cleanResult(body.result); } catch (error) { return reply.code(400).send({ ok: false, error: error instanceof TypeError && error.message === 'result_too_large' ? 'result_too_large' : 'invalid_result' }); }
-
-    // A successful runtime-parameter result is only acknowledged after the backend
-    // has actually applied and validated the change. This prevents a false ACK.
     if (body.command === 'set_runtime_parameter' && body.ok) {
       try {
         const applied = await applyBridgeRuntimeCommand({ command: body.command, payload: result ?? {} });
@@ -96,7 +99,6 @@ export async function registerBridgeV3Routes(app) {
         return reply.code(422).send({ ok: false, id: body.id, error: 'runtime_apply_failed', detail: error instanceof Error ? error.message : String(error) });
       }
     }
-
     const acknowledged = await acknowledgeBridgeCommand({ userId: deviceId, id: body.id, ok: body.ok, error: body.error, result });
     if (!acknowledged) return reply.code(404).send({ ok: false, error: 'command_not_pending' });
     return { ok: true, id: body.id, acknowledgedAt: Date.now(), result: result ?? null };
