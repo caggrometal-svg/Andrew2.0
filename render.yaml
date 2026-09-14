@@ -1,11 +1,15 @@
 services:
   - type: web
-    name: andrew2
-    runtime: static
-    buildCommand: npm install && npm run build
-    staticPublishPath: ./dist
+    name: andrew2-api
+    runtime: node
+    plan: free
+    branch: iac33-integration-next
+    buildCommand: npm ci --ignore-scripts --no-audit --no-fund
+    startCommand: node server/server.mjs
+    healthCheckPath: /health
     autoDeploy: true
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000

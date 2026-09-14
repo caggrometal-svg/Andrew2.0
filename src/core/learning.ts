@@ -1,4 +1,5 @@
-import { isAllowed, type Permission, type PermissionState } from './permissions';
+import { requireAuthorization } from './authorization';
+import type { PermissionState } from './permissions';
 import { logActivity } from './activity-log';
 import { getMemories, saveMemory } from './memory';
 
@@ -14,12 +15,15 @@ export interface LearningRecord {
 }
 
 const KEY = 'iac33.learning';
+const MAX_RECORDS = 1000;
+const MAX_TEXT_LENGTH = 20_000;
 
 function readLearning(): LearningRecord[] {
   if (typeof localStorage === 'undefined') return [];
   try {
     const parsed = JSON.parse(localStorage.getItem(KEY) ?? '[]');
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(isLearningRecord).slice(0, MAX_RECORDS);
   } catch {
     return [];
   }
@@ -34,9 +38,9 @@ export function learnFromOutcome(
   input: Omit<LearningRecord, 'id' | 'createdAt'>,
   permissions?: PermissionState[],
 ): LearningRecord {
-  const state = permissions;
-  requirePermission('analysis.run', state);
-  requirePermission('memory.write', state);
+  requireAuthorization('analysis.run', permissions);
+  requireAuthorization('memory.write', permissions);
+  validateLearningInput(input);
 
   const record: LearningRecord = {
     ...input,
@@ -45,10 +49,10 @@ export function learnFromOutcome(
     confidence: Math.min(1, Math.max(0, input.confidence)),
   };
 
-  const records = [record, ...readLearning()].slice(0, 1000);
+  const records = [record, ...readLearning()].slice(0, MAX_RECORDS);
   if (typeof localStorage !== 'undefined') localStorage.setItem(KEY, JSON.stringify(records));
 
-  saveMemory(`Aprendizaje IAC33: ${record.lesson}`, ['learning', record.projectId]);
+  saveMemory(`Aprendizaje IAC33: ${record.lesson}`, ['learning', record.projectId], permissions);
   logActivity({
     type: 'memory',
     action: 'learning.recorded',
@@ -60,6 +64,7 @@ export function learnFromOutcome(
 
 export function findRelevantLessons(query: string, projectId?: string): LearningRecord[] {
   const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return [];
   return getLearningRecords(projectId)
     .map((record) => ({
       record,
@@ -83,8 +88,26 @@ export function learningStats(projectId?: string) {
   return { records: records.length, learningMemories: memories.length, averageConfidence };
 }
 
-function requirePermission(permission: Permission, state?: PermissionState[]): void {
-  if (!isAllowed(permission, state)) {
-    throw new Error(`Permission denied: ${permission}`);
+function validateLearningInput(input: Omit<LearningRecord, 'id' | 'createdAt'>): void {
+  for (const [name, value] of Object.entries(input)) {
+    if (name === 'confidence') continue;
+    if (typeof value !== 'string' || !value.trim() || value.length > MAX_TEXT_LENGTH) {
+      throw new Error(`Invalid learning field: ${name}`);
+    }
   }
+  if (!Number.isFinite(input.confidence)) throw new Error('Invalid learning confidence');
+}
+
+function isLearningRecord(value: unknown): value is LearningRecord {
+  if (!value || typeof value !== 'object') return false;
+  const record = value as Partial<LearningRecord>;
+  return typeof record.id === 'string'
+    && typeof record.projectId === 'string'
+    && typeof record.question === 'string'
+    && typeof record.observation === 'string'
+    && typeof record.outcome === 'string'
+    && typeof record.lesson === 'string'
+    && typeof record.confidence === 'number'
+    && Number.isFinite(record.confidence)
+    && typeof record.createdAt === 'string';
 }

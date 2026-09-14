@@ -1,0 +1,84 @@
+name: Render Effective Config Sync
+
+on:
+  push:
+    branches: [iac33-integration-next]
+    paths:
+      - render.yaml
+      - .github/workflows/render-effective-sync.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync-render:
+    name: Sync and verify Render service
+    runs-on: ubuntu-latest
+    env:
+      RENDER_SERVICE_ID: srv-dah3a615efls73fr3ii0
+      RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      RENDER_API_BASE: https://api.render.com/v1
+    steps:
+      - name: Validate credentials
+        run: |
+          test -n "$RENDER_API_KEY" || { echo "RENDER_API_KEY GitHub secret is not configured"; exit 1; }
+
+      - name: Update effective Render service configuration
+        run: |
+          set -euo pipefail
+          payload='{
+            "branch":"iac33-integration-next",
+            "autoDeploy":"yes",
+            "serviceDetails":{
+              "healthCheckPath":"/health",
+              "envSpecificDetails":{
+                "buildCommand":"npm ci --ignore-scripts --no-audit --no-fund",
+                "startCommand":"node server/server.mjs"
+              }
+            }
+          }'
+          curl --fail-with-body --silent --show-error \
+            --request PATCH \
+            --url "$RENDER_API_BASE/services/$RENDER_SERVICE_ID" \
+            --header "Authorization: Bearer $RENDER_API_KEY" \
+            --header 'Content-Type: application/json' \
+            --data "$payload"
+
+      - name: Verify effective Render service configuration
+        run: |
+          set -euo pipefail
+          response="$(curl --fail-with-body --silent --show-error \
+            --url "$RENDER_API_BASE/services/$RENDER_SERVICE_ID" \
+            --header "Authorization: Bearer $RENDER_API_KEY")"
+          echo "$response" | jq '{branch, autoDeploy, buildCommand, startCommand, healthCheckPath, serviceDetails}'
+          build="$(echo "$response" | jq -r '.serviceDetails.envSpecificDetails.buildCommand // .buildCommand // empty')"
+          start="$(echo "$response" | jq -r '.serviceDetails.envSpecificDetails.startCommand // .startCommand // empty')"
+          health="$(echo "$response" | jq -r '.serviceDetails.healthCheckPath // empty')"
+          test "$build" = 'npm ci --ignore-scripts --no-audit --no-fund'
+          test "$start" = 'node server/server.mjs'
+          test "$health" = '/health'
+
+      - name: Deploy corrected configuration
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error \
+            --request POST \
+            --url "$RENDER_API_BASE/services/$RENDER_SERVICE_ID/deploys" \
+            --header "Authorization: Bearer $RENDER_API_KEY" \
+            --header 'Content-Type: application/json' \
+            --data '{"clearCache":"do_not_clear","commitId":"'"${GITHUB_SHA}"'"}'
+
+      - name: Verify production health
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 30); do
+            code="$(curl --connect-timeout 5 --max-time 10 --output /tmp/health.json --write-out '%{http_code}' --silent https://andrew2-api.onrender.com/health || true)"
+            if [ "$code" = "200" ]; then
+              cat /tmp/health.json
+              exit 0
+            fi
+            sleep 10
+          done
+          echo 'Render /health did not reach HTTP 200 within 5 minutes'
+          exit 1
