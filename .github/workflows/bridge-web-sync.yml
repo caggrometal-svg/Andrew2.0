@@ -45,7 +45,7 @@ jobs:
           work="$RUNNER_TEMP/andrew-bridge"
           rm -rf "$work"
           mkdir -p "$work/payload"
-          trap 'rm -f "$work/signing-key.pem" "$work/digest.bin" "$work/signature.der"' EXIT
+          trap 'rm -f "$work/signing-key.pem" "$work/digest.bin" "$work/signature.der" "$work/public-key.pem"' EXIT
 
           cp -R dist/. "$work/payload/"
           printf '{"ok":true,"revisionId":"%s"}\n' "$revision" > "$work/payload/health.json"
@@ -56,10 +56,16 @@ jobs:
 
           sha256="$(sha256sum "$work/andrew-web-runtime.zip" | awk '{print $1}')"
           test -n "$BRIDGE_ECDSA_PRIVATE_KEY_B64"
-          printf '%s' "$BRIDGE_ECDSA_PRIVATE_KEY_B64" | base64 --decode > "$work/signing-key.pem"
+
+          # Accept the configured secret as either raw PEM or base64-encoded PEM.
+          if printf '%s' "$BRIDGE_ECDSA_PRIVATE_KEY_B64" | grep -q -- '-----BEGIN'; then
+            printf '%s\n' "$BRIDGE_ECDSA_PRIVATE_KEY_B64" > "$work/signing-key.pem"
+          else
+            printf '%s' "$BRIDGE_ECDSA_PRIVATE_KEY_B64" | tr -d '[:space:]' | base64 --decode > "$work/signing-key.pem"
+          fi
           chmod 600 "$work/signing-key.pem"
 
-          # Strictly require a NIST P-256 EC private key (prime256v1).
+          # Strictly require the persistent NIST P-256 EC private key.
           openssl pkey -in "$work/signing-key.pem" -check -noout
           key_type="$(
             openssl pkey -in "$work/signing-key.pem" -text -noout 2>/dev/null \
@@ -68,7 +74,6 @@ jobs:
           )"
           test "$key_type" = "prime256v1"
 
-          # Android verifies SHA256withECDSA over the raw 32-byte SHA-256 digest.
           printf '%s' "$sha256" | xxd -r -p > "$work/digest.bin"
           openssl dgst -sha256 \
             -sign "$work/signing-key.pem" \
@@ -98,20 +103,11 @@ jobs:
 
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Release $tag already exists; updating it idempotently."
-            gh release upload "$tag" "$BRIDGE_ARTIFACT#andrew-web-runtime.zip" \
-              --repo "$GITHUB_REPOSITORY" \
-              --clobber
-            gh release edit "$tag" \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "Andrew web runtime ${BRIDGE_REVISION}" \
-              --notes "Signed web runtime for Andrew 2.0 bridge. Revision ${BRIDGE_REVISION}. SHA-256 ${BRIDGE_SHA256}."
+            gh release upload "$tag" "$BRIDGE_ARTIFACT#andrew-web-runtime.zip" --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --title "Andrew web runtime ${BRIDGE_REVISION}" --notes "Signed web runtime for Andrew 2.0 bridge. Revision ${BRIDGE_REVISION}. SHA-256 ${BRIDGE_SHA256}."
           else
             echo "Creating release $tag."
-            gh release create "$tag" "$BRIDGE_ARTIFACT#andrew-web-runtime.zip" \
-              --repo "$GITHUB_REPOSITORY" \
-              --target "$GITHUB_SHA" \
-              --title "Andrew web runtime ${BRIDGE_REVISION}" \
-              --notes "Signed web runtime for Andrew 2.0 bridge. Revision ${BRIDGE_REVISION}. SHA-256 ${BRIDGE_SHA256}."
+            gh release create "$tag" "$BRIDGE_ARTIFACT#andrew-web-runtime.zip" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Andrew web runtime ${BRIDGE_REVISION}" --notes "Signed web runtime for Andrew 2.0 bridge. Revision ${BRIDGE_REVISION}. SHA-256 ${BRIDGE_SHA256}."
           fi
 
       - name: Verify backend health
