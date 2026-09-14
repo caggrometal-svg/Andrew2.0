@@ -3,7 +3,7 @@ import { queueBridgeAction } from '../bridge/bridge-controller.mjs';
 import { applyBridgeRuntimeCommand } from '../ai/provider-router.mjs';
 import { bridgeDeviceAttestationHeaders, verifyBridgeDeviceAttestation } from '../auth/bridge-v3-device.mjs';
 
-const ALLOWED_COMMANDS = new Set(['open_settings', 'set_runtime_parameter', 'request_status', 'sync_now']);
+const ALLOWED_COMMANDS = new Set(['sync_web_artifact', 'rollback_web_artifact', 'health_check', 'provider_health_check', 'open_settings', 'request_status', 'sync_now', 'set_runtime_parameter']);
 const TTL_MS = 5 * 60 * 1000;
 const ACK_ERRORS = new Set(['expired', 'unsupported', 'invalid_payload', 'healthcheck_failed', 'verification_failed', 'download_failed', 'execution_failed']);
 const MAX_RESULT_BYTES = 8192;
