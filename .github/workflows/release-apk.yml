@@ -172,6 +172,16 @@ jobs:
       - name: Sync Capacitor Android
         run: npx cap sync android
 
+      - name: Verify native network transport and Android network permission
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f android/capacitor.config.json
+          grep -q '"CapacitorHttp"' android/capacitor.config.json
+          grep -q '"enabled": true' android/capacitor.config.json
+          test -f android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml
+
       - name: Verify Bridge V3 after Capacitor sync
         shell: bash
         run: |
