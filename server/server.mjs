@@ -1,5 +1,8 @@
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { extname, join, normalize, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { securityHeaders } from './hardening.mjs';
 import { getRuntimeConfig } from './runtime-config.mjs';
 import { acknowledgeBridgeCommand, getBridgeSyncState, initializeBridgeStore, listPendingBridgeCommands } from './bridge/bridge-store.mjs';
@@ -13,15 +16,8 @@ const HOST = '0.0.0.0';
 const MODEL = (process.env.OPENAI_MODEL || 'gpt-5.6-luna').trim();
 const MAX_BODY_BYTES = 1024 * 1024;
 const ALLOWED_ORIGIN = (process.env.ALLOWED_ORIGIN || '*').trim();
-const BRIDGE_COMMANDS = new Set([
-  'sync_web_artifact',
-  'rollback_web_artifact',
-  'health_check',
-  'provider_health_check',
-  'open_settings',
-  'request_status',
-  'sync_now',
-]);
+const DIST_DIR = resolve(join(fileURLToPath(new URL('.', import.meta.url)), '..', 'dist'));
+const BRIDGE_COMMANDS = new Set(['sync_web_artifact', 'rollback_web_artifact', 'health_check', 'provider_health_check', 'open_settings', 'request_status', 'sync_now']);
 const BRIDGE_TTL_MS = 5 * 60 * 1000;
 const ACK_ERRORS = new Set(['expired', 'unsupported', 'invalid_payload', 'healthcheck_failed', 'verification_failed', 'download_failed', 'execution_failed']);
 const REVISION_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
@@ -35,15 +31,30 @@ const responseHeaders = {
   'Access-Control-Max-Age': '600',
 };
 
+const MIME_TYPES = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.ico': 'image/x-icon',
+  '.txt': 'text/plain; charset=utf-8',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+};
+
 function send(res, status, body) {
   const payload = JSON.stringify(body);
   res.writeHead(status, { ...responseHeaders, 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': Buffer.byteLength(payload) });
   res.end(payload);
 }
 
-function applyHeaders(res) {
-  for (const [name, value] of Object.entries(responseHeaders)) res.setHeader(name, value);
-}
+function applyHeaders(res) { for (const [name, value] of Object.entries(responseHeaders)) res.setHeader(name, value); }
 
 async function readJson(req) {
   const chunks = [];
@@ -59,12 +70,7 @@ async function readJson(req) {
 }
 
 function bridgeAuthFailure(req, requestUrl) {
-  return verifyBridgeDeviceAttestation({
-    deviceId: req.headers['x-device-id'],
-    timestamp: req.headers['x-timestamp'],
-    signature: req.headers['x-signature'],
-    url: requestUrl,
-  });
+  return verifyBridgeDeviceAttestation({ deviceId: req.headers['x-device-id'], timestamp: req.headers['x-timestamp'], signature: req.headers['x-signature'], url: requestUrl });
 }
 
 function bridgeWriteEnabled() { return /^(1|true|yes)$/i.test(process.env.BRIDGE_V3_ALLOW_WRITE || process.env.ANDREW_BRIDGE_ALLOW_WRITE || ''); }
@@ -94,31 +100,8 @@ async function chat(body) {
   const message = typeof body.message === 'string' ? body.message.trim() : '';
   if (!message) return { status: 400, body: { ok: false, error: 'message_required' } };
   const result = await routeAiChat({ message, memory: body.memory });
-  if (!result.ok) {
-    return {
-      status: 503,
-      body: {
-        ok: false,
-        error: result.error,
-        message: result.message,
-        providers: getAiRouterStatus(),
-        failures: result.failures,
-      },
-    };
-  }
-  return {
-    status: 200,
-    body: {
-      ok: true,
-      conversationId: typeof body.conversationId === 'string' ? body.conversationId : `conv:${randomUUID()}`,
-      reply: result.reply,
-      responseId: result.responseId || null,
-      model: result.model,
-      provider: result.provider,
-      attempts: result.attempts,
-      learning: { eligible: true, source: 'local-memory-context' },
-    },
-  };
+  if (!result.ok) return { status: 503, body: { ok: false, error: result.error, message: result.message, providers: getAiRouterStatus(), failures: result.failures } };
+  return { status: 200, body: { ok: true, conversationId: typeof body.conversationId === 'string' ? body.conversationId : `conv:${randomUUID()}`, reply: result.reply, responseId: result.responseId || null, model: result.model, provider: result.provider, attempts: result.attempts, learning: { eligible: true, source: 'local-memory-context' } } };
 }
 
 async function bridgeRoute(req, res, url) {
@@ -126,14 +109,9 @@ async function bridgeRoute(req, res, url) {
   const auth = bridgeAuthFailure(req, url.pathname);
   if (!auth.ok) { send(res, 401, { ok: false, error: auth.error }); return true; }
   const deviceId = auth.deviceId;
-
   try {
-    if (req.method === 'GET' && url.pathname === '/api/v1/bridge/v3/status') {
-      return send(res, 200, { ok: true, deviceId, commands: [...BRIDGE_COMMANDS], writeEnabled: bridgeWriteEnabled(), ttlMs: BRIDGE_TTL_MS, ai: { policy: bridgePolicy(), router: getAiRouterStatus() } });
-    }
-    if (req.method === 'GET' && url.pathname === '/api/v1/bridge/v3/commands') {
-      return send(res, 200, { ok: true, commands: await listPendingBridgeCommands(deviceId), writeEnabled: bridgeWriteEnabled() });
-    }
+    if (req.method === 'GET' && url.pathname === '/api/v1/bridge/v3/status') return send(res, 200, { ok: true, deviceId, commands: [...BRIDGE_COMMANDS], writeEnabled: bridgeWriteEnabled(), ttlMs: BRIDGE_TTL_MS, ai: { policy: bridgePolicy(), router: getAiRouterStatus() } });
+    if (req.method === 'GET' && url.pathname === '/api/v1/bridge/v3/commands') return send(res, 200, { ok: true, commands: await listPendingBridgeCommands(deviceId), writeEnabled: bridgeWriteEnabled() });
     if (req.method === 'GET' && url.pathname === '/api/v1/bridge/v3/sync') {
       let artifact = null;
       try { artifact = bridgeArtifactManifest(); } catch { return send(res, 503, { ok: false, error: 'artifact_manifest_unavailable' }); }
@@ -167,19 +145,43 @@ async function bridgeRoute(req, res, url) {
   }
 }
 
+async function serveFrontend(req, res, url) {
+  if (req.method !== 'GET' || url.pathname.startsWith('/api/')) return false;
+  const requested = decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname);
+  const candidate = resolve(join(DIST_DIR, normalize(requested.replace(/^\/+/, ''))));
+  if (!candidate.startsWith(`${DIST_DIR}/`) && candidate !== join(DIST_DIR, 'index.html')) return false;
+  let file = candidate;
+  try {
+    const data = await readFile(file);
+    const type = MIME_TYPES[extname(file).toLowerCase()] || 'application/octet-stream';
+    res.writeHead(200, { ...responseHeaders, 'Content-Type': type, 'Cache-Control': extname(file) === '.html' ? 'no-cache' : 'public, max-age=31536000, immutable' });
+    res.end(data);
+    return true;
+  } catch {
+    if (extname(requested)) return false;
+    try {
+      const data = await readFile(join(DIST_DIR, 'index.html'));
+      res.writeHead(200, { ...responseHeaders, 'Content-Type': MIME_TYPES['.html'], 'Cache-Control': 'no-cache' });
+      res.end(data);
+      return true;
+    } catch { return false; }
+  }
+}
+
 async function handler(req, res) {
   applyHeaders(res);
   if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
   if (await controlPlaneRoute(req, res, url, { readJson, send })) return;
   if (await bridgeRoute(req, res, url)) return;
-  if (req.method === 'GET' && url.pathname === '/health') return send(res, 200, { ok: true, status: 'ready', service: 'andrew2-backend', model: MODEL, ai: getAiRouterStatus(), bridgeV3: true, controlPlane: Boolean(process.env.ANDREW_CONTROL_PLANE_TOKEN) });
+  if (req.method === 'GET' && url.pathname === '/health') return send(res, 200, { ok: true, status: 'ready', service: 'andrew2-backend', model: MODEL, ai: getAiRouterStatus(), bridgeV3: true, controlPlane: Boolean(process.env.ANDREW_CONTROL_PLANE_TOKEN), frontend: true });
   if (req.method === 'GET' && url.pathname === '/api/runtime-config') return send(res, 200, getRuntimeConfig());
   if (req.method === 'POST' && url.pathname === '/api/chat') {
     try { const result = await chat(await readJson(req)); return send(res, result.status, result.body); }
     catch (error) { return send(res, Number(error?.statusCode) || 500, { ok: false, error: error?.message || 'internal_error' }); }
   }
   if (url.pathname.startsWith('/api/media/video/')) return send(res, 501, { ok: false, error: 'MEDIA_PIPELINE_NOT_READY', message: 'El canal de chat está operativo; el pipeline multimedia requiere su módulo de almacenamiento.' });
+  if (await serveFrontend(req, res, url)) return;
   return send(res, 404, { ok: false, error: 'not_found' });
 }
 
@@ -203,4 +205,5 @@ server.listen(PORT, HOST, () => {
   const ai = getAiRouterStatus();
   console.log(`[Andrew2] backend listening on ${HOST}:${PORT}`);
   console.log(`[Andrew2] AI pool ready: ${ai.configuredProviders.join(',') || 'NONE'} | policy=${ai.policy}`);
+  console.log(`[Andrew2] frontend served from ${DIST_DIR}`);
 });
