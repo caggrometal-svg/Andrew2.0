@@ -27,7 +27,7 @@ export async function initializeBridgeStore() {
   if (initPromise) return initPromise;
   initPromise = (async () => {
     const db = getPool();
-    await db.query(`CREATE TABLE IF NOT EXISTS andrew_bridge_commands (id UUID PRIMARY KEY,user_id TEXT NOT NULL,command TEXT NOT NULL,payload JSONB,created_at TIMESTAMPTZ NOT NULL,expires_at TIMESTAMPTZ NOT NULL,acknowledged_at TIMESTAMPTZ,ack_ok BOOLEAN,ack_error TEXT,result JSONB); ALTER TABLE andrew_bridge_commands ADD COLUMN IF NOT EXISTS result JSONB; CREATE INDEX IF NOT EXISTS andrew_bridge_pending_idx ON andrew_bridge_commands (user_id, created_at DESC) WHERE acknowledged_at IS NULL;`);
+    await db.query(`CREATE TABLE IF NOT EXISTS andrew_bridge_commands (id UUID PRIMARY KEY,user_id TEXT NOT NULL,command TEXT NOT NULL,payload JSONB,created_at TIMESTAMPTZ NOT NULL,expires_at TIMESTAMPTZ NOT NULL,claimed_at TIMESTAMPTZ,acknowledged_at TIMESTAMPTZ,ack_ok BOOLEAN,ack_error TEXT,result JSONB); ALTER TABLE andrew_bridge_commands ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMPTZ; ALTER TABLE andrew_bridge_commands ADD COLUMN IF NOT EXISTS result JSONB; CREATE INDEX IF NOT EXISTS andrew_bridge_pending_idx ON andrew_bridge_commands (user_id, created_at DESC) WHERE acknowledged_at IS NULL;`);
     initialized = true;
   })();
   try { await initPromise; } finally { initPromise = undefined; }
@@ -53,8 +53,18 @@ export async function listPendingBridgeCommands(userId) {
   await initializeBridgeStore();
   const cleanId = cleanUserId(userId);
   await deleteExpired(cleanId);
-  const rows = await getPool().query(`SELECT id,command,payload,EXTRACT(EPOCH FROM created_at)*1000 AS created_at,EXTRACT(EPOCH FROM expires_at)*1000 AS expires_at FROM andrew_bridge_commands WHERE user_id=$1 AND acknowledged_at IS NULL AND expires_at>NOW() ORDER BY created_at ASC LIMIT $2`, [cleanId, MAX_PENDING]);
+  const rows = await getPool().query(`SELECT id,command,payload,EXTRACT(EPOCH FROM created_at)*1000 AS created_at,EXTRACT(EPOCH FROM expires_at)*1000 AS expires_at FROM andrew_bridge_commands WHERE user_id=$1 AND acknowledged_at IS NULL AND claimed_at IS NULL AND expires_at>NOW() ORDER BY created_at ASC LIMIT $2`, [cleanId, MAX_PENDING]);
   return rows.rows.map((row) => ({ id: row.id, command: row.command, ...(row.payload === null ? {} : { payload: row.payload }), createdAt: Number(row.created_at), expiresAt: Number(row.expires_at) }));
+}
+
+export async function claimBridgeCommand({ userId, id }) {
+  await initializeBridgeStore();
+  const cleanId = cleanUserId(userId);
+  if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/i.test(id)) return null;
+  const updated = await getPool().query(`UPDATE andrew_bridge_commands SET claimed_at=NOW() WHERE id=$1 AND user_id=$2 AND acknowledged_at IS NULL AND claimed_at IS NULL AND expires_at>NOW() RETURNING id,command,payload,EXTRACT(EPOCH FROM created_at)*1000 AS created_at,EXTRACT(EPOCH FROM expires_at)*1000 AS expires_at`, [id, cleanId]);
+  if (updated.rowCount !== 1) return null;
+  const row = updated.rows[0];
+  return { id: row.id, command: row.command, ...(row.payload === null ? {} : { payload: row.payload }), createdAt: Number(row.created_at), expiresAt: Number(row.expires_at) };
 }
 
 export async function getBridgeSyncState(userId) {
@@ -66,10 +76,10 @@ export async function getBridgeCommand({ userId, id }) {
   await initializeBridgeStore();
   const cleanId = cleanUserId(userId);
   if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/i.test(id)) return null;
-  const row = await getPool().query(`SELECT id,command,payload,EXTRACT(EPOCH FROM created_at)*1000 AS created_at,EXTRACT(EPOCH FROM expires_at)*1000 AS expires_at,EXTRACT(EPOCH FROM acknowledged_at)*1000 AS acknowledged_at,ack_ok,ack_error,result FROM andrew_bridge_commands WHERE id=$1 AND user_id=$2 LIMIT 1`, [id, cleanId]);
+  const row = await getPool().query(`SELECT id,command,payload,EXTRACT(EPOCH FROM created_at)*1000 AS created_at,EXTRACT(EPOCH FROM expires_at)*1000 AS expires_at,EXTRACT(EPOCH FROM claimed_at)*1000 AS claimed_at,EXTRACT(EPOCH FROM acknowledged_at)*1000 AS acknowledged_at,ack_ok,ack_error,result FROM andrew_bridge_commands WHERE id=$1 AND user_id=$2 LIMIT 1`, [id, cleanId]);
   if (!row.rowCount) return null;
   const value = row.rows[0];
-  return { id: value.id, command: value.command, ...(value.payload === null ? {} : { payload: value.payload }), createdAt: Number(value.created_at), expiresAt: Number(value.expires_at), acknowledgedAt: value.acknowledged_at === null ? null : Number(value.acknowledged_at), ok: value.ack_ok, error: value.ack_error, result: value.result };
+  return { id: value.id, command: value.command, ...(value.payload === null ? {} : { payload: value.payload }), createdAt: Number(value.created_at), expiresAt: Number(value.expires_at), claimedAt: value.claimed_at === null ? null : Number(value.claimed_at), acknowledgedAt: value.acknowledged_at === null ? null : Number(value.acknowledged_at), ok: value.ack_ok, error: value.ack_error, result: value.result };
 }
 
 export async function acknowledgeBridgeCommand({ userId, id, ok, error, result = null }) {
