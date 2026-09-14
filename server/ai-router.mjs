@@ -1,7 +1,7 @@
-const DEFAULT_TIMEOUT_MS = 30000;
+const DEFAULT_TIMEOUT_MS = 60000;
 const COOLDOWN_MS = 60000;
 const MAX_MEMORY = 20;
-const DEFAULT_PROVIDER_ORDER = 'openai,openrouter,gemini,anthropic,deepseek,groq,xai';
+const DEFAULT_PROVIDER_ORDER = 'openai,openrouter,gemini,anthropic,deepseek,xai';
 
 const cooldownUntil = new Map();
 
@@ -21,7 +21,6 @@ function providerAvailable(name) {
     anthropic: env('ANTHROPIC_API_KEY'),
     gemini: env('GEMINI_API_KEY') || env('GOOGLE_API_KEY'),
     deepseek: env('DEEPSEEK_API_KEY'),
-    groq: env('GROQ_API_KEY'),
     xai: env('XAI_API_KEY'),
   }[name]);
 }
@@ -162,15 +161,6 @@ async function callDeepSeek(input) {
   });
 }
 
-async function callGroq(input) {
-  return callOpenAiCompatible(input, {
-    keyName: 'GROQ_API_KEY',
-    modelName: 'GROQ_MODEL',
-    defaultModel: 'llama-3.3-70b-versatile',
-    baseUrl: 'https://api.groq.com/openai/v1',
-  });
-}
-
 async function callXAI(input) {
   return callOpenAiCompatible(input, {
     keyName: 'XAI_API_KEY',
@@ -183,10 +173,9 @@ async function callXAI(input) {
 const CALLERS = {
   openai: callOpenAI,
   openrouter: callOpenRouter,
-  anthropic: callAnthropic,
   gemini: callGemini,
+  anthropic: callAnthropic,
   deepseek: callDeepSeek,
-  groq: callGroq,
   xai: callXAI,
 };
 
@@ -206,10 +195,11 @@ export function getAiRouterStatus() {
   }));
   const configured = providers.filter(p => p.configured && !p.coolingDown).map(p => p.provider);
   return {
-    policy: env('ANDREW_ROUTING_POLICY') || 'multi-provider-failover',
+    policy: env('ANDREW_ROUTING_POLICY') || 'balanced',
     order: csv('AI_PROVIDER_ORDER', DEFAULT_PROVIDER_ORDER),
     configuredProviders: configured,
     providers,
+    timeoutMs: Number(env('AI_PROVIDER_TIMEOUT_MS') || DEFAULT_TIMEOUT_MS),
   };
 }
 
