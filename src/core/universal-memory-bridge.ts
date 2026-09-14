@@ -1,6 +1,7 @@
 import {
   extractExplicitUserName,
   getUniversalMemory,
+  hydrateUniversalMemory,
   isNameRecallQuery,
   isUniversalMemoryCommand,
 } from './universal-memory';
@@ -37,6 +38,7 @@ function install(): void {
   if (scope[PATCHED_FLAG]) return;
 
   const originalFetch = window.fetch.bind(window);
+  const memoryReady = hydrateUniversalMemory();
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     if (!isChatRequest(input) || !init?.body || typeof init.body !== 'string') {
       return originalFetch(input, init);
@@ -52,6 +54,8 @@ function install(): void {
     const text = typeof body.message === 'string' ? body.message.trim() : '';
     const conversationId = typeof body.conversationId === 'string' ? body.conversationId : 'local';
     if (!text) return originalFetch(input, init);
+
+    await memoryReady;
 
     const rememberedName = extractExplicitUserName(text);
     if (rememberedName) {
