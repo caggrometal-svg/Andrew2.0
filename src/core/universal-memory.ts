@@ -1,4 +1,5 @@
 const STORAGE_KEY = 'andrew:universal-memory:v1';
+const LEGACY_USER_NAME_KEY = 'andrew:user-name';
 
 export type UniversalMemory = {
   name?: string;
@@ -8,7 +9,10 @@ export type UniversalMemory = {
 function read(): UniversalMemory {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { updatedAt: new Date(0).toISOString() };
+    if (!raw) {
+      const legacyName = window.localStorage.getItem(LEGACY_USER_NAME_KEY)?.trim();
+      return legacyName ? { name: legacyName.slice(0, 80), updatedAt: new Date().toISOString() } : { updatedAt: new Date(0).toISOString() };
+    }
     const parsed = JSON.parse(raw) as Partial<UniversalMemory>;
     return {
       ...(typeof parsed.name === 'string' && parsed.name.trim() ? { name: parsed.name.trim().slice(0, 80) } : {}),
@@ -22,6 +26,8 @@ function read(): UniversalMemory {
 function write(memory: UniversalMemory): void {
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(memory));
+    if (memory.name) window.localStorage.setItem(LEGACY_USER_NAME_KEY, memory.name);
+    else window.localStorage.removeItem(LEGACY_USER_NAME_KEY);
   } catch {
     // Persistence is best-effort in restricted WebViews.
   }
