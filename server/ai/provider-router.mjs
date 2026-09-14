@@ -1,6 +1,8 @@
 import { config } from '../config.mjs';
 
 const DEFAULT_WEIGHTS = Object.freeze({ openai: 1, secondary: 1, anthropic: 1, gemini: 1, deepseek: 1, groq: 1 });
+const MAX_ATTEMPTS = Number.isFinite(Number(config.maxAttempts)) ? Math.max(1, Number(config.maxAttempts)) : 2;
+const TIMEOUT_MS = Number.isFinite(Number(config.timeoutMs)) ? Math.max(100, Number(config.timeoutMs)) : 60000;
 const state = { revision: 0, parameters: new Map(), weights: new Map(Object.entries(DEFAULT_WEIGHTS)), health: new Map() };
 
 function parameter(key, value) {
@@ -28,7 +30,7 @@ function parameter(key, value) {
 function configuredProviders() {
   const entries = [
     ['openai', { apiKey: config.openaiApiKey, endpoint: config.primaryEndpoint, model: config.openaiModel, protocol: 'responses', supportsVision: true }],
-    ['secondary', { apiKey: config.secondaryApiKey, endpoint: config.secondaryEndpoint, model: config.secondaryModel, protocol: config.secondaryProtocol, supportsVision: config.secondarySupportsVision }],
+    ['secondary', { apiKey: config.secondaryApiKey, endpoint: config.secondaryEndpoint, model: config.secondaryModel, protocol: config.secondaryProtocol || 'chat', supportsVision: config.secondarySupportsVision }],
     ...Object.entries(config.providers || {}),
   ];
   return entries.filter(([, p]) => p?.apiKey && p?.endpoint && p?.model);
@@ -74,21 +76,22 @@ function buildBody(provider, args) {
   return { model: provider.model, messages };
 }
 
-function request(provider, args) {
+function request(provider) {
   const headers = { 'Content-Type': 'application/json' };
   let url = provider.endpoint;
   if (provider.protocol === 'gemini') url += `${url.includes('?') ? '&' : '?'}key=${encodeURIComponent(provider.apiKey)}`;
   else headers.Authorization = `Bearer ${provider.apiKey}`;
   if (provider.protocol === 'messages') { delete headers.Authorization; headers['x-api-key'] = provider.apiKey; headers['anthropic-version'] = '2023-06-01'; }
-  return { url, headers, body: buildBody(provider, args) };
+  return { url, headers };
 }
 
 async function callProvider(name, provider, args) {
-  const { url, headers, body } = request(provider, args);
+  const { url, headers } = request(provider);
+  const body = buildBody(provider, args);
   let lastError;
-  for (let attempt = 1; attempt <= Math.max(1, config.maxAttempts); attempt += 1) {
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), config.timeoutMs);
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
     const started = Date.now();
     try {
       const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal: controller.signal });
@@ -96,7 +99,7 @@ async function callProvider(name, provider, args) {
       if (!response.ok) {
         const error = Object.assign(new Error(data?.error?.message || data?.error?.status || `${name} HTTP ${response.status}`), { status: response.status });
         lastError = error;
-        if (!retryable(response.status) || attempt === config.maxAttempts) throw error;
+        if (!retryable(response.status) || attempt === MAX_ATTEMPTS) throw error;
       } else {
         const text = provider.protocol === 'responses' ? extractResponses(data) : provider.protocol === 'gemini' ? extractGemini(data) : extractChat(data) || data?.content?.map?.((x) => x?.text).filter(Boolean).join('\n').trim();
         if (!text) throw new Error(`${name} returned an empty response`);
@@ -106,7 +109,7 @@ async function callProvider(name, provider, args) {
     } catch (error) {
       lastError = error;
       state.health.set(name, { ok: false, latencyMs: Date.now() - started, at: new Date().toISOString(), error: error?.message || String(error), status: error?.status || null });
-      if (attempt === config.maxAttempts || (error?.status && !retryable(error.status))) throw error;
+      if (attempt === MAX_ATTEMPTS || (error?.status && !retryable(error.status))) throw error;
     } finally { clearTimeout(timer); }
     await sleep(300 * 2 ** (attempt - 1));
   }
@@ -126,12 +129,10 @@ export class ProviderRouter {
     error.failures = failures;
     throw error;
   }
-
   getHealth() {
     const configured = Object.fromEntries(configuredProviders().map(([name, p]) => [name, { configured: true, protocol: p.protocol, model: p.model, supportsVision: Boolean(p.supportsVision), ...(state.health.get(name) || { ok: null }) }]));
-    return { ok: Object.values(configured).some((p) => p.ok === true), policy: config.routingPolicy, providers: configured, runtime: getRuntimeState() };
+    return { ok: Object.values(configured).some((p) => p.ok === true), policy: config.routingPolicy || 'balanced', providers: configured, runtime: getRuntimeState() };
   }
-
   getRuntimeState() { return getRuntimeState(); }
 }
 
