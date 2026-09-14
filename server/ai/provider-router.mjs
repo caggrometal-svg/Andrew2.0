@@ -29,23 +29,15 @@ function configuredProviders() {
   const entries = [
     ['openai', { apiKey: config.openaiApiKey, endpoint: config.primaryEndpoint, model: config.openaiModel, protocol: 'responses', supportsVision: true }],
     ['secondary', { apiKey: config.secondaryApiKey, endpoint: config.secondaryEndpoint, model: config.secondaryModel, protocol: config.secondaryProtocol, supportsVision: config.secondarySupportsVision }],
-    ...Object.entries(config.providers || []),
+    ...Object.entries(config.providers || {}),
   ];
   return entries.filter(([, p]) => p?.apiKey && p?.endpoint && p?.model);
 }
 
 function retryable(status) { return status === 408 || status === 409 || status === 429 || status >= 500; }
 function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
-
-function normalizeInput(input, prompt) {
-  if (Array.isArray(input) && input.length) return input;
-  return [{ role: 'user', content: prompt }];
-}
-
-function memoryText(memory) {
-  if (!Array.isArray(memory) || !memory.length) return '';
-  return `Memoria compartida de Andrew:\n${memory.filter((v) => typeof v === 'string').slice(0, 20).join('\n')}`;
-}
+function normalizeInput(input, prompt) { return Array.isArray(input) && input.length ? input : [{ role: 'user', content: prompt }]; }
+function memoryText(memory) { return Array.isArray(memory) && memory.length ? `Memoria compartida de Andrew:\n${memory.filter((v) => typeof v === 'string').slice(0, 20).join('\n')}` : ''; }
 
 function messagesFor({ input, prompt, memory }) {
   const messages = [];
@@ -73,23 +65,26 @@ function extractGemini(data) { return data?.candidates?.flatMap((c) => c?.conten
 
 function buildBody(provider, args) {
   const messages = messagesFor(args);
-  if (provider.protocol === 'responses') return { model: provider.model, input: messages.map((m) => ({ role: m.role, content: m.content })) , store: false };
-  if (provider.protocol === 'gemini') return { contents: messages.filter((m) => m.role !== 'system').map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: (Array.isArray(m.content) ? m.content : [{ type: 'text', text: String(m.content) }]).map((p) => ({ text: p.text || '' })) })), systemInstruction: messages.find((m) => m.role === 'system') ? { parts: [{ text: messages.find((m) => m.role === 'system').content }] } : undefined, generationConfig: {} };
-  if (provider.protocol === 'messages') return { model: provider.model, max_tokens: 4096, system: messages.find((m) => m.role === 'system')?.content, messages: messages.filter((m) => m.role !== 'system').map((m) => ({ role: m.role, content: m.content })) };
+  if (provider.protocol === 'responses') return { model: provider.model, input: messages.map((m) => ({ role: m.role, content: m.content })), store: false };
+  if (provider.protocol === 'gemini') {
+    const system = messages.find((m) => m.role === 'system');
+    return { contents: messages.filter((m) => m.role !== 'system').map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: (Array.isArray(m.content) ? m.content : [{ text: String(m.content) }]).map((p) => ({ text: p.text || '' })) })), ...(system ? { systemInstruction: { parts: [{ text: String(system.content) }] } } : {}) };
+  }
+  if (provider.protocol === 'messages') return { model: provider.model, max_tokens: 4096, ...(messages.find((m) => m.role === 'system') ? { system: String(messages.find((m) => m.role === 'system').content) } : {}), messages: messages.filter((m) => m.role !== 'system').map((m) => ({ role: m.role, content: m.content })) };
   return { model: provider.model, messages };
 }
 
-function request(providerName, provider, args) {
+function request(provider, args) {
   const headers = { 'Content-Type': 'application/json' };
   let url = provider.endpoint;
-  if (provider.protocol === 'gemini') url += `${url.includes('?') ? '&' : '?}key=${encodeURIComponent(provider.apiKey)}`;
+  if (provider.protocol === 'gemini') url += `${url.includes('?') ? '&' : '?'}key=${encodeURIComponent(provider.apiKey)}`;
   else headers.Authorization = `Bearer ${provider.apiKey}`;
   if (provider.protocol === 'messages') { delete headers.Authorization; headers['x-api-key'] = provider.apiKey; headers['anthropic-version'] = '2023-06-01'; }
   return { url, headers, body: buildBody(provider, args) };
 }
 
 async function callProvider(name, provider, args) {
-  const { url, headers, body } = request(name, provider, args);
+  const { url, headers, body } = request(provider, args);
   let lastError;
   for (let attempt = 1; attempt <= Math.max(1, config.maxAttempts); attempt += 1) {
     const controller = new AbortController();
@@ -125,8 +120,7 @@ export class ProviderRouter {
     const ordered = providers.sort((a, b) => (state.weights.get(b[0]) ?? 1) - (state.weights.get(a[0]) ?? 1));
     const failures = [];
     for (const [name, provider] of ordered) {
-      try { return await callProvider(name, provider, args); }
-      catch (error) { failures.push({ provider: name, error: error?.message || String(error) }); }
+      try { return await callProvider(name, provider, args); } catch (error) { failures.push({ provider: name, error: error?.message || String(error) }); }
     }
     const error = new Error('Todos los proveedores de IA fallaron.');
     error.failures = failures;
