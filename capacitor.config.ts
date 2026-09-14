@@ -4,7 +4,12 @@ const config: CapacitorConfig = {
   appId: 'com.andrew.ai',
   appName: 'Andrew 2.0',
   webDir: 'dist',
-  bundledWebRuntime: false
+  bundledWebRuntime: false,
+  plugins: {
+    CapacitorHttp: {
+      enabled: true,
+    },
+  },
 };
 
 export default config;
