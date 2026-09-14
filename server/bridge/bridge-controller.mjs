@@ -10,6 +10,7 @@ const COMMANDS = new Set([
   'open_settings',
   'request_status',
   'sync_now',
+  'set_runtime_parameter',
 ]);
 const USER_ID = /^[A-Za-z0-9._:-]{1,128}$/;
 
@@ -24,7 +25,7 @@ function validPayload(command, payload) {
     if (typeof value === 'string' && value.length > 256) return false;
     if (value !== null && typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') return false;
   }
-  return entries.length === 0;
+  return true;
 }
 function envelope(command, payload) { const createdAt = Date.now(); return { id: randomUUID(), command, ...(payload === undefined ? {} : { payload }), createdAt, expiresAt: createdAt + TTL_MS }; }
 
