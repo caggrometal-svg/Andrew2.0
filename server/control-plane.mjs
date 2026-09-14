@@ -1,8 +1,9 @@
 import { timingSafeEqual } from 'node:crypto';
 import { getBridgeCommand } from './bridge/bridge-store.mjs';
-import { queueBridgeAction } from './bridge/bridge-controller.mjs';
+import { planBridgeAction, queueBridgeAction } from './bridge/bridge-controller.mjs';
 
 const MAX_TOKEN_LENGTH = 512;
+const MAX_MESSAGE_LENGTH = 12000;
 const TTL_MS = 5 * 60 * 1000;
 const DEVICE_ID = /^[A-Za-z0-9._:-]{1,128}$/;
 const COMMANDS = new Set(['open_settings', 'set_runtime_parameter', 'request_status', 'sync_now']);
@@ -39,6 +40,32 @@ export async function controlPlaneRoute(req, res, url, { readJson, send }) {
   try {
     if (req.method === 'GET' && url.pathname === '/api/v1/control/status') {
       return send(res, 200, { ok: true, service: 'andrew-control-plane', protocol: 'gpt-control-v1', commands: [...COMMANDS], ttlMs: TTL_MS });
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/v1/control/plan') {
+      const body = bodyObject(await readJson(req));
+      const targetDeviceId = typeof body.targetDeviceId === 'string' ? body.targetDeviceId.trim() : '';
+      const message = typeof body.message === 'string' ? body.message.trim() : '';
+      if (!DEVICE_ID.test(targetDeviceId) || !message || message.length > MAX_MESSAGE_LENGTH) {
+        return send(res, 400, { ok: false, error: 'invalid_control_message' });
+      }
+      const action = planBridgeAction(message);
+      if (!action) return send(res, 422, { ok: false, error: 'no_supported_action' });
+      const queued = await queueBridgeAction({ userId: targetDeviceId, action });
+      if (!queued.queued) {
+        const status = queued.error === 'write_disabled' ? 403 : queued.error === 'identity_required' ? 401 : 400;
+        return send(res, status, { ok: false, error: queued.error });
+      }
+      return send(res, 202, {
+        ok: true,
+        protocol: 'gpt-control-v1',
+        requestId: queued.command.id,
+        commandId: queued.command.id,
+        targetDeviceId,
+        command: queued.command.command,
+        expiresAt: queued.command.expiresAt,
+        statusPath: `/api/v1/control/commands/${queued.command.id}`,
+      });
     }
 
     if (req.method === 'POST' && url.pathname === '/api/v1/control/commands') {
