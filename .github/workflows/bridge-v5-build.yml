@@ -1,0 +1,27 @@
+name: Andrew 2.0 Bridge v5 Build
+on:
+  workflow_dispatch:
+  push:
+    branches: [bridge-v5-apk, bridge-v5-build]
+permissions:
+  contents: read
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Assemble debug APK
+        working-directory: android
+        run: ./gradlew :app:assembleDebug --no-daemon --stacktrace
+      - name: Verify
+        run: test -s android/app/build/outputs/apk/debug/app-debug.apk && sha256sum android/app/build/outputs/apk/debug/app-debug.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Andrew2.0-bridge-v5-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
