@@ -11,7 +11,6 @@ import androidx.work.PeriodicWorkRequest
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -29,7 +28,12 @@ class AndrewBridgeCommandWorker(context: Context, params: WorkerParameters) : Co
             if (response.code !in 200..299) return@withContext Result.retry()
             val commands = JSONObject(response.body).optJSONArray("commands") ?: JSONArray()
             for (index in 0 until commands.length()) {
-                val command = commands.optJSONObject(index) ?: continue
+                val advertised = commands.optJSONObject(index) ?: continue
+                val id = advertised.optString("id", "")
+                if (id.isBlank()) continue
+                val claim = request("POST", "/api/v1/bridge/v3/commands/$id/claim", "{}")
+                if (claim.code !in 200..299) continue
+                val command = JSONObject(claim.body).optJSONObject("command") ?: continue
                 process(command)
             }
             Result.success()
@@ -63,9 +67,7 @@ class AndrewBridgeCommandWorker(context: Context, params: WorkerParameters) : Co
                     ack(id, true, JSONObject().put("activeRevision", revision).put("sandboxActive", root.resolve("active").isDirectory))
                 }
                 "open_settings" -> {
-                    val intent = Intent(Settings.ACTION_SETTINGS).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
+                    val intent = Intent(Settings.ACTION_SETTINGS).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
                     applicationContext.startActivity(intent)
                     ack(id, true, JSONObject().put("opened", true).put("action", Settings.ACTION_SETTINGS))
                 }
@@ -86,9 +88,7 @@ class AndrewBridgeCommandWorker(context: Context, params: WorkerParameters) : Co
         repeat(ACK_ATTEMPTS) { attempt ->
             val response = runCatching { request("POST", ACK_PATH, body) }.getOrNull()
             if (response != null && response.code in 200..299) return true
-            if (attempt + 1 < ACK_ATTEMPTS) {
-                Thread.sleep(ACK_BASE_DELAY_MS shl attempt)
-            }
+            if (attempt + 1 < ACK_ATTEMPTS) Thread.sleep(ACK_BASE_DELAY_MS shl attempt)
         }
         return false
     }
@@ -126,14 +126,12 @@ class AndrewBridgeCommandWorker(context: Context, params: WorkerParameters) : Co
         private const val ACK_ATTEMPTS = 4
         private const val ACK_BASE_DELAY_MS = 1_000L
 
-        @JvmStatic
-        fun enqueueNow(context: Context) {
+        @JvmStatic fun enqueueNow(context: Context) {
             val request = OneTimeWorkRequest.Builder(AndrewBridgeCommandWorker::class.java).build()
             WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(COMMAND_WORK, ExistingWorkPolicy.REPLACE, request)
         }
 
-        @JvmStatic
-        fun schedule(context: Context) {
+        @JvmStatic fun schedule(context: Context) {
             val request = PeriodicWorkRequest.Builder(AndrewBridgeCommandWorker::class.java, 15, TimeUnit.MINUTES).build()
             WorkManager.getInstance(context.applicationContext).enqueueUniquePeriodicWork(COMMAND_WORK, ExistingPeriodicWorkPolicy.UPDATE, request)
             enqueueNow(context)
