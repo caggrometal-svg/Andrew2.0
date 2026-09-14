@@ -1,6 +1,7 @@
 const DEFAULT_TIMEOUT_MS = 30000;
 const COOLDOWN_MS = 60000;
 const MAX_MEMORY = 20;
+const DEFAULT_PROVIDER_ORDER = 'openai,openrouter,gemini,anthropic,deepseek,groq';
 
 const cooldownUntil = new Map();
 
@@ -10,7 +11,7 @@ function env(name) {
 
 function csv(name, fallback) {
   const value = env(name);
-  return (value || fallback).split(',').map(v => v.trim()).filter(Boolean);
+  return (value || fallback).split(',').map(v => v.trim().toLowerCase()).filter(Boolean);
 }
 
 function providerAvailable(name) {
@@ -19,6 +20,8 @@ function providerAvailable(name) {
     openrouter: env('OPENROUTER_API_KEY'),
     anthropic: env('ANTHROPIC_API_KEY'),
     gemini: env('GEMINI_API_KEY') || env('GOOGLE_API_KEY'),
+    deepseek: env('DEEPSEEK_API_KEY'),
+    groq: env('GROQ_API_KEY'),
   }[name]);
 }
 
@@ -135,27 +138,75 @@ async function callGemini(input) {
   return { reply, model, responseId: null };
 }
 
-const CALLERS = { openai: callOpenAI, openrouter: callOpenRouter, anthropic: callAnthropic, gemini: callGemini };
+async function callOpenAiCompatible(input, { keyName, modelName, defaultModel, baseUrl }) {
+  const model = env(modelName) || defaultModel;
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${env(keyName)}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model, messages: [{ role: 'user', content: input }] }),
+    signal: timeoutSignal(Number(env('AI_PROVIDER_TIMEOUT_MS') || DEFAULT_TIMEOUT_MS)),
+  });
+  const data = await readResponse(response);
+  const reply = chatText(data);
+  if (!reply) throw new Error('empty_response');
+  return { reply, model: data.model || model, responseId: data.id || null };
+}
+
+async function callDeepSeek(input) {
+  return callOpenAiCompatible(input, {
+    keyName: 'DEEPSEEK_API_KEY',
+    modelName: 'DEEPSEEK_MODEL',
+    defaultModel: 'deepseek-chat',
+    baseUrl: 'https://api.deepseek.com/v1',
+  });
+}
+
+async function callGroq(input) {
+  return callOpenAiCompatible(input, {
+    keyName: 'GROQ_API_KEY',
+    modelName: 'GROQ_MODEL',
+    defaultModel: 'llama-3.3-70b-versatile',
+    baseUrl: 'https://api.groq.com/openai/v1',
+  });
+}
+
+const CALLERS = {
+  openai: callOpenAI,
+  openrouter: callOpenRouter,
+  anthropic: callAnthropic,
+  gemini: callGemini,
+  deepseek: callDeepSeek,
+  groq: callGroq,
+};
 
 function configuredProviders() {
-  const preferred = csv('AI_PROVIDER_ORDER', 'openai,openrouter,gemini,anthropic');
-  return preferred.filter(provider => CALLERS[provider] && providerAvailable(provider) && !isCooling(provider));
+  const preferred = csv('AI_PROVIDER_ORDER', DEFAULT_PROVIDER_ORDER);
+  const ordered = preferred.filter(provider => CALLERS[provider]);
+  const fallback = Object.keys(CALLERS).filter(provider => !ordered.includes(provider));
+  const candidates = [...ordered, ...fallback];
+  return candidates.filter(provider => providerAvailable(provider) && !isCooling(provider));
 }
 
 export function getAiRouterStatus() {
-  const providers = ['openai', 'openrouter', 'gemini', 'anthropic'].map(provider => ({
+  const providers = Object.keys(CALLERS).map(provider => ({
     provider,
     configured: providerAvailable(provider),
     coolingDown: isCooling(provider),
   }));
-  return { policy: env('ANDREW_ROUTING_POLICY') || 'multi-provider-failover', providers };
+  const configured = providers.filter(p => p.configured && !p.coolingDown).map(p => p.provider);
+  return {
+    policy: env('ANDREW_ROUTING_POLICY') || 'multi-provider-failover',
+    order: csv('AI_PROVIDER_ORDER', DEFAULT_PROVIDER_ORDER),
+    configuredProviders: configured,
+    providers,
+  };
 }
 
 export async function routeAiChat({ message, memory }) {
   const input = buildInput(message, memory);
   const providers = configuredProviders();
   if (!providers.length) {
-    return { ok: false, error: 'AI_PROVIDERS_UNAVAILABLE', message: 'No hay proveedores de IA configurados o disponibles.' };
+    return { ok: false, error: 'AI_PROVIDERS_UNAVAILABLE', message: 'No hay proveedores de IA configurados o disponibles.', failures: [] };
   }
 
   const failures = [];
