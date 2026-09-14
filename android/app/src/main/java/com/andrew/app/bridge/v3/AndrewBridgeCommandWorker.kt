@@ -50,8 +50,8 @@ class AndrewBridgeCommandWorker(context: Context, params: WorkerParameters) : Co
                     result(id, name, true, JSONObject().put("scheduled", true))
                 }
                 "set_runtime_parameter" -> {
-                    // Legacy command is intentionally rejected by BridgeCommandPolicy.
-                    throw IllegalArgumentException("unsupported")
+                    val runtime = applyRuntimeParameter(command.optJSONObject("payload"))
+                    result(id, name, true, runtime)
                 }
                 "request_status" -> {
                     val root = applicationContext.filesDir.resolve("andrew_web_sandbox")
@@ -94,6 +94,42 @@ class AndrewBridgeCommandWorker(context: Context, params: WorkerParameters) : Co
         }
     }
 
+    private fun applyRuntimeParameter(payload: JSONObject?): JSONObject {
+        require(payload != null) { "runtime payload missing" }
+        val key = payload.optString("key", "").trim()
+        require(key.isNotBlank()) { "runtime parameter key is blank" }
+        val raw = payload.opt("value")
+        require(raw != null && raw != JSONObject.NULL) { "runtime parameter value is missing" }
+
+        val value: Any = when {
+            key == "model" -> {
+                require(raw is String && raw.trim().isNotEmpty() && raw.length <= 256) { "invalid model" }
+                raw.trim()
+            }
+            key == "timeoutMs" || key == "pollIntervalMs" -> {
+                val number = raw as? Number ?: throw IllegalArgumentException("invalid $key")
+                val normalized = number.toDouble()
+                require(normalized.isFinite() && normalized >= 0.0 && normalized <= 300000.0) { "invalid $key" }
+                normalized.toInt()
+            }
+            key == "syncEnabled" -> {
+                require(raw is Boolean) { "invalid syncEnabled" }
+                raw
+            }
+            key.startsWith("providerWeight.") -> {
+                val provider = key.removePrefix("providerWeight.")
+                require(provider.matches(Regex("[A-Za-z0-9_-]{1,64}"))) { "invalid provider weight" }
+                val normalized = (raw as? Number)?.toDouble() ?: throw IllegalArgumentException("invalid provider weight")
+                require(normalized.isFinite() && normalized >= 0.0 && normalized <= 100.0) { "invalid provider weight" }
+                normalized
+            }
+            else -> throw IllegalArgumentException("unsupported runtime parameter")
+        }
+
+        LocalRuntimeConfig.setParameter(applicationContext, key, value)
+        return JSONObject().put("key", key).put("value", value)
+    }
+
     private fun result(id: String, command: String, ok: Boolean, value: JSONObject?, error: String? = null): Boolean {
         val body = JSONObject().apply {
             put("id", id)
@@ -102,8 +138,9 @@ class AndrewBridgeCommandWorker(context: Context, params: WorkerParameters) : Co
             if (value != null) put("result", value)
             if (error != null) put("error", error)
         }.toString()
+        val path = if (command == "set_runtime_parameter") RESULT_PATH else ACK_PATH
         repeat(ACK_ATTEMPTS) { attempt ->
-            val response = runCatching { request("POST", ACK_PATH, body) }.getOrNull()
+            val response = runCatching { request("POST", path, body) }.getOrNull()
             if (response != null && response.code in 200..299) return true
             if (attempt + 1 < ACK_ATTEMPTS) {
                 Thread.sleep(ACK_BASE_DELAY_MS shl attempt)
@@ -140,6 +177,7 @@ class AndrewBridgeCommandWorker(context: Context, params: WorkerParameters) : Co
         private const val BASE_URL = "https://andrew2-api.onrender.com"
         private const val COMMANDS_PATH = "/api/v1/bridge/v3/commands"
         private const val ACK_PATH = "/api/v1/bridge/v3/ack"
+        private const val RESULT_PATH = "/api/v1/bridge/v3/result"
         private const val SYNC_WORK = "andrew-bridge-v3-sync"
         private const val COMMAND_WORK = "andrew-bridge-v3-commands"
         private const val ACK_ATTEMPTS = 4
