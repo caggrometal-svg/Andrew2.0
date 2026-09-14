@@ -47,9 +47,9 @@ jobs:
           sha256="$(sha256sum "$work/andrew-web-runtime.zip" | awk '{print $1}')"
           test -n "$BRIDGE_ECDSA_PRIVATE_KEY_B64"
           if printf '%s' "$BRIDGE_ECDSA_PRIVATE_KEY_B64" | grep -q -- '-----BEGIN'; then
-            printf '%s\n' "$BRIDGE_ECDSA_PRIVATE_KEY_B64" > "$work/signing-key.pem"
+            printf '%s\n' "$BRIDGE_ECDSA_PRIVATE_KEY_B64" | sed 's/\\n/\n/g' > "$work/signing-key.pem"
           else
-            encoded="$(printf '%s' "$BRIDGE_ECDSA_PRIVATE_KEY_B64" | tr -d '[:space:]' | tr '_-' '/+' | tr -cd 'A-Za-z0-9+/')"
+            encoded="$(printf '%s' "$BRIDGE_ECDSA_PRIVATE_KEY_B64" | tr -d '[:space:]' | tr '_-' '/+' | tr -cd 'A-Za-z0-9+/=')"
             test -n "$encoded"
             rem=$(( ${#encoded} % 4 ))
             if [ "$rem" -ne 0 ]; then encoded="${encoded}$(printf '%*s' $((4-rem)) '' | tr ' ' '=')"; fi
