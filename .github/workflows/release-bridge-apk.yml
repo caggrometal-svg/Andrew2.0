@@ -6,28 +6,158 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CI: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Setup JDK 17
+        with:
+          fetch-depth: 1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies and build frontend
+        run: |
+          npm install --no-audit --no-fund
+          npm run typecheck
+          npm test
+          npm run test:server
+          npm run build
+
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
+
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+
+      - name: Preserve Bridge V3 native sources
+        shell: bash
+        run: |
+          test -d android/app/src/main/java/com/andrew/app/bridge/v3
+          mkdir -p .bridge-native/bridge-v3
+          cp -R android/app/src/main/java/com/andrew/app/bridge/v3/. .bridge-native/bridge-v3/
+          rm -rf android
+
+      - name: Add Android platform
+        run: npx cap add android
+
+      - name: Restore Bridge V3 native sources
+        shell: bash
+        run: |
+          test -d .bridge-native/bridge-v3
+          mkdir -p android/app/src/main/java/com/andrew/app/bridge/v3
+          cp -R .bridge-native/bridge-v3/. android/app/src/main/java/com/andrew/app/bridge/v3/
+
+      - name: Enable Kotlin and WorkManager
+        working-directory: android
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path('build.gradle')
+          text = root.read_text()
+          buildscript = '''buildscript {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+              dependencies {
+                  classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:2.0.21"
+              }
+          }
+          '''
+          if 'org.jetbrains.kotlin:kotlin-gradle-plugin' not in text:
+              text = buildscript + '\n' + text
+              root.write_text(text)
+          app = Path('app/build.gradle')
+          text = app.read_text()
+          if "apply plugin: 'kotlin-android'" not in text and 'id "org.jetbrains.kotlin.android"' not in text and "id 'org.jetbrains.kotlin.android'" not in text:
+              text = "apply plugin: 'kotlin-android'\n" + text
+          dependency = '    implementation "org.jetbrains.kotlin:kotlin-stdlib:2.0.21"\n'
+          work = '    implementation "androidx.work:work-runtime-ktx:2.11.2"\n'
+          marker = 'dependencies {'
+          if marker not in text:
+              raise SystemExit('dependencies block not found')
+          if dependency not in text:
+              text = text.replace(marker, marker + '\n' + dependency, 1)
+          if work not in text:
+              text = text.replace(marker, marker + '\n' + work, 1)
+          app.write_text(text)
+          PY
+
+      - name: Wire Bridge V3 scheduler
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path('android/app/src/main/java')
+          files = list(root.rglob('MainActivity.kt')) + list(root.rglob('MainActivity.java'))
+          if len(files) != 1:
+              raise SystemExit(f'expected exactly one generated MainActivity, found {len(files)}')
+          path = files[0]
+          text = path.read_text()
+          marker = 'AndrewBridgeCommandWorker.schedule(this)'
+          if marker in text:
+              raise SystemExit('Bridge scheduler already wired')
+          if path.suffix == '.kt':
+              needle = 'class MainActivity : BridgeActivity {'
+              if needle not in text:
+                  needle = 'class MainActivity : BridgeActivity() {'
+              if needle not in text:
+                  raise SystemExit('unexpected Kotlin MainActivity shape')
+              replacement = needle + '\n    override fun onCreate(savedInstanceState: android.os.Bundle?) {\n        super.onCreate(savedInstanceState)\n        com.andrew.app.bridge.v3.AndrewBridgeCommandWorker.schedule(this)\n    }'
+          else:
+              needle = 'public class MainActivity extends BridgeActivity {'
+              if needle not in text:
+                  raise SystemExit('unexpected Java MainActivity shape')
+              replacement = needle + '\n    @Override\n    public void onCreate(android.os.Bundle savedInstanceState) {\n        super.onCreate(savedInstanceState);\n        com.andrew.app.bridge.v3.AndrewBridgeCommandWorker.schedule(this);\n    }'
+          path.write_text(text.replace(needle, replacement, 1))
+          PY
+
+      - name: Sync Capacitor Android
+        run: npx cap sync android
+
+      - name: Verify Bridge source and network permission
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=android/app/src/main/java/com/andrew/app/bridge/v3
+          test -f "$base/AndrewBridgeCommandWorker.kt"
+          grep -R -q 'AndrewBridgeCommandWorker.schedule' android/app/src/main/java
+          grep -q 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml
+
+      - name: Grant execute permission for Gradle
+        working-directory: android
+        run: chmod +x gradlew
+
+      - name: Compile Kotlin bridge
+        working-directory: android
+        run: ./gradlew compileDebugKotlin --no-daemon --stacktrace
+
       - name: Build debug APK
         working-directory: android
         run: ./gradlew :app:assembleDebug --no-daemon --stacktrace
+
       - name: Verify APK
+        shell: bash
         run: |
+          set -euo pipefail
           test -s android/app/build/outputs/apk/debug/app-debug.apk
           sha256sum android/app/build/outputs/apk/debug/app-debug.apk
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
