@@ -1,5 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import './core/universal-memory-bridge';
 import App from '@ui/App';
 import RuntimeErrorBoundary from '@ui/RuntimeErrorBoundary';
 
