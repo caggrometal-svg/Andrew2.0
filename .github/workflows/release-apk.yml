@@ -176,9 +176,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -f android/capacitor.config.json
-          grep -q '"CapacitorHttp"' android/capacitor.config.json
-          grep -q '"enabled": true' android/capacitor.config.json
+          test -f android/app/src/main/assets/capacitor.config.json
+          grep -q '"CapacitorHttp"' android/app/src/main/assets/capacitor.config.json
+          grep -q '"enabled": true' android/app/src/main/assets/capacitor.config.json
           test -f android/app/src/main/AndroidManifest.xml
           grep -q 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml
 
