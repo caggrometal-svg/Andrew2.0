@@ -9,7 +9,8 @@ object BridgeCommandPolicy {
         "provider_health_check",
         "open_settings",
         "request_status",
-        "sync_now"
+        "sync_now",
+        "set_runtime_parameter"
     )
 
     fun requireAllowed(command: String) {
