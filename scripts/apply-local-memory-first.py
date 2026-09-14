@@ -5,22 +5,22 @@ text = p.read_text()
 
 marker = "function getConversationId(): string {"
 helper = '''function normalizeName(value: string): string {
-  return value.trim().replace(/\s+/g, ' ').replace(/^[,.:;!?]+|[,.:;!?]+$/g, '').slice(0, 80);
+  return value.trim().replace(/\\s+/g, ' ').replace(/^[,.:;!?]+|[,.:;!?]+$/g, '').slice(0, 80);
 }
 
 function extractLocalName(message: string): string | null {
   const text = message.trim();
   const patterns = [
-    /^me llamo\s+(.+?)$/i,
-    /^mi nombre es\s+(.+?)$/i,
-    /^soy\s+([A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ' -]{1,60})$/i,
-    /^([A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ' -]{1,60})\s+y\s+t[uú]$/i,
+    /^me llamo\\s+(.+?)$/i,
+    /^mi nombre es\\s+(.+?)$/i,
+    /^soy\\s+([A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ' -]{1,60})$/i,
+    /^([A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ' -]{1,60})\\s+y\\s+t[uú]$/i,
   ];
   for (const pattern of patterns) {
     const match = text.match(pattern);
     if (match?.[1]) {
       const name = normalizeName(match[1]);
-      if (name && name.split(/\s+/).length <= 4) return name;
+      if (name && name.split(/\\s+/).length <= 4) return name;
     }
   }
   return null;
@@ -34,10 +34,10 @@ function localMemoryReply(message: string): string | null {
     safeWrite(USER_NAME_KEY, extracted);
     return `Entendido. Recordaré localmente que tu nombre es ${extracted}.`;
   }
-  if (/^(?:andrew[ ,]*)?(?:recuerda|recordar|guarda|guardar)\s+(?:mi nombre|que me llamo)$/i.test(message)) {
+  if (/^(?:andrew[ ,]*)?(?:recuerda|recordar|guarda|guardar)\\s+(?:mi nombre|que me llamo)$/i.test(message)) {
     return stored ? `Sí. Tu nombre guardado localmente es ${stored}.` : 'Todavía no tengo tu nombre guardado localmente. Dime cómo te llamas.';
   }
-  if (/^(?:cu[aá]l|cual|dime)\s+(?:es )?mi nombre\??$/i.test(text) || /^como me llamo\??$/i.test(text)) {
+  if (/^(?:cu[aá]l|cual|dime)\\s+(?:es )?mi nombre\\??$/i.test(text) || /^como me llamo\\??$/i.test(text) || /^di(?:me)?\\s+mi nombre\\??$/i.test(text) || /^(?:quien|quién)\\s+soy\\??$/i.test(text)) {
     return stored ? `Tu nombre es ${stored}.` : 'Todavía no tengo tu nombre guardado. Dime cómo te llamas.';
   }
   return null;
