@@ -1,0 +1,139 @@
+name: Local Memory Update APK
+
+on:
+  push:
+    branches:
+      - fix/local-memory-first-rpd
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Apply local memory update
+        run: python3 scripts/apply-local-memory-first.py
+
+      - name: Build and test web app
+        run: |
+          npm install --no-audit --no-fund
+          npm run typecheck
+          npm test
+          npm run test:server
+          npm run build
+
+      - name: Commit source update
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/ui/App.tsx
+          if git diff --cached --quiet; then
+            echo 'Source already contains the update.'
+          else
+            git commit -m 'fix: make local memory commands independent of AI quota'
+            git push
+          fi
+
+      - name: Preserve Bridge V3
+        run: |
+          test -d android/app/src/main/java/com/andrew/app/bridge/v3
+          mkdir -p .bridge-native/bridge-v3
+          cp -R android/app/src/main/java/com/andrew/app/bridge/v3/. .bridge-native/bridge-v3/
+          rm -rf android
+
+      - name: Add Android platform
+        run: npx cap add android
+
+      - name: Restore Bridge V3
+        run: |
+          mkdir -p android/app/src/main/java/com/andrew/app/bridge/v3
+          cp -R .bridge-native/bridge-v3/. android/app/src/main/java/com/andrew/app/bridge/v3/
+
+      - name: Enable Kotlin and WorkManager
+        working-directory: android
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path('build.gradle')
+          text = root.read_text()
+          if 'org.jetbrains.kotlin:kotlin-gradle-plugin' not in text:
+              text = '''buildscript {
+              repositories { google(); mavenCentral(); gradlePluginPortal() }
+              dependencies { classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:2.0.21" }
+          }
+          ''' + text
+              root.write_text(text)
+          app = Path('app/build.gradle')
+          text = app.read_text()
+          if "apply plugin: 'kotlin-android'" not in text and 'org.jetbrains.kotlin.android' not in text:
+              text = "apply plugin: 'kotlin-android'\n" + text
+          if 'kotlin-stdlib:2.0.21' not in text:
+              text = text.replace('dependencies {', 'dependencies {\n    implementation "org.jetbrains.kotlin:kotlin-stdlib:2.0.21"', 1)
+          if 'work-runtime-ktx:2.11.2' not in text:
+              text = text.replace('dependencies {', 'dependencies {\n    implementation "androidx.work:work-runtime-ktx:2.11.2"', 1)
+          app.write_text(text)
+          PY
+
+      - name: Wire Bridge V3 into MainActivity
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          files = list(Path('android/app/src/main/java').rglob('MainActivity.kt')) + list(Path('android/app/src/main/java').rglob('MainActivity.java'))
+          if len(files) != 1:
+              raise SystemExit(f'expected one MainActivity, found {len(files)}')
+          p = files[0]
+          text = p.read_text()
+          if 'AndrewBridgeCommandWorker.schedule(this)' not in text:
+              if p.suffix == '.kt':
+                  needle = 'class MainActivity : BridgeActivity() {'
+                  replacement = needle + '\n    override fun onCreate(savedInstanceState: android.os.Bundle?) {\n        super.onCreate(savedInstanceState)\n        com.andrew.app.bridge.v3.AndrewBridgeCommandWorker.schedule(this)\n    }'
+              else:
+                  needle = 'public class MainActivity extends BridgeActivity {'
+                  replacement = needle + '\n    @Override\n    public void onCreate(android.os.Bundle savedInstanceState) {\n        super.onCreate(savedInstanceState);\n        com.andrew.app.bridge.v3.AndrewBridgeCommandWorker.schedule(this);\n    }'
+              if needle not in text:
+                  raise SystemExit('unexpected MainActivity shape')
+              p.write_text(text.replace(needle, replacement, 1))
+          PY
+
+      - name: Sync Capacitor
+        run: npx cap sync android
+
+      - name: Verify Bridge V3 wiring
+        run: |
+          test -f android/app/src/main/java/com/andrew/app/bridge/v3/AndrewBridgeCommandWorker.kt
+          grep -R -q 'AndrewBridgeCommandWorker.schedule' android/app/src/main/java
+
+      - name: Build APK
+        working-directory: android
+        run: |
+          java -version
+          ./gradlew -version
+          chmod +x gradlew
+          ./gradlew compileDebugKotlin --no-daemon --stacktrace
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Andrew2.0-local-memory-bridge-v3-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
