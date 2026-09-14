@@ -168,3 +168,7 @@ jobs:
           name: Andrew2.0-bridge-v5-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
+
+      # Force a fresh push-triggered validation on the integration branch.
+      - name: CI validation marker
+        run: echo "Bridge V5 APK validation requested for $GITHUB_SHA"
