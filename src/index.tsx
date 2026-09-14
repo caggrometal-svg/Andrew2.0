@@ -1,5 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import '@network/connection-supervisor';
 import App from '@ui/App';
 import RuntimeErrorBoundary from '@ui/RuntimeErrorBoundary';
 
