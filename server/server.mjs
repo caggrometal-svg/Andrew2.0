@@ -13,7 +13,15 @@ const HOST = '0.0.0.0';
 const MODEL = (process.env.OPENAI_MODEL || 'gpt-5.6-luna').trim();
 const MAX_BODY_BYTES = 1024 * 1024;
 const ALLOWED_ORIGIN = (process.env.ALLOWED_ORIGIN || '*').trim();
-const BRIDGE_COMMANDS = new Set(['open_settings', 'set_runtime_parameter', 'request_status', 'sync_now']);
+const BRIDGE_COMMANDS = new Set([
+  'sync_web_artifact',
+  'rollback_web_artifact',
+  'health_check',
+  'provider_health_check',
+  'open_settings',
+  'request_status',
+  'sync_now',
+]);
 const BRIDGE_TTL_MS = 5 * 60 * 1000;
 const ACK_ERRORS = new Set(['expired', 'unsupported', 'invalid_payload', 'healthcheck_failed', 'verification_failed', 'download_failed', 'execution_failed']);
 const REVISION_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
