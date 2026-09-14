@@ -1,17 +1,22 @@
 const STORAGE_KEY = 'andrew:universal-memory:v1';
 const LEGACY_USER_NAME_KEY = 'andrew:user-name';
+const DB_NAME = 'andrew-universal-memory';
+const DB_STORE = 'memory';
+const DB_KEY = 'current';
 
 export type UniversalMemory = {
   name?: string;
   updatedAt: string;
 };
 
-function read(): UniversalMemory {
+let memoryCache: UniversalMemory = { updatedAt: new Date(0).toISOString() };
+
+function readLocal(): UniversalMemory {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) {
       const legacyName = window.localStorage.getItem(LEGACY_USER_NAME_KEY)?.trim();
-      return legacyName ? { name: legacyName.slice(0, 80), updatedAt: new Date().toISOString() } : { updatedAt: new Date(0).toISOString() };
+      return legacyName ? { name: legacyName.slice(0, 80), updatedAt: new Date().toISOString() } : { ...memoryCache };
     }
     const parsed = JSON.parse(raw) as Partial<UniversalMemory>;
     return {
@@ -19,11 +24,11 @@ function read(): UniversalMemory {
       updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : new Date(0).toISOString(),
     };
   } catch {
-    return { updatedAt: new Date(0).toISOString() };
+    return { ...memoryCache };
   }
 }
 
-function write(memory: UniversalMemory): void {
+function writeLocal(memory: UniversalMemory): void {
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(memory));
     if (memory.name) window.localStorage.setItem(LEGACY_USER_NAME_KEY, memory.name);
@@ -33,19 +38,83 @@ function write(memory: UniversalMemory): void {
   }
 }
 
+function openDatabase(): Promise<IDBDatabase | null> {
+  if (typeof indexedDB === 'undefined') return Promise.resolve(null);
+  return new Promise((resolve) => {
+    try {
+      const request = indexedDB.open(DB_NAME, 1);
+      request.onupgradeneeded = () => {
+        if (!request.result.objectStoreNames.contains(DB_STORE)) request.result.createObjectStore(DB_STORE);
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+async function readIndexedDb(): Promise<UniversalMemory | null> {
+  const db = await openDatabase();
+  if (!db) return null;
+  return new Promise((resolve) => {
+    try {
+      const request = db.transaction(DB_STORE, 'readonly').objectStore(DB_STORE).get(DB_KEY);
+      request.onsuccess = () => {
+        const value = request.result as Partial<UniversalMemory> | undefined;
+        resolve(value && typeof value.updatedAt === 'string'
+          ? { ...(typeof value.name === 'string' && value.name.trim() ? { name: value.name.trim().slice(0, 80) } : {}), updatedAt: value.updatedAt }
+          : null);
+      };
+      request.onerror = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+async function writeIndexedDb(memory: UniversalMemory): Promise<void> {
+  const db = await openDatabase();
+  if (!db) return;
+  await new Promise<void>((resolve) => {
+    try {
+      const request = db.transaction(DB_STORE, 'readwrite').objectStore(DB_STORE).put(memory, DB_KEY);
+      request.onsuccess = () => resolve();
+      request.onerror = () => resolve();
+    } catch {
+      resolve();
+    }
+  });
+}
+
+export async function hydrateUniversalMemory(): Promise<UniversalMemory> {
+  const local = readLocal();
+  memoryCache = local;
+  const indexed = await readIndexedDb();
+  if (indexed && new Date(indexed.updatedAt).getTime() >= new Date(local.updatedAt).getTime()) {
+    memoryCache = indexed;
+    writeLocal(indexed);
+  }
+  return { ...memoryCache };
+}
+
 export function getUniversalMemory(): UniversalMemory {
-  return read();
+  return { ...memoryCache };
 }
 
 export function rememberUserName(name: string): string {
   const normalized = name.trim().replace(/\s+/g, ' ').slice(0, 80);
   if (!normalized) throw new Error('El nombre está vacío.');
-  write({ name: normalized, updatedAt: new Date().toISOString() });
+  memoryCache = { name: normalized, updatedAt: new Date().toISOString() };
+  writeLocal(memoryCache);
+  void writeIndexedDb(memoryCache);
   return normalized;
 }
 
 export function forgetUserName(): void {
-  write({ updatedAt: new Date().toISOString() });
+  memoryCache = { updatedAt: new Date().toISOString() };
+  writeLocal(memoryCache);
+  void writeIndexedDb(memoryCache);
 }
 
 export function extractExplicitUserName(text: string): string | null {
