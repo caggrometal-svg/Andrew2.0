@@ -191,4 +191,8 @@ try {
   throw error;
 }
 
-server.listen(PORT, HOST, () => console.log(`[Andrew2] backend listening on ${HOST}:${PORT}`));
+server.listen(PORT, HOST, () => {
+  const ai = getAiRouterStatus();
+  console.log(`[Andrew2] backend listening on ${HOST}:${PORT}`);
+  console.log(`[Andrew2] AI pool ready: ${ai.configuredProviders.join(',') || 'NONE'} | policy=${ai.policy}`);
+});
