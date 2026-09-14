@@ -11,7 +11,6 @@ import androidx.work.PeriodicWorkRequest
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -47,7 +46,7 @@ class AndrewBridgeCommandWorker(context: Context, params: WorkerParameters) : Co
                 "sync_now" -> {
                     val request = OneTimeWorkRequest.Builder(AndrewSyncWorker::class.java).build()
                     WorkManager.getInstance(applicationContext).enqueueUniqueWork(SYNC_WORK, ExistingWorkPolicy.REPLACE, request)
-                    ack(id, true, JSONObject().put("scheduled", true))
+                    result(id, name, true, JSONObject().put("scheduled", true))
                 }
                 "set_runtime_parameter" -> {
                     val payload = command.optJSONObject("payload") ?: throw IllegalArgumentException("runtime payload missing")
@@ -55,36 +54,37 @@ class AndrewBridgeCommandWorker(context: Context, params: WorkerParameters) : Co
                     if (key.isBlank()) throw IllegalArgumentException("runtime key missing")
                     val value = if (payload.has("value") && !payload.isNull("value")) payload.get("value") else null
                     LocalRuntimeConfig.setParameter(applicationContext, key, value)
-                    ack(id, true, JSONObject().put("applied", true).put("key", key))
+                    result(id, name, true, payload)
                 }
                 "request_status" -> {
                     val root = applicationContext.filesDir.resolve("andrew_web_sandbox")
                     val revision = root.resolve("active_revision").takeIf { it.isFile }?.readText()?.trim().orEmpty()
-                    ack(id, true, JSONObject().put("activeRevision", revision).put("sandboxActive", root.resolve("active").isDirectory))
+                    result(id, name, true, JSONObject().put("activeRevision", revision).put("sandboxActive", root.resolve("active").isDirectory))
                 }
                 "open_settings" -> {
                     val intent = Intent(Settings.ACTION_SETTINGS).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     applicationContext.startActivity(intent)
-                    ack(id, true, JSONObject().put("opened", true).put("action", Settings.ACTION_SETTINGS))
+                    result(id, name, true, JSONObject().put("opened", true).put("action", Settings.ACTION_SETTINGS))
                 }
-                else -> ack(id, false, null, "unsupported")
+                else -> result(id, name, false, null, "unsupported")
             }
         } catch (_: Throwable) {
-            ack(id, false, null, "execution_failed")
+            result(id, name, false, null, "execution_failed")
         }
     }
 
-    private fun ack(id: String, ok: Boolean, result: JSONObject?, error: String? = null): Boolean {
+    private fun result(id: String, command: String, ok: Boolean, value: JSONObject?, error: String? = null): Boolean {
         val body = JSONObject().apply {
             put("id", id)
+            put("command", command)
             put("ok", ok)
-            if (result != null) put("result", result)
+            if (value != null) put("result", value)
             if (error != null) put("error", error)
         }.toString()
         repeat(ACK_ATTEMPTS) { attempt ->
-            val response = runCatching { request("POST", ACK_PATH, body) }.getOrNull()
+            val response = runCatching { request("POST", RESULT_PATH, body) }.getOrNull()
             if (response != null && response.code in 200..299) return true
             if (attempt + 1 < ACK_ATTEMPTS) {
                 Thread.sleep(ACK_BASE_DELAY_MS shl attempt)
@@ -120,7 +120,7 @@ class AndrewBridgeCommandWorker(context: Context, params: WorkerParameters) : Co
     companion object {
         private const val BASE_URL = "https://andrew2-api.onrender.com"
         private const val COMMANDS_PATH = "/api/v1/bridge/v3/commands"
-        private const val ACK_PATH = "/api/v1/bridge/v3/ack"
+        private const val RESULT_PATH = "/api/v1/bridge/v3/result"
         private const val SYNC_WORK = "andrew-bridge-v3-sync"
         private const val COMMAND_WORK = "andrew-bridge-v3-commands"
         private const val ACK_ATTEMPTS = 4
