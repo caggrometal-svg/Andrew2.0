@@ -91,6 +91,45 @@ function getInitialMessages(): ChatMessage[] {
   }
 }
 
+function normalizeName(value: string): string {
+  return value.trim().replace(/\s+/g, ' ').replace(/^[,.:;!?]+|[,.:;!?]+$/g, '').slice(0, 80);
+}
+
+function extractLocalName(message: string): string | null {
+  const text = message.trim();
+  const patterns = [
+    /^me llamo\s+(.+?)$/i,
+    /^mi nombre es\s+(.+?)$/i,
+    /^soy\s+([A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ' -]{1,60})$/i,
+    /^([A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ' -]{1,60})\s+y\s+t[uú]$/i,
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match?.[1]) {
+      const name = normalizeName(match[1]);
+      if (name && name.split(/\s+/).length <= 4) return name;
+    }
+  }
+  return null;
+}
+
+function localMemoryReply(message: string): string | null {
+  const text = message.trim().toLocaleLowerCase('es');
+  const stored = normalizeName(safeRead(USER_NAME_KEY) || '');
+  const extracted = extractLocalName(message);
+  if (extracted) {
+    safeWrite(USER_NAME_KEY, extracted);
+    return `Entendido. Recordaré localmente que tu nombre es ${extracted}.`;
+  }
+  if (/^(?:andrew[ ,]*)?(?:recuerda|recordar|guarda|guardar)\s+(?:mi nombre|que me llamo)$/i.test(message)) {
+    return stored ? `Sí. Tu nombre guardado localmente es ${stored}.` : 'Todavía no tengo tu nombre guardado localmente. Dime cómo te llamas.';
+  }
+  if (/^(?:cu[aá]l|cual|dime)\s+(?:es )?mi nombre\??$/i.test(text) || /^como me llamo\??$/i.test(text)) {
+    return stored ? `Tu nombre es ${stored}.` : 'Todavía no tengo tu nombre guardado. Dime cómo te llamas.';
+  }
+  return null;
+}
+
 function getConversationId(): string {
   const existing = safeRead(CONVERSATION_ID_KEY);
   if (existing) return existing;
@@ -156,6 +195,7 @@ function App() {
     else if (next === 'connecting') setStatusText('Conectando…');
     else if (next === 'retrying') setStatusText('Reintentando conexión…');
     else if (next === 'connected') setStatusText('Conexión estable');
+    else if (next === 'degraded') setStatusText('IA externa temporalmente limitada · funciones locales disponibles');
     else setStatusText('Conexión interrumpida');
   }
 
@@ -166,6 +206,14 @@ function App() {
     const userMessage: ChatMessage = { id: crypto.randomUUID(), role: 'user', content: text, createdAt: Date.now() };
     setMessages(prev => [...prev, userMessage]);
     setDraft('');
+
+    const localReply = localMemoryReply(text);
+    if (localReply) {
+      setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'assistant', content: localReply, createdAt: Date.now() }]);
+      setStatusText('Memoria local · sin llamada a IA externa');
+      return;
+    }
+
     setBusy(true);
     setNetwork('connecting');
     try {
@@ -374,7 +422,7 @@ function App() {
         <div className="brand-mark"><Icon name="chat" size={20} /></div>
         <div className="brand-copy"><h1 className="brand-title">Andrew 2.0</h1><p className="brand-subtitle">IAC33 · análisis · memoria · creación multimedia</p></div>
       </div>
-      <div className="status-pill"><span className="status-dot" />{networkStatus === 'error' ? 'Offline' : 'Activo'}</div>
+      <div className="status-pill"><span className="status-dot" />{networkStatus === 'error' ? 'Offline' : networkStatus === 'degraded' ? 'IA limitada' : 'Activo'}</div>
     </header>
 
     <main className="workspace">{renderContent()}</main>
