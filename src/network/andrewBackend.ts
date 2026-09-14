@@ -15,6 +15,9 @@ const BACKOFF_MS = 900;
 const VIDEO_CHUNK_BYTES = 2 * 1024 * 1024;
 const VIDEO_CHUNK_RETRIES = 4;
 const USER_ID_STORAGE_KEY = 'andrew:user-id';
+const USER_NAME_STORAGE_KEY = 'andrew:user-name';
+const MEMORY_STORAGE_KEY = 'andrew:memory:v1';
+const CHAT_STORAGE_KEY = 'andrew:ui:chat:v2';
 const BACKEND_NETWORK_CAPABILITY = 'public-web' as const;
 const networkAdapter = new FetchNetworkAdapter({ fetchImpl: (input: NetworkRequestInput, init) => fetch(input, init) });
 
@@ -45,6 +48,50 @@ function getAndrewUserId(): string {
     window.localStorage.setItem(USER_ID_STORAGE_KEY, generated);
     return generated;
   } catch { return createSafeId('session:'); }
+}
+
+function readStoredMemory(): string[] {
+  try {
+    const raw = window.localStorage.getItem(MEMORY_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((value): value is string => typeof value === 'string' && value.trim().length > 0).slice(-20);
+  } catch { return []; }
+}
+
+function writeStoredMemory(values: string[]): void {
+  try { window.localStorage.setItem(MEMORY_STORAGE_KEY, JSON.stringify(values.slice(-50))); } catch { /* Optional local persistence. */ }
+}
+
+function extractExplicitMemory(message: string): string[] {
+  const facts: string[] = [];
+  const normalized = message.trim();
+  const nameMatch = normalized.match(/\bmi nombre es\s+([^.!?\n]{1,80})/i);
+  if (nameMatch?.[1]) {
+    const name = nameMatch[1].trim().replace(/\s+/g, ' ');
+    if (name) {
+      try { window.localStorage.setItem(USER_NAME_STORAGE_KEY, name); } catch { /* Optional. */ }
+      facts.push(`El nombre del usuario es ${name}.`);
+    }
+  }
+  const rememberMatch = normalized.match(/\b(?:recuerda|recordar|guarda|guardar)\s+(?:que\s+)?(.{3,240})$/i);
+  if (rememberMatch?.[1]) facts.push(`El usuario pidió recordar: ${rememberMatch[1].trim()}`);
+  return facts;
+}
+
+function buildLocalMemory(currentMessage: string, supplied: AndrewMemoryContext[] | undefined): string[] {
+  const explicit = extractExplicitMemory(currentMessage);
+  const stored = readStoredMemory();
+  const userName = (() => { try { return window.localStorage.getItem(USER_NAME_STORAGE_KEY)?.trim() || ''; } catch { return ''; } })();
+  const identity = userName ? [`El nombre del usuario es ${userName}.`] : [];
+  let chat: string[] = [];
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(CHAT_STORAGE_KEY) || '[]') as unknown;
+    if (Array.isArray(parsed)) chat = parsed.slice(-12).filter((item): item is { role: string; content: string } => Boolean(item && typeof item === 'object' && typeof (item as { role?: unknown }).role === 'string' && typeof (item as { content?: unknown }).content === 'string')).map(item => `${item.role === 'user' ? 'Usuario' : 'Andrew'}: ${item.content}`).slice(-12);
+  } catch { /* Optional local history. */ }
+  if (explicit.length) writeStoredMemory([...stored, ...explicit]);
+  return [...new Set([...identity, ...readStoredMemory(), ...(supplied || []), ...chat])].slice(-30);
 }
 
 function sleep(ms: number): Promise<void> { return new Promise(resolve => window.setTimeout(resolve, ms)); }
@@ -121,7 +168,9 @@ export async function uploadVideoInChunks(file: File, onProgress?: (percent: num
 }
 
 export async function sendAndrewMessage(request: AndrewChatRequest, timeoutMs = DEFAULT_TIMEOUT_MS, onNetworkStatus?: NetworkStatusListener): Promise<AndrewChatResponse> {
-  const response = await fetchWithRetry(`${getBackendUrl()}/api/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-Andrew-User-Id': getAndrewUserId() }, body: JSON.stringify({ message: request.message.trim(), conversationId: request.conversationId, memory: request.memory?.slice(0, 20), attachment: request.attachment }) }, Math.max(timeoutMs, 60000), onNetworkStatus);
+  const message = request.message.trim();
+  const memory = buildLocalMemory(message, request.memory);
+  const response = await fetchWithRetry(`${getBackendUrl()}/api/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-Andrew-User-Id': getAndrewUserId() }, body: JSON.stringify({ message, conversationId: request.conversationId, memory: memory.slice(0, 30), attachment: request.attachment }) }, Math.max(timeoutMs, 60000), onNetworkStatus);
   const data = await response.json().catch(() => ({})) as AndrewChatResponse | AndrewChatError;
   if (!response.ok || !data.ok) throw parseError(data, `Andrew backend HTTP ${response.status}`);
   notify(onNetworkStatus, 'connected'); return data;
