@@ -1,7 +1,7 @@
 const DEFAULT_TIMEOUT_MS = 30000;
 const COOLDOWN_MS = 60000;
 const MAX_MEMORY = 20;
-const DEFAULT_PROVIDER_ORDER = 'openai,openrouter,gemini,anthropic,deepseek,groq';
+const DEFAULT_PROVIDER_ORDER = 'openai,openrouter,gemini,anthropic,deepseek,groq,xai';
 
 const cooldownUntil = new Map();
 
@@ -22,6 +22,7 @@ function providerAvailable(name) {
     gemini: env('GEMINI_API_KEY') || env('GOOGLE_API_KEY'),
     deepseek: env('DEEPSEEK_API_KEY'),
     groq: env('GROQ_API_KEY'),
+    xai: env('XAI_API_KEY'),
   }[name]);
 }
 
@@ -170,6 +171,15 @@ async function callGroq(input) {
   });
 }
 
+async function callXAI(input) {
+  return callOpenAiCompatible(input, {
+    keyName: 'XAI_API_KEY',
+    modelName: 'XAI_MODEL',
+    defaultModel: 'grok-4.6',
+    baseUrl: 'https://api.x.ai/v1',
+  });
+}
+
 const CALLERS = {
   openai: callOpenAI,
   openrouter: callOpenRouter,
@@ -177,6 +187,7 @@ const CALLERS = {
   gemini: callGemini,
   deepseek: callDeepSeek,
   groq: callGroq,
+  xai: callXAI,
 };
 
 function configuredProviders() {
