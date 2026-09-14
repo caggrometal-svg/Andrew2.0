@@ -6,7 +6,15 @@ const MAX_TOKEN_LENGTH = 512;
 const MAX_MESSAGE_LENGTH = 12000;
 const TTL_MS = 5 * 60 * 1000;
 const DEVICE_ID = /^[A-Za-z0-9._:-]{1,128}$/;
-const COMMANDS = new Set(['open_settings', 'set_runtime_parameter', 'request_status', 'sync_now']);
+const COMMANDS = new Set([
+  'sync_web_artifact',
+  'rollback_web_artifact',
+  'health_check',
+  'provider_health_check',
+  'open_settings',
+  'request_status',
+  'sync_now',
+]);
 
 function configuredToken() {
   return (process.env.ANDREW_CONTROL_PLANE_TOKEN || '').trim();
