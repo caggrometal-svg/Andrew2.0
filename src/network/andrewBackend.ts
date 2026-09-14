@@ -31,9 +31,10 @@ export interface AndrewChatError {
   ok: false;
   error: string;
   message?: string;
+  retryAfterSeconds?: number;
 }
 
-export type NetworkStatus = 'connecting' | 'retrying' | 'connected' | 'error';
+export type NetworkStatus = 'connecting' | 'retrying' | 'connected' | 'degraded' | 'error';
 export type NetworkStatusListener = (status: NetworkStatus, detail?: string) => void;
 
 const DEFAULT_TIMEOUT_MS = 65000;
@@ -43,6 +44,7 @@ const BACKOFF_MS = 900;
 const VIDEO_CHUNK_BYTES = 2 * 1024 * 1024;
 const VIDEO_CHUNK_RETRIES = 4;
 const USER_ID_STORAGE_KEY = 'andrew:user-id';
+const AI_RATE_LIMIT_STORAGE_KEY = 'andrew:ai-rate-limit-until';
 const BACKEND_NETWORK_CAPABILITY = 'public-web' as const;
 
 const networkAdapter = new FetchNetworkAdapter({ fetchImpl: (input: NetworkRequestInput, init) => fetch(input, init) });
@@ -72,7 +74,17 @@ function notify(listener: NetworkStatusListener | undefined, status: NetworkStat
   listener?.(status, detail);
   window.dispatchEvent(new CustomEvent('andrew:network-status', { detail: { status, detail } }));
   const live = document.querySelector<HTMLElement>('[aria-live="polite"]');
-  if (live) live.textContent = status === 'connecting' ? 'Conectando…' : status === 'retrying' ? (detail || 'Reintentando…') : status === 'error' ? 'Conexión interrumpida' : 'Conexión establecida';
+  if (live) {
+    live.textContent = status === 'connecting'
+      ? 'Conectando…'
+      : status === 'retrying'
+        ? (detail || 'Reintentando…')
+        : status === 'degraded'
+          ? (detail || 'IA externa temporalmente limitada')
+          : status === 'error'
+            ? 'Conexión interrumpida'
+            : 'Conexión establecida';
+  }
 }
 
 function isRetryableError(error: unknown): boolean {
@@ -81,7 +93,62 @@ function isRetryableError(error: unknown): boolean {
   return false;
 }
 
+function isRateLimited(response: Response): boolean {
+  return response.status === 429;
+}
+
+function parseRetryAfterSeconds(response: Response, data: unknown): number | undefined {
+  const header = response.headers.get('Retry-After');
+  if (header) {
+    const seconds = Number(header);
+    if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds);
+  }
+  if (data && typeof data === 'object') {
+    const value = data as { retryAfterSeconds?: unknown; retryAfter?: unknown };
+    const candidate = value.retryAfterSeconds ?? value.retryAfter;
+    if (typeof candidate === 'number' && Number.isFinite(candidate) && candidate >= 0) return Math.ceil(candidate);
+  }
+  return undefined;
+}
+
+function rememberRateLimit(seconds?: number): void {
+  if (!seconds || seconds <= 0) return;
+  try {
+    window.localStorage.setItem(AI_RATE_LIMIT_STORAGE_KEY, String(Date.now() + seconds * 1000));
+  } catch {
+    // Cooldown persistence is opportunistic.
+  }
+}
+
+function getRateLimitUntil(): number | null {
+  try {
+    const value = Number(window.localStorage.getItem(AI_RATE_LIMIT_STORAGE_KEY));
+    if (!Number.isFinite(value) || value <= Date.now()) {
+      window.localStorage.removeItem(AI_RATE_LIMIT_STORAGE_KEY);
+      return null;
+    }
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+function formatRateLimitDetail(seconds?: number): string {
+  if (!seconds || seconds <= 0) return 'IA externa temporalmente limitada; funciones locales disponibles.';
+  const minutes = Math.floor(seconds / 60);
+  const remaining = seconds % 60;
+  const eta = minutes > 0 ? `${minutes} min${remaining ? ` ${remaining}s` : ''}` : `${remaining}s`;
+  return `IA externa temporalmente limitada. Reintento estimado en ${eta}. Funciones locales disponibles.`;
+}
+
 async function fetchWithRetry(input: NetworkRequestInput, init: RequestInit, timeoutMs: number, listener?: NetworkStatusListener, attempts = MAX_RETRIES): Promise<Response> {
+  const cooldownUntil = getRateLimitUntil();
+  if (cooldownUntil && String(input).includes('/api/chat')) {
+    const remaining = Math.ceil((cooldownUntil - Date.now()) / 1000);
+    notify(listener, 'degraded', formatRateLimitDetail(remaining));
+    throw new Error(formatRateLimitDetail(remaining));
+  }
+
   let lastError: unknown;
   for (let attempt = 0; attempt <= attempts; attempt += 1) {
     if (attempt === 0) notify(listener, 'connecting');
@@ -89,7 +156,14 @@ async function fetchWithRetry(input: NetworkRequestInput, init: RequestInit, tim
     try {
       const { response } = await networkAdapter.request({ capability: BACKEND_NETWORK_CAPABILITY, input, init, timeoutMs });
       if (response.ok) notify(listener, 'connected');
-      const retryableStatus = response.status === 408 || response.status === 429 || response.status >= 500;
+      if (isRateLimited(response)) {
+        const data = await response.clone().json().catch(() => ({}));
+        const retryAfterSeconds = parseRetryAfterSeconds(response, data);
+        rememberRateLimit(retryAfterSeconds);
+        notify(listener, 'degraded', formatRateLimitDetail(retryAfterSeconds));
+        return response;
+      }
+      const retryableStatus = response.status === 408 || response.status >= 500;
       if (!retryableStatus || attempt === attempts) return response;
       await sleep(BACKOFF_MS * (2 ** attempt));
     } catch (error) {
@@ -106,7 +180,12 @@ async function fetchWithRetry(input: NetworkRequestInput, init: RequestInit, tim
 
 function parseError(data: unknown, fallback: string): Error {
   if (data && typeof data === 'object') {
-    const value = data as { message?: unknown; error?: unknown };
+    const value = data as { message?: unknown; error?: unknown; retryAfterSeconds?: unknown };
+    if (value.error === 'AI_RATE_LIMIT') {
+      const seconds = typeof value.retryAfterSeconds === 'number' ? value.retryAfterSeconds : undefined;
+      rememberRateLimit(seconds);
+      return new Error(formatRateLimitDetail(seconds));
+    }
     if (typeof value.message === 'string' && value.message.trim()) return new Error(value.message);
     if (typeof value.error === 'string' && value.error.trim()) return new Error(value.error);
   }
