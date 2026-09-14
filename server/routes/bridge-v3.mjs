@@ -5,7 +5,7 @@ import { bridgeDeviceAttestationHeaders, verifyBridgeDeviceAttestation } from '.
 
 const ALLOWED_COMMANDS = new Set(['open_settings', 'set_runtime_parameter', 'request_status', 'sync_now']);
 const TTL_MS = 5 * 60 * 1000;
-const ACK_ERRORS = new Set(['expired', 'unsupported', 'invalid_payload', 'healthcheck_failed', 'verification_failed', 'download_failed']);
+const ACK_ERRORS = new Set(['expired', 'unsupported', 'invalid_payload', 'healthcheck_failed', 'verification_failed', 'download_failed', 'execution_failed']);
 const MAX_RESULT_BYTES = 8192;
 const REVISION_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
 
@@ -86,8 +86,6 @@ export async function registerBridgeV3Routes(app) {
     if (body.error !== undefined && (typeof body.error !== 'string' || !ACK_ERRORS.has(body.error))) return reply.code(400).send({ ok: false, error: 'invalid_payload' });
     let result; try { result = cleanResult(body.result); } catch (error) { return reply.code(400).send({ ok: false, error: error instanceof TypeError && error.message === 'result_too_large' ? 'result_too_large' : 'invalid_result' }); }
 
-    // A successful runtime-parameter result is only acknowledged after the backend
-    // has actually applied and validated the change. This prevents a false ACK.
     if (body.command === 'set_runtime_parameter' && body.ok) {
       try {
         const applied = await applyBridgeRuntimeCommand({ command: body.command, payload: result ?? {} });
