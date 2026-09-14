@@ -17,6 +17,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
       - name: Node 20
         uses: actions/setup-node@v4
         with:
@@ -102,6 +109,8 @@ jobs:
       - name: Build APK
         working-directory: android
         run: |
+          java -version
+          ./gradlew -version
           chmod +x gradlew
           ./gradlew compileDebugKotlin --no-daemon --stacktrace
           ./gradlew assembleDebug --no-daemon --stacktrace
