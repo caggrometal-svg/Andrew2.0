@@ -176,11 +176,29 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -f android/app/src/main/assets/capacitor.config.json
-          grep -q '"CapacitorHttp"' android/app/src/main/assets/capacitor.config.json
-          grep -q '"enabled": true' android/app/src/main/assets/capacitor.config.json
-          test -f android/app/src/main/AndroidManifest.xml
-          grep -q 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml
+          python3 - <<'PY'
+          import json
+          import re
+          from pathlib import Path
+
+          config_path = Path('android/app/src/main/assets/capacitor.config.json')
+          manifest_path = Path('android/app/src/main/AndroidManifest.xml')
+          if not config_path.is_file():
+              raise SystemExit('capacitor.config.json was not generated')
+          if not manifest_path.is_file():
+              raise SystemExit('AndroidManifest.xml was not generated')
+
+          config = json.loads(config_path.read_text())
+          enabled = config.get('plugins', {}).get('CapacitorHttp', {}).get('enabled')
+          if enabled is not True:
+              raise SystemExit(f'CapacitorHttp.enabled is not true: {enabled!r}')
+
+          manifest = manifest_path.read_text()
+          if not re.search(r'android:permission="android\.permission\.INTERNET"|android\.permission\.INTERNET', manifest):
+              raise SystemExit('android.permission.INTERNET is missing from AndroidManifest.xml')
+          print('Native HTTP transport: enabled')
+          print('Android INTERNET permission: present')
+          PY
 
       - name: Verify Bridge V3 after Capacitor sync
         shell: bash
