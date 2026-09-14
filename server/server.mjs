@@ -6,11 +6,11 @@ import { acknowledgeBridgeCommand, getBridgeSyncState, initializeBridgeStore, li
 import { queueBridgeAction } from './bridge/bridge-controller.mjs';
 import { verifyBridgeDeviceAttestation } from './auth/bridge-v3-device.mjs';
 import { controlPlaneRoute } from './control-plane.mjs';
+import { getAiRouterStatus, routeAiChat } from './ai-router.mjs';
 
 const PORT = Number(process.env.PORT || 10000);
 const HOST = '0.0.0.0';
 const MODEL = (process.env.OPENAI_MODEL || 'gpt-5.6-luna').trim();
-const OPENAI_API_KEY = (process.env.OPENAI_API_KEY || '').trim();
 const MAX_BODY_BYTES = 1024 * 1024;
 const ALLOWED_ORIGIN = (process.env.ALLOWED_ORIGIN || '*').trim();
 const BRIDGE_COMMANDS = new Set(['open_settings', 'set_runtime_parameter', 'request_status', 'sync_now']);
@@ -82,31 +82,35 @@ function cleanBridgeResult(value) {
   return value;
 }
 
-function textFromResponse(response) {
-  if (typeof response.output_text === 'string' && response.output_text.trim()) return response.output_text.trim();
-  const parts = [];
-  for (const item of response.output || []) for (const content of item.content || []) if (typeof content.text === 'string') parts.push(content.text);
-  return parts.join('\n').trim();
-}
-
 async function chat(body) {
   const message = typeof body.message === 'string' ? body.message.trim() : '';
   if (!message) return { status: 400, body: { ok: false, error: 'message_required' } };
-  if (!OPENAI_API_KEY) return { status: 503, body: { ok: false, error: 'OPENAI_API_KEY_MISSING', message: 'Backend IA no configurado.' } };
-  const memory = Array.isArray(body.memory) ? body.memory.filter(v => typeof v === 'string').slice(0, 20) : [];
-  const context = memory.length ? `Memoria local relevante:\n${memory.join('\n')}` : '';
-  const input = context ? `${context}\n\nMensaje del usuario:\n${message}` : message;
-  const upstream = await fetch('https://api.openai.com/v1/responses', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: MODEL, input, store: false }),
-  });
-  const data = await upstream.json().catch(() => ({}));
-  if (!upstream.ok) {
-    const upstreamMessage = data?.error?.message || `OpenAI HTTP ${upstream.status}`;
-    return { status: upstream.status >= 500 ? 502 : upstream.status, body: { ok: false, error: 'OPENAI_REQUEST_FAILED', message: upstreamMessage } };
+  const result = await routeAiChat({ message, memory: body.memory });
+  if (!result.ok) {
+    return {
+      status: 503,
+      body: {
+        ok: false,
+        error: result.error,
+        message: result.message,
+        providers: getAiRouterStatus(),
+        failures: result.failures,
+      },
+    };
   }
-  return { status: 200, body: { ok: true, conversationId: typeof body.conversationId === 'string' ? body.conversationId : `conv:${randomUUID()}`, reply: textFromResponse(data) || 'No recibí contenido de respuesta del modelo.', responseId: typeof data.id === 'string' ? data.id : null, model: MODEL, learning: { eligible: true, source: 'local-memory-context' } } };
+  return {
+    status: 200,
+    body: {
+      ok: true,
+      conversationId: typeof body.conversationId === 'string' ? body.conversationId : `conv:${randomUUID()}`,
+      reply: result.reply,
+      responseId: result.responseId || null,
+      model: result.model,
+      provider: result.provider,
+      attempts: result.attempts,
+      learning: { eligible: true, source: 'local-memory-context' },
+    },
+  };
 }
 
 async function bridgeRoute(req, res, url) {
@@ -117,7 +121,7 @@ async function bridgeRoute(req, res, url) {
 
   try {
     if (req.method === 'GET' && url.pathname === '/api/v1/bridge/v3/status') {
-      return send(res, 200, { ok: true, deviceId, commands: [...BRIDGE_COMMANDS], writeEnabled: bridgeWriteEnabled(), ttlMs: BRIDGE_TTL_MS, ai: { policy: bridgePolicy() } });
+      return send(res, 200, { ok: true, deviceId, commands: [...BRIDGE_COMMANDS], writeEnabled: bridgeWriteEnabled(), ttlMs: BRIDGE_TTL_MS, ai: { policy: bridgePolicy(), router: getAiRouterStatus() } });
     }
     if (req.method === 'GET' && url.pathname === '/api/v1/bridge/v3/commands') {
       return send(res, 200, { ok: true, commands: await listPendingBridgeCommands(deviceId), writeEnabled: bridgeWriteEnabled() });
@@ -125,7 +129,7 @@ async function bridgeRoute(req, res, url) {
     if (req.method === 'GET' && url.pathname === '/api/v1/bridge/v3/sync') {
       let artifact = null;
       try { artifact = bridgeArtifactManifest(); } catch { return send(res, 503, { ok: false, error: 'artifact_manifest_unavailable' }); }
-      return send(res, 200, { ok: true, deviceId, writeEnabled: bridgeWriteEnabled(), ttlMs: BRIDGE_TTL_MS, ai: { policy: bridgePolicy() }, artifact, ...(await getBridgeSyncState(deviceId)) });
+      return send(res, 200, { ok: true, deviceId, writeEnabled: bridgeWriteEnabled(), ttlMs: BRIDGE_TTL_MS, ai: { policy: bridgePolicy(), router: getAiRouterStatus() }, artifact, ...(await getBridgeSyncState(deviceId)) });
     }
     if (req.method === 'POST' && url.pathname === '/api/v1/bridge/v3/command') {
       const body = await readJson(req);
@@ -161,7 +165,7 @@ async function handler(req, res) {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
   if (await controlPlaneRoute(req, res, url, { readJson, send })) return;
   if (await bridgeRoute(req, res, url)) return;
-  if (req.method === 'GET' && url.pathname === '/health') return send(res, 200, { ok: true, status: 'ready', service: 'andrew2-backend', model: MODEL, openaiConfigured: Boolean(OPENAI_API_KEY), bridgeV3: true, controlPlane: Boolean(process.env.ANDREW_CONTROL_PLANE_TOKEN) });
+  if (req.method === 'GET' && url.pathname === '/health') return send(res, 200, { ok: true, status: 'ready', service: 'andrew2-backend', model: MODEL, ai: getAiRouterStatus(), bridgeV3: true, controlPlane: Boolean(process.env.ANDREW_CONTROL_PLANE_TOKEN) });
   if (req.method === 'GET' && url.pathname === '/api/runtime-config') return send(res, 200, getRuntimeConfig());
   if (req.method === 'POST' && url.pathname === '/api/chat') {
     try { const result = await chat(await readJson(req)); return send(res, result.status, result.body); }
