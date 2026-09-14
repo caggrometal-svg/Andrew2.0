@@ -42,19 +42,16 @@ class AndrewBridgeCommandWorker(context: Context, params: WorkerParameters) : Co
         val name = command.optString("command", "")
         if (id.isBlank()) return
         try {
+            BridgeCommandPolicy.requireAllowed(name)
             when (name) {
-                "sync_now" -> {
+                "sync_web_artifact", "sync_now" -> {
                     val request = OneTimeWorkRequest.Builder(AndrewSyncWorker::class.java).build()
                     WorkManager.getInstance(applicationContext).enqueueUniqueWork(SYNC_WORK, ExistingWorkPolicy.REPLACE, request)
                     result(id, name, true, JSONObject().put("scheduled", true))
                 }
                 "set_runtime_parameter" -> {
-                    val payload = command.optJSONObject("payload") ?: throw IllegalArgumentException("runtime payload missing")
-                    val key = payload.optString("key", "").trim()
-                    if (key.isBlank()) throw IllegalArgumentException("runtime key missing")
-                    val value = if (payload.has("value") && !payload.isNull("value")) payload.get("value") else null
-                    LocalRuntimeConfig.setParameter(applicationContext, key, value)
-                    result(id, name, true, payload)
+                    // Legacy command is intentionally rejected by BridgeCommandPolicy.
+                    throw IllegalArgumentException("unsupported")
                 }
                 "request_status" -> {
                     val root = applicationContext.filesDir.resolve("andrew_web_sandbox")
@@ -68,7 +65,29 @@ class AndrewBridgeCommandWorker(context: Context, params: WorkerParameters) : Co
                     applicationContext.startActivity(intent)
                     result(id, name, true, JSONObject().put("opened", true).put("action", Settings.ACTION_SETTINGS))
                 }
-                else -> result(id, name, false, null, "unsupported")
+                "health_check" -> {
+                    val root = applicationContext.filesDir.resolve("andrew_web_sandbox")
+                    val active = root.resolve("active")
+                    val revision = root.resolve("active_revision").takeIf { it.isFile }?.readText()?.trim().orEmpty()
+                    result(id, name, active.isDirectory, JSONObject().put("sandboxActive", active.isDirectory).put("activeRevision", revision), if (!active.isDirectory) "healthcheck_failed" else null)
+                }
+                "rollback_web_artifact" -> {
+                    val root = applicationContext.filesDir.resolve("andrew_web_sandbox")
+                    val active = root.resolve("active")
+                    val previous = root.resolve("previous")
+                    if (!previous.isDirectory) throw IllegalStateException("previous artifact unavailable")
+                    val failed = root.resolve(".command-rollback-${System.currentTimeMillis()}")
+                    if (active.exists()) active.renameTo(failed)
+                    require(previous.renameTo(active)) { "rollback move failed" }
+                    val revision = root.resolve("previous_revision").takeIf { it.isFile }?.readText()?.trim().orEmpty()
+                    root.resolve("active_revision").writeText(revision)
+                    root.resolve("previous_revision").writeText("")
+                    failed.deleteRecursively()
+                    result(id, name, true, JSONObject().put("rolledBack", true).put("activeRevision", revision))
+                }
+                "provider_health_check" -> {
+                    result(id, name, false, null, "unsupported")
+                }
             }
         } catch (_: Throwable) {
             result(id, name, false, null, "execution_failed")
@@ -84,7 +103,7 @@ class AndrewBridgeCommandWorker(context: Context, params: WorkerParameters) : Co
             if (error != null) put("error", error)
         }.toString()
         repeat(ACK_ATTEMPTS) { attempt ->
-            val response = runCatching { request("POST", RESULT_PATH, body) }.getOrNull()
+            val response = runCatching { request("POST", ACK_PATH, body) }.getOrNull()
             if (response != null && response.code in 200..299) return true
             if (attempt + 1 < ACK_ATTEMPTS) {
                 Thread.sleep(ACK_BASE_DELAY_MS shl attempt)
@@ -120,7 +139,7 @@ class AndrewBridgeCommandWorker(context: Context, params: WorkerParameters) : Co
     companion object {
         private const val BASE_URL = "https://andrew2-api.onrender.com"
         private const val COMMANDS_PATH = "/api/v1/bridge/v3/commands"
-        private const val RESULT_PATH = "/api/v1/bridge/v3/result"
+        private const val ACK_PATH = "/api/v1/bridge/v3/ack"
         private const val SYNC_WORK = "andrew-bridge-v3-sync"
         private const val COMMAND_WORK = "andrew-bridge-v3-commands"
         private const val ACK_ATTEMPTS = 4
