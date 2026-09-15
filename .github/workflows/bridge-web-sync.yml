@@ -41,7 +41,7 @@ jobs:
           work="$RUNNER_TEMP/andrew-bridge"
           rm -rf "$work"
           mkdir -p "$work/payload"
-          trap 'rm -f "$work/signing-key.pem" "$work/signing-key.raw" "$work/digest.bin" "$work/signature.der" "$work/public-key.pem"' EXIT
+          trap 'rm -f "$work/signing-key.pem" "$work/signing-key.raw" "$work/signing-key.der" "$work/digest.bin" "$work/signature.der" "$work/public-key.pem"' EXIT
           cp -R dist/. "$work/payload/"
           printf '{"ok":true,"revisionId":"%s"}\n' "$revision" > "$work/payload/health.json"
           ( cd "$work/payload" && zip -qr "$work/andrew-web-runtime.zip" . )
@@ -63,9 +63,29 @@ jobs:
               cp "$work/signing-key.raw" "$work/signing-key.pem"
             elif openssl pkey -inform DER -in "$work/signing-key.raw" -check -noout >/dev/null 2>&1; then
               openssl pkey -inform DER -in "$work/signing-key.raw" -out "$work/signing-key.pem"
+            elif [ "$(wc -c < "$work/signing-key.raw")" -eq 32 ]; then
+              python3 - "$work/signing-key.raw" "$work/signing-key.der" <<'PY'
+import pathlib
+import sys
+
+raw = pathlib.Path(sys.argv[1]).read_bytes()
+out = pathlib.Path(sys.argv[2])
+if len(raw) != 32:
+    raise SystemExit('raw EC private scalar must be exactly 32 bytes')
+
+def length(n):
+    return bytes([n]) if n < 128 else b'\x81' + bytes([n])
+def tlv(tag, value):
+    return bytes([tag]) + length(len(value)) + value
+
+oid = bytes.fromhex('06082a8648ce3d030107')
+sec1 = tlv(0x30, tlv(0x02, b'\x01') + tlv(0x04, raw) + tlv(0xa0, oid))
+out.write_bytes(sec1)
+PY
+              openssl pkey -inform DER -in "$work/signing-key.der" -out "$work/signing-key.pem"
             else
               echo 'BRIDGE_ECDSA_PRIVATE_KEY_B64 is not a valid PEM/DER private key after decoding.' >&2
-              echo 'Accepted forms: PEM, base64(PEM), base64(DER), or PEM with literal \\n line breaks.' >&2
+              echo 'Accepted forms: PEM, base64(PEM), base64(DER), base64(raw 32-byte P-256 scalar), or PEM with literal \\n line breaks.' >&2
               exit 1
             fi
           fi
