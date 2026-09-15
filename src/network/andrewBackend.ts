@@ -2,7 +2,8 @@ import { FetchNetworkAdapter, type NetworkRequestInput } from './network-adapter
 
 export type AndrewMemoryContext = string;
 export interface AndrewAttachment { type: 'image' | 'video'; name: string; mimeType: string; dataUrl?: string; uploadId?: string; size?: number; }
-export interface AndrewChatRequest { message: string; conversationId: string; memory?: AndrewMemoryContext[]; attachment?: AndrewAttachment; }
+export interface AndrewLocationContext { latitude: number; longitude: number; accuracy: number; capturedAt: string; }
+export interface AndrewChatRequest { message: string; conversationId: string; memory?: AndrewMemoryContext[]; attachment?: AndrewAttachment; location?: AndrewLocationContext | null; }
 export interface AndrewChatResponse { ok: true; conversationId: string; reply: string; responseId: string | null; model: string; provider?: string; attempts?: number; learning: { eligible: boolean; source: string; }; }
 export interface AndrewChatError { ok: false; error: string; message?: string; providers?: Array<{ provider: string; configured: boolean; coolingDown: boolean }>; failures?: Array<{ provider: string; status: number | null; reason: string }>; }
 export type NetworkStatus = 'connecting' | 'retrying' | 'connected' | 'error';
@@ -20,6 +21,8 @@ const MEMORY_STORAGE_KEY = 'andrew:memory:v1';
 const CHAT_STORAGE_KEY = 'andrew:ui:chat:v2';
 const BACKEND_NETWORK_CAPABILITY = 'public-web' as const;
 const ANDREW_BACKEND_URL = 'https://andrew2-api.onrender.com';
+const LOCATION_CACHE_KEY = 'andrew:location:v1';
+const LOCATION_CACHE_MS = 60_000;
 const networkAdapter = new FetchNetworkAdapter({ fetchImpl: (input: NetworkRequestInput, init) => fetch(input, init) });
 
 function createSafeId(prefix: string): string {
@@ -59,6 +62,22 @@ function buildLocalMemory(currentMessage: string, supplied: AndrewMemoryContext[
   try { const parsed = JSON.parse(window.localStorage.getItem(CHAT_STORAGE_KEY) || '[]') as unknown; if (Array.isArray(parsed)) chat = parsed.slice(-12).filter((item): item is { role: string; content: string } => Boolean(item && typeof item === 'object' && typeof (item as { role?: unknown }).role === 'string' && typeof (item as { content?: unknown }).content === 'string')).map(item => `${item.role === 'user' ? 'Usuario' : 'Andrew'}: ${item.content}`).slice(-12); } catch { }
   if (explicit.length) writeStoredMemory([...stored, ...explicit]);
   return [...new Set([...identity, ...readStoredMemory(), ...(supplied || []), ...chat])].slice(-30);
+}
+
+function readCachedLocation(): AndrewLocationContext | null {
+  try { const parsed = JSON.parse(window.localStorage.getItem(LOCATION_CACHE_KEY) || 'null') as AndrewLocationContext | null; if (!parsed || Date.now() - Date.parse(parsed.capturedAt) > LOCATION_CACHE_MS) return null; if (![parsed.latitude, parsed.longitude, parsed.accuracy].every(Number.isFinite)) return null; return parsed; } catch { return null; }
+}
+
+function cacheLocation(location: AndrewLocationContext): void { try { window.localStorage.setItem(LOCATION_CACHE_KEY, JSON.stringify(location)); } catch { } }
+
+export function getDeviceLocation(timeoutMs = 5000): Promise<AndrewLocationContext | null> {
+  const cached = readCachedLocation(); if (cached) return Promise.resolve(cached);
+  if (typeof navigator === 'undefined' || !navigator.geolocation) return Promise.resolve(null);
+  return new Promise(resolve => navigator.geolocation.getCurrentPosition(
+    position => { const location: AndrewLocationContext = { latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy: position.coords.accuracy, capturedAt: new Date().toISOString() }; cacheLocation(location); resolve(location); },
+    () => resolve(null),
+    { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: LOCATION_CACHE_MS },
+  ));
 }
 
 function sleep(ms: number): Promise<void> { return new Promise(resolve => window.setTimeout(resolve, ms)); }
@@ -116,14 +135,14 @@ export async function uploadVideoInChunks(file: File, onProgress?: (percent: num
 }
 
 export async function sendAndrewMessage(request: AndrewChatRequest, timeoutMs = DEFAULT_TIMEOUT_MS, onNetworkStatus?: NetworkStatusListener): Promise<AndrewChatResponse> {
-  const message = request.message.trim(); const memory = buildLocalMemory(message, request.memory);
-  const response = await fetchWithRetry(`${getBackendUrl()}/api/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-Andrew-User-Id': getAndrewUserId(), 'X-Andrew-App-Version': '2.0-router-v2' }, body: JSON.stringify({ message, conversationId: request.conversationId, memory: memory.slice(0, 30), attachment: request.attachment }) }, Math.max(timeoutMs, 60000), onNetworkStatus);
+  const message = request.message.trim(); const memory = buildLocalMemory(message, request.memory); const location = request.location === undefined ? await getDeviceLocation() : request.location;
+  const response = await fetchWithRetry(`${getBackendUrl()}/api/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-Andrew-User-Id': getAndrewUserId(), 'X-Andrew-App-Version': '2.0-router-v3' }, body: JSON.stringify({ message, conversationId: request.conversationId, memory: memory.slice(0, 30), attachment: request.attachment, location }) }, Math.max(timeoutMs, 60000), onNetworkStatus);
   const data = await response.json().catch(() => ({})) as AndrewChatResponse | AndrewChatError;
   if (!response.ok || !data.ok) throw parseError(data, `Andrew backend HTTP ${response.status}`);
   notify(onNetworkStatus, 'connected'); return data;
 }
 
 export async function checkAndrewBackend(onNetworkStatus?: NetworkStatusListener): Promise<boolean> {
-  try { const response = await fetchWithRetry(`${getBackendUrl()}/health`, { method: 'GET', headers: { Accept: 'application/json', 'X-Andrew-App-Version': '2.0-router-v2' } }, HEALTH_TIMEOUT_MS, onNetworkStatus, 1); return response.ok; }
+  try { const response = await fetchWithRetry(`${getBackendUrl()}/health`, { method: 'GET', headers: { Accept: 'application/json', 'X-Andrew-App-Version': '2.0-router-v3' } }, HEALTH_TIMEOUT_MS, onNetworkStatus, 1); return response.ok; }
   catch { notify(onNetworkStatus, 'error', 'Backend no disponible'); return false; }
 }
