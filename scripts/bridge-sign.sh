@@ -14,6 +14,21 @@ candidate="$(printf '%s' "$BRIDGE_ECDSA_PRIVATE_KEY_B64" | tr -d '\r\n\t ' | sed
 # Accept a PEM key directly, including secrets stored with literal \\n escapes.
 if printf '%s' "$candidate" | grep -q -- '-----BEGIN'; then
   printf '%s\n' "$candidate" | sed 's/\\\\n/\n/g' > "$key"
+elif [[ "$candidate" =~ ^[0-9A-Fa-f]{64}$ ]]; then
+  # Accept a 32-byte P-256 scalar supplied as 64 hex characters.
+  printf '%s' "$candidate" | xxd -r -p > "$raw"
+  python3 - "$raw" "$key" <<'PY'
+import pathlib,sys
+raw=pathlib.Path(sys.argv[1]).read_bytes()
+if len(raw) != 32:
+    raise SystemExit("raw P-256 private scalar must be exactly 32 bytes")
+def L(n): return bytes([n]) if n < 128 else b"\x81"+bytes([n])
+def T(t,v): return bytes([t])+L(len(v))+v
+oid=bytes.fromhex("06082a8648ce3d030107")
+pathlib.Path(sys.argv[2]).write_bytes(T(0x30,T(0x02,b"\x01")+T(0x04,raw)+T(0xa0,oid)))
+PY
+  openssl pkey -inform DER -in "$key" -out "$key.tmp"
+  mv "$key.tmp" "$key"
 else
   # Decode base64/base64url. The secret name is historical; the payload may be
   # PKCS#8/SEC1 DER or the raw 32-byte P-256 private scalar.
@@ -44,19 +59,6 @@ def T(t,v):
 oid=bytes.fromhex("06082a8648ce3d030107")
 der=T(0x30,T(0x02,b"\x01")+T(0x04,raw)+T(0xa0,oid))
 pathlib.Path(sys.argv[2]).write_bytes(der)
-PY
-    openssl pkey -inform DER -in "$key" -out "$key.tmp"
-    mv "$key.tmp" "$key"
-  elif [[ "$candidate" =~ ^[0-9A-Fa-f]{64}$ ]]; then
-    # Also accept a 32-byte P-256 scalar supplied as 64 hex characters.
-    printf '%s' "$candidate" | xxd -r -p > "$raw"
-    python3 - "$raw" "$key" <<'PY'
-import pathlib,sys
-raw=pathlib.Path(sys.argv[1]).read_bytes()
-def L(n): return bytes([n]) if n < 128 else b"\x81"+bytes([n])
-def T(t,v): return bytes([t])+L(len(v))+v
-oid=bytes.fromhex("06082a8648ce3d030107")
-pathlib.Path(sys.argv[2]).write_bytes(T(0x30,T(0x02,b"\x01")+T(0x04,raw)+T(0xa0,oid)))
 PY
     openssl pkey -inform DER -in "$key" -out "$key.tmp"
     mv "$key.tmp" "$key"
