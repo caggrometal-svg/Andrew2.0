@@ -143,3 +143,5 @@ PY
           done
           echo 'Render backend health did not reach HTTP 200'
           exit 1
+
+# trigger bridge verification
