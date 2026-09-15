@@ -37,6 +37,9 @@ jobs:
       - name: Directed IAC33 runtime integration
         run: npm run test:regression
 
+      - name: Persistent memory gate
+        run: npm run test:phase5
+
       - name: Server and bridge tests
         run: npm run test:server
 
