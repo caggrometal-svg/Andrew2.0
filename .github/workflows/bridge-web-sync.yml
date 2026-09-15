@@ -48,15 +48,20 @@ jobs:
           sha256="$(sha256sum "$work/andrew-web-runtime.zip" | awk '{print $1}')"
           test -n "$BRIDGE_ECDSA_PRIVATE_KEY_B64"
 
-          raw_candidate="$(printf '%s' "$BRIDGE_ECDSA_PRIVATE_KEY_B64" | tr -d '[:space:]')"
+          candidate="$(printf '%s' "$BRIDGE_ECDSA_PRIVATE_KEY_B64" | tr -d '[:space:]')"
+          candidate="${candidate#\"}"
+          candidate="${candidate%\"}"
+          candidate="${candidate#\'}"
+          candidate="${candidate%\'}"
+          raw_candidate="$candidate"
           if printf '%s' "$raw_candidate" | grep -q -- '-----BEGIN'; then
-            printf '%s\n' "$BRIDGE_ECDSA_PRIVATE_KEY_B64" | sed 's/\\n/\n/g' > "$work/signing-key.pem"
-          elif printf '%s' "$raw_candidate" | grep -Eq '^[0-9A-Fa-f]{64}$'; then
-            printf '%s' "$raw_candidate" | xxd -r -p > "$work/signing-key.raw"
-            python3 -c 'import pathlib,sys; raw=pathlib.Path(sys.argv[1]).read_bytes(); assert len(raw)==32; L=lambda n: bytes([n]) if n<128 else b"\\x81"+bytes([n]); T=lambda t,v: bytes([t])+L(len(v))+v; oid=bytes.fromhex("06082a8648ce3d030107"); pathlib.Path(sys.argv[2]).write_bytes(T(0x30,T(0x02,b"\\x01")+T(0x04,raw)+T(0xa0,oid)))' "$work/signing-key.raw" "$work/signing-key.der"
+            printf '%s\n' "$candidate" | sed 's/\\n/\n/g' > "$work/signing-key.pem"
+          elif printf '%s' "$raw_candidate" | sed 's/^0x//' | grep -Eq '^[0-9A-Fa-f]{64}$'; then
+            printf '%s' "$raw_candidate" | sed 's/^0x//' | xxd -r -p > "$work/signing-key.raw"
+            python3 -c 'import pathlib,sys; raw=pathlib.Path(sys.argv[1]).read_bytes(); assert len(raw)==32; L=lambda n: bytes([n]) if n<128 else b"\x81"+bytes([n]); T=lambda t,v: bytes([t])+L(len(v))+v; oid=bytes.fromhex("06082a8648ce3d030107"); pathlib.Path(sys.argv[2]).write_bytes(T(0x30,T(0x02,b"\x01")+T(0x04,raw)+T(0xa0,oid)))' "$work/signing-key.raw" "$work/signing-key.der"
             openssl pkey -inform DER -in "$work/signing-key.der" -out "$work/signing-key.pem"
           else
-            encoded="$(printf '%s' "$BRIDGE_ECDSA_PRIVATE_KEY_B64" | tr -d '[:space:]' | tr '_-' '/+' | tr -cd 'A-Za-z0-9+/=')"
+            encoded="$(printf '%s' "$candidate" | tr '_-' '/+' | tr -cd 'A-Za-z0-9+/=')"
             test -n "$encoded"
             rem=$(( ${#encoded} % 4 ))
             if [ "$rem" -ne 0 ]; then encoded="${encoded}$(printf '%*s' $((4-rem)) '' | tr ' ' '=')"; fi
@@ -69,11 +74,11 @@ jobs:
             elif openssl pkey -inform DER -in "$work/signing-key.raw" -check -noout >/dev/null 2>&1; then
               openssl pkey -inform DER -in "$work/signing-key.raw" -out "$work/signing-key.pem"
             elif [ "$(wc -c < "$work/signing-key.raw")" -eq 32 ]; then
-              python3 -c 'import pathlib,sys; raw=pathlib.Path(sys.argv[1]).read_bytes(); assert len(raw)==32; L=lambda n: bytes([n]) if n<128 else b"\\x81"+bytes([n]); T=lambda t,v: bytes([t])+L(len(v))+v; oid=bytes.fromhex("06082a8648ce3d030107"); pathlib.Path(sys.argv[2]).write_bytes(T(0x30,T(0x02,b"\\x01")+T(0x04,raw)+T(0xa0,oid)))' "$work/signing-key.raw" "$work/signing-key.der"
+              python3 -c 'import pathlib,sys; raw=pathlib.Path(sys.argv[1]).read_bytes(); assert len(raw)==32; L=lambda n: bytes([n]) if n<128 else b"\x81"+bytes([n]); T=lambda t,v: bytes([t])+L(len(v))+v; oid=bytes.fromhex("06082a8648ce3d030107"); pathlib.Path(sys.argv[2]).write_bytes(T(0x30,T(0x02,b"\x01")+T(0x04,raw)+T(0xa0,oid)))' "$work/signing-key.raw" "$work/signing-key.der"
               openssl pkey -inform DER -in "$work/signing-key.der" -out "$work/signing-key.pem"
             else
               echo 'BRIDGE_ECDSA_PRIVATE_KEY_B64 is not a valid PEM/DER private key after decoding.' >&2
-              echo 'Accepted forms: PEM, base64(PEM), base64(DER), base64(raw 32-byte P-256 scalar), 64-char hex P-256 scalar, or PEM with literal \\n line breaks.' >&2
+              echo 'Accepted forms: PEM, base64(PEM), base64(DER), base64(raw 32-byte P-256 scalar), hex P-256 scalar with optional 0x prefix, or PEM with literal \\n line breaks.' >&2
               exit 1
             fi
           fi
