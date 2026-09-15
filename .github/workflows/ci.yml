@@ -48,3 +48,35 @@ jobs:
 
       - name: Production build
         run: npm run build
+
+      - name: Golden Render health
+        shell: bash
+        run: |
+          set -euo pipefail
+          for i in {1..30}; do
+            body="$(curl -fsS --max-time 20 https://andrew2-api.onrender.com/health || true)"
+            if printf '%s' "$body" | grep -q '"status":"ready"'; then
+              printf '%s\n' "$body" | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True; assert d.get("service")=="andrew2-backend"; p=(d.get("ai") or {}).get("configuredProviders",[]); assert p, "No configured providers"; assert isinstance((d.get("ai") or {}).get("providers"),list) and (d.get("ai") or {}).get("providers"), "Provider diagnostics missing"; print("GOLDEN health: PASS"); print("providers:", ",".join(p))'
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "GOLDEN health: FAIL"
+          exit 1
+
+      - name: Golden real chat
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(curl -fsS --max-time 120 -H 'Content-Type: application/json' -H 'X-Andrew-User-Id: ci-golden-test' -H 'X-Andrew-App-Version: ci-golden' -d '{"message":"C33 Golden Test: responde exactamente GOLDEN-C33","conversationId":"ci:golden"}' https://andrew2-api.onrender.com/api/chat)"
+          printf '%s\n' "$response" | python -c 'import json,sys; d=json.load(sys.stdin); assert isinstance(d.get("reply"),str) and d["reply"].strip(), "Empty reply"; assert isinstance(d.get("provider"),str) and d["provider"].strip(), "Missing provider"; assert isinstance(d.get("model"),str) and d["model"].strip(), "Missing model"; assert isinstance(d.get("attempts"),int) and d["attempts"]>=1, "Invalid attempts"; print("GOLDEN chat: PASS"); print("provider:",d["provider"]); print("model:",d["model"]); print("attempts:",d["attempts"]); print("reply:",d["reply"][:200])'
+
+      - name: Golden recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$(curl -fsS --max-time 30 https://andrew2-api.onrender.com/health)"
+          printf '%s\n' "$body" | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("status")=="ready"; assert (d.get("ai") or {}).get("configuredProviders"), "Providers disappeared"; print("GOLDEN recovery: PASS")'
+
+      - name: Golden certification
+        run: echo 'C33 GOLDEN TEST: PASS'
