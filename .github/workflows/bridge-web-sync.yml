@@ -1,0 +1,76 @@
+name: Andrew Web Bridge Sync
+
+on:
+  push:
+    branches:
+      - iac33-integration-next
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  BRIDGE_TAG_PREFIX: bridge-
+
+jobs:
+  bridge-web-sync:
+    name: Build, sign, publish and verify web runtime
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout authoritative branch
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Build web runtime
+        run: npm run build
+      - name: Create bridge artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/andrew-bridge"
+          rm -rf "$work"
+          mkdir -p "$work/payload"
+          cp -R dist/. "$work/payload/"
+          printf '{"ok":true,"revisionId":"%s"}\n' "$GITHUB_SHA" > "$work/payload/health.json"
+          ( cd "$work/payload" && zip -qr "$work/andrew-web-runtime.zip" . )
+          echo "BRIDGE_ARTIFACT=$work/andrew-web-runtime.zip" >> "$GITHUB_ENV"
+          echo "BRIDGE_WORKDIR=$work" >> "$GITHUB_ENV"
+          echo "BRIDGE_REVISION=$GITHUB_SHA" >> "$GITHUB_ENV"
+      - name: Sign bridge artifact — ECDSA P-256 + SHA256withECDSA
+        shell: bash
+        env:
+          BRIDGE_ECDSA_PRIVATE_KEY_B64: ${{ secrets.BRIDGE_ECDSA_PRIVATE_KEY_B64 }}
+        run: bash scripts/bridge-sign.sh
+      - name: Publish immutable bridge artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${BRIDGE_TAG_PREFIX}${BRIDGE_REVISION}"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" "$BRIDGE_ARTIFACT#andrew-web-runtime.zip" --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --title "Andrew web runtime ${BRIDGE_REVISION}" --notes "Signed web runtime. Revision ${BRIDGE_REVISION}. SHA-256 ${BRIDGE_SHA256}."
+          else
+            gh release create "$tag" "$BRIDGE_ARTIFACT#andrew-web-runtime.zip" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Andrew web runtime ${BRIDGE_REVISION}" --notes "Signed web runtime. Revision ${BRIDGE_REVISION}. SHA-256 ${BRIDGE_SHA256}."
+          fi
+          echo "BRIDGE_TAG=$tag" >> "$GITHUB_ENV"
+      - name: Verify Render backend health
+        shell: bash
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 30); do
+            code=$(curl --connect-timeout 5 --max-time 10 --output /tmp/health.json --write-out '%{http_code}' --silent https://andrew2-api.onrender.com/health || true)
+            if [ "$code" = "200" ]; then
+              cat /tmp/health.json
+              exit 0
+            fi
+            sleep 10
+          done
+          echo 'Render backend health did not reach HTTP 200' >&2
+          exit 1
