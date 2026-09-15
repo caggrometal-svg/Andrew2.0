@@ -4,10 +4,6 @@ on:
   push:
     branches:
       - iac33-integration-next
-    paths:
-      - 'server/**'
-      - 'src/network/**'
-      - '.github/workflows/c33-golden-test.yml'
   workflow_dispatch:
 
 permissions:
