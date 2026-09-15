@@ -1,0 +1,1 @@
+Final bridge workflow registration trigger.
