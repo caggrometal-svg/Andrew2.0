@@ -41,7 +41,7 @@ jobs:
           work="$RUNNER_TEMP/andrew-bridge"
           rm -rf "$work"
           mkdir -p "$work/payload"
-          trap 'rm -f "$work/signing-key.pem" "$work/signing-key.raw" "$work/signing-key.der" "$work/digest.bin" "$work/signature.der" "$work/public-key.pem"' EXIT
+          trap 'rm -f "$work/signing-key.pem" "$work/signing-key.raw" "$work/signing-key.der" "$work/signing-key.raw.bin" "$work/digest.bin" "$work/signature.der" "$work/public-key.pem"' EXIT
           cp -R dist/. "$work/payload/"
           printf '{"ok":true,"revisionId":"%s"}\n' "$revision" > "$work/payload/health.json"
           ( cd "$work/payload" && zip -qr "$work/andrew-web-runtime.zip" . )
@@ -53,6 +53,23 @@ jobs:
           candidate="${candidate%\"}"
           candidate="${candidate#\'}"
           candidate="${candidate%\'}"
+
+          if printf '%s' "$candidate" | grep -q '^{' ; then
+            extracted="$(python3 - "$candidate" <<'PY'
+import json, sys
+v=json.loads(sys.argv[1])
+if isinstance(v, dict):
+    for k in ("privateKey", "private_key", "pem", "key", "d"):
+        x=v.get(k)
+        if isinstance(x, str) and x:
+            print(x)
+            raise SystemExit(0)
+raise SystemExit(1)
+PY
+            )" || true
+            if [ -n "$extracted" ]; then candidate="$extracted"; fi
+          fi
+
           raw_candidate="$candidate"
           if printf '%s' "$raw_candidate" | grep -q -- '-----BEGIN'; then
             printf '%s\n' "$candidate" | sed 's/\\n/\n/g' > "$work/signing-key.pem"
@@ -83,7 +100,7 @@ jobs:
               openssl pkey -inform DER -in "$work/signing-key.der" -out "$work/signing-key.pem"
             else
               echo 'BRIDGE_ECDSA_PRIVATE_KEY_B64 is not a valid PEM/DER private key after decoding.' >&2
-              echo 'Accepted forms: PEM, base64(PEM), base64(DER), base64(raw 32-byte P-256 scalar), base64(64-char hex scalar), hex P-256 scalar with optional 0x prefix, or PEM with literal \\n line breaks.' >&2
+              echo 'Accepted forms: PEM, base64(PEM), base64(DER), base64(raw 32-byte P-256 scalar), base64(64-char hex scalar), JSON-wrapped PEM/JWK scalar, hex P-256 scalar with optional 0x prefix, or PEM with literal \\n line breaks.' >&2
               exit 1
             fi
           fi
