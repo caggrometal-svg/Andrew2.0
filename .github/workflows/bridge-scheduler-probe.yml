@@ -1,0 +1,19 @@
+name: Bridge Scheduler Probe
+
+on:
+  push:
+    branches: [iac33-integration-next]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Scheduler probe
+        run: |
+          set -euo pipefail
+          echo "BRIDGE SCHEDULER PROBE PASS"
+          echo "SHA=$GITHUB_SHA"
