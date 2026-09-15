@@ -127,7 +127,6 @@ PY
               openssl pkey -inform DER -in "$work/signing-key.der" -out "$work/signing-key.pem"
             else
               echo 'BRIDGE_ECDSA_PRIVATE_KEY_B64 is not a valid PEM/DER private key after decoding.' >&2
-              echo 'Accepted forms include PEM, base64(PEM/DER/raw/JWK), raw 32-byte P-256, 64-char hex scalar, and wrapped JSON/JWK.' >&2
               exit 1
             fi
           fi
@@ -171,4 +170,4 @@ PY
           echo 'Render backend health did not reach HTTP 200'
           exit 1
 
-# trigger bridge verification
+# bridge verification trigger v53
