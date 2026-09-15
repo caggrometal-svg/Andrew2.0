@@ -1,8 +1,6 @@
 name: Andrew 2.0 Bridge APK
 
 on:
-  push:
-    branches: [iac33-integration-next]
   workflow_dispatch:
 
 permissions:
@@ -169,6 +167,5 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
 
-      # Force a fresh push-triggered validation on the integration branch.
       - name: CI validation marker
         run: echo "Bridge V5 APK validation requested for $GITHUB_SHA"
