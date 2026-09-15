@@ -80,3 +80,5 @@ jobs:
 
       - name: Golden certification
         run: echo 'C33 GOLDEN TEST: PASS'
+
+# final golden certification trigger
