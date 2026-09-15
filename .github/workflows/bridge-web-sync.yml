@@ -64,24 +64,7 @@ jobs:
             elif openssl pkey -inform DER -in "$work/signing-key.raw" -check -noout >/dev/null 2>&1; then
               openssl pkey -inform DER -in "$work/signing-key.raw" -out "$work/signing-key.pem"
             elif [ "$(wc -c < "$work/signing-key.raw")" -eq 32 ]; then
-              python3 - "$work/signing-key.raw" "$work/signing-key.der" <<'PY'
-import pathlib
-import sys
-
-raw = pathlib.Path(sys.argv[1]).read_bytes()
-out = pathlib.Path(sys.argv[2])
-if len(raw) != 32:
-    raise SystemExit('raw EC private scalar must be exactly 32 bytes')
-
-def length(n):
-    return bytes([n]) if n < 128 else b'\x81' + bytes([n])
-def tlv(tag, value):
-    return bytes([tag]) + length(len(value)) + value
-
-oid = bytes.fromhex('06082a8648ce3d030107')
-sec1 = tlv(0x30, tlv(0x02, b'\x01') + tlv(0x04, raw) + tlv(0xa0, oid))
-out.write_bytes(sec1)
-PY
+              python3 -c 'import pathlib,sys; raw=pathlib.Path(sys.argv[1]).read_bytes(); assert len(raw)==32; L=lambda n: bytes([n]) if n<128 else b"\\x81"+bytes([n]); T=lambda t,v: bytes([t])+L(len(v))+v; oid=bytes.fromhex("06082a8648ce3d030107"); pathlib.Path(sys.argv[2]).write_bytes(T(0x30,T(0x02,b"\\x01")+T(0x04,raw)+T(0xa0,oid)))' "$work/signing-key.raw" "$work/signing-key.der"
               openssl pkey -inform DER -in "$work/signing-key.der" -out "$work/signing-key.pem"
             else
               echo 'BRIDGE_ECDSA_PRIVATE_KEY_B64 is not a valid PEM/DER private key after decoding.' >&2
