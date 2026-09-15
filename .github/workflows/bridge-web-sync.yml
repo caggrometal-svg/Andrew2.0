@@ -40,7 +40,7 @@ jobs:
           work="$RUNNER_TEMP/andrew-bridge"
           rm -rf "$work"
           mkdir -p "$work/payload"
-          trap 'rm -f "$work/signing-key.pem" "$work/digest.bin" "$work/signature.der" "$work/public-key.pem"' EXIT
+          trap 'rm -f "$work/signing-key.pem" "$work/signing-key.raw" "$work/digest.bin" "$work/signature.der" "$work/public-key.pem"' EXIT
           cp -R dist/. "$work/payload/"
           printf '{"ok":true,"revisionId":"%s"}\n' "$revision" > "$work/payload/health.json"
           ( cd "$work/payload" && zip -qr "$work/andrew-web-runtime.zip" . )
@@ -53,7 +53,15 @@ jobs:
             test -n "$encoded"
             rem=$(( ${#encoded} % 4 ))
             if [ "$rem" -ne 0 ]; then encoded="${encoded}$(printf '%*s' $((4-rem)) '' | tr ' ' '=')"; fi
-            printf '%s' "$encoded" | base64 --decode > "$work/signing-key.pem"
+            printf '%s' "$encoded" | base64 --decode > "$work/signing-key.raw"
+            if openssl pkey -in "$work/signing-key.raw" -check -noout >/dev/null 2>&1; then
+              cp "$work/signing-key.raw" "$work/signing-key.pem"
+            elif openssl pkey -inform DER -in "$work/signing-key.raw" -check -noout >/dev/null 2>&1; then
+              openssl pkey -inform DER -in "$work/signing-key.raw" -out "$work/signing-key.pem"
+            else
+              echo 'BRIDGE_ECDSA_PRIVATE_KEY_B64 is neither a readable PEM key nor a supported DER private key.' >&2
+              exit 1
+            fi
           fi
           chmod 600 "$work/signing-key.pem"
           openssl pkey -in "$work/signing-key.pem" -check -noout
