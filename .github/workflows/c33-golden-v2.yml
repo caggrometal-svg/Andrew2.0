@@ -1,0 +1,36 @@
+name: C33 Golden Runtime Certification
+
+on:
+  push:
+    branches:
+      - iac33-integration-next
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  golden:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Render health
+        run: |
+          set -euo pipefail
+          body="$(curl -fsS --max-time 30 https://andrew2-api.onrender.com/health)"
+          printf '%s\n' "$body" | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True; assert d.get("status")=="ready"; assert d.get("service")=="andrew2-backend"; p=(d.get("ai") or {}).get("configuredProviders",[]); assert p, "No configured providers"; print("GOLDEN health: PASS"); print("providers:", ",".join(p))'
+
+      - name: Real chat
+        run: |
+          set -euo pipefail
+          response="$(curl -fsS --max-time 120 -H 'Content-Type: application/json' -H 'X-Andrew-User-Id: ci-golden-test' -H 'X-Andrew-App-Version: ci-golden' -d '{"message":"C33 Golden Test: responde exactamente GOLDEN-C33","conversationId":"ci:golden"}' https://andrew2-api.onrender.com/api/chat)"
+          printf '%s\n' "$response" | python -c 'import json,sys; d=json.load(sys.stdin); assert isinstance(d.get("reply"),str) and d["reply"].strip(), "Empty reply"; assert isinstance(d.get("provider"),str) and d["provider"].strip(), "Missing provider"; assert isinstance(d.get("model"),str) and d["model"].strip(), "Missing model"; assert isinstance(d.get("attempts"),int) and d["attempts"]>=1, "Invalid attempts"; print("GOLDEN chat: PASS"); print("provider:",d["provider"]); print("model:",d["model"]); print("attempts:",d["attempts"])'
+
+      - name: Recovery
+        run: |
+          set -euo pipefail
+          body="$(curl -fsS --max-time 30 https://andrew2-api.onrender.com/health)"
+          printf '%s\n' "$body" | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("status")=="ready"; assert (d.get("ai") or {}).get("configuredProviders"), "Providers disappeared"; print("GOLDEN recovery: PASS")'
+
+      - name: Certification
+        run: echo 'C33 GOLDEN TEST: PASS'
