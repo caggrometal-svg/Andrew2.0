@@ -1,0 +1,54 @@
+name: C33 AI Smoke Test
+
+on:
+  push:
+    branches:
+      - iac33-integration-next
+    paths:
+      - 'server/**'
+      - 'src/network/**'
+      - '.github/workflows/ai-smoke-test.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ai-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Wait for Render health
+        shell: bash
+        run: |
+          set -euo pipefail
+          for i in {1..30}; do
+            body="$(curl -fsS --max-time 20 https://andrew2-api.onrender.com/health || true)"
+            if printf '%s' "$body" | grep -q '"status":"ready"'; then
+              echo "Render health: ready"
+              exit 0
+            fi
+            echo "Waiting for Render ($i/30)"
+            sleep 20
+          done
+          echo "Render health did not become ready"
+          exit 1
+
+      - name: Verify AI router is configured
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$(curl -fsS --max-time 20 https://andrew2-api.onrender.com/health)"
+          printf '%s\n' "$body" | python -c 'import json,sys; d=json.load(sys.stdin); ai=d.get("ai",{}); providers=ai.get("configuredProviders",[]); print("Configured providers:", ",".join(providers)); assert providers, "No configured AI providers"'
+
+      - name: Exercise /api/chat end to end
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(curl -fsS --max-time 120 \
+            -H 'Content-Type: application/json' \
+            -H 'X-Andrew-User-Id: ci-smoke-test' \
+            -H 'X-Andrew-App-Version: ci-smoke' \
+            -d '{"message":"C33 AI smoke test: reply exactly PASS-C33","conversationId":"ci:ai-smoke"}' \
+            https://andrew2-api.onrender.com/api/chat)"
+          printf '%s\n' "$response" | python -c 'import json,sys; d=json.load(sys.stdin); print("HTTP chat: PASS"); print("provider:",d.get("provider")); print("model:",d.get("model")); print("attempts:",d.get("attempts")); reply=(d.get("reply") or "").strip(); assert reply, "Empty AI reply"'
