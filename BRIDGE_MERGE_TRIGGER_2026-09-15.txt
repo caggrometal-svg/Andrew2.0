@@ -1,1 +1,0 @@
-Merge-triggered bridge E2E certification.
